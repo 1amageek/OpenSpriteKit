@@ -14,6 +14,9 @@ internal struct SKParticle {
     /// Current Z position (depth).
     var zPosition: CGFloat
 
+    /// Initial Z position (for sequence interpolation).
+    var initialZPosition: CGFloat
+
     /// Rate of Z position change per second.
     var zPositionSpeed: CGFloat
 
@@ -37,6 +40,9 @@ internal struct SKParticle {
 
     /// Current rotation in radians.
     var rotation: CGFloat
+
+    /// Initial rotation (for sequence interpolation).
+    var initialRotation: CGFloat
 
     /// Rate of rotation change per second (spin).
     var rotationSpeed: CGFloat
@@ -258,12 +264,14 @@ internal final class SKParticleSystem {
         return SKParticle(
             position: CGPoint(x: posX, y: posY),
             zPosition: zPos,
+            initialZPosition: zPos,
             zPositionSpeed: emitter.particleZPositionSpeed,
             velocity: CGVector(dx: velocityX, dy: velocityY),
             scale: scale,
             initialScale: scale,
             scaleSpeed: emitter.particleScaleSpeed,
             rotation: rotation,
+            initialRotation: rotation,
             rotationSpeed: rotationSpeed,
             alpha: alpha,
             initialAlpha: alpha,

@@ -221,6 +221,14 @@ open class SKPhysicsBody: NSObject, NSCopying, NSSecureCoding {
         usesPreciseCollisionDetection = coder.decodeBool(forKey: "usesPreciseCollisionDetection")
         pinned = coder.decodeBool(forKey: "pinned")
         charge = CGFloat(coder.decodeDouble(forKey: "charge"))
+
+        // Decode velocity and angular velocity
+        let velocityDx = CGFloat(coder.decodeDouble(forKey: "velocity.dx"))
+        let velocityDy = CGFloat(coder.decodeDouble(forKey: "velocity.dy"))
+        velocity = CGVector(dx: velocityDx, dy: velocityDy)
+        angularVelocity = CGFloat(coder.decodeDouble(forKey: "angularVelocity"))
+        isResting = coder.decodeBool(forKey: "isResting")
+
         super.init()
     }
 
@@ -280,6 +288,12 @@ open class SKPhysicsBody: NSObject, NSCopying, NSSecureCoding {
         coder.encode(usesPreciseCollisionDetection, forKey: "usesPreciseCollisionDetection")
         coder.encode(pinned, forKey: "pinned")
         coder.encode(Double(charge), forKey: "charge")
+
+        // Encode velocity and angular velocity
+        coder.encode(Double(velocity.dx), forKey: "velocity.dx")
+        coder.encode(Double(velocity.dy), forKey: "velocity.dy")
+        coder.encode(Double(angularVelocity), forKey: "angularVelocity")
+        coder.encode(isResting, forKey: "isResting")
     }
 
     // MARK: - NSCopying
@@ -304,6 +318,9 @@ open class SKPhysicsBody: NSObject, NSCopying, NSSecureCoding {
         copy.usesPreciseCollisionDetection = usesPreciseCollisionDetection
         copy.pinned = pinned
         copy.charge = charge
+        copy.velocity = velocity
+        copy.angularVelocity = angularVelocity
+        copy.isResting = isResting
         return copy
     }
 

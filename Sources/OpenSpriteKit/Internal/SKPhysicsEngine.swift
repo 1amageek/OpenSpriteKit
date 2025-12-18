@@ -4,6 +4,10 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+#if canImport(simd)
+import simd
+#endif
+
 /// The internal physics simulation engine for SpriteKit.
 ///
 /// This engine handles:
@@ -44,11 +48,18 @@ internal final class SKPhysicsEngine {
         var bodies: [SKPhysicsBody] = []
         collectBodies(from: scene, into: &bodies)
 
+        // Collect all field nodes in the scene
+        var fieldNodes: [SKFieldNode] = []
+        collectFieldNodes(from: scene, into: &fieldNodes)
+
         // Apply accumulated forces (with deltaTime)
         applyAccumulatedForces(to: bodies, deltaTime: dt)
 
         // Apply gravity to dynamic bodies
         applyGravity(to: bodies, gravity: gravity, deltaTime: dt)
+
+        // Apply field forces to dynamic bodies
+        applyFieldForces(to: bodies, fieldNodes: fieldNodes, scene: scene, deltaTime: dt)
 
         // Integrate velocities (update positions)
         integrateVelocities(bodies: bodies, deltaTime: dt)
@@ -117,6 +128,228 @@ internal final class SKPhysicsEngine {
             body.velocity.dx += gravity.dx * CGFloat(deltaTime)
             body.velocity.dy += gravity.dy * CGFloat(deltaTime)
         }
+    }
+
+    // MARK: - Field Node Collection
+
+    /// Recursively collects all field nodes in a node tree.
+    private func collectFieldNodes(from node: SKNode, into fieldNodes: inout [SKFieldNode]) {
+        if let field = node as? SKFieldNode {
+            fieldNodes.append(field)
+        }
+        for child in node.children {
+            collectFieldNodes(from: child, into: &fieldNodes)
+        }
+    }
+
+    // MARK: - Field Forces
+
+    /// Applies forces from field nodes to all dynamic bodies.
+    private func applyFieldForces(to bodies: [SKPhysicsBody], fieldNodes: [SKFieldNode], scene: SKScene, deltaTime: TimeInterval) {
+        // Skip if no field nodes
+        guard !fieldNodes.isEmpty else { return }
+
+        for body in bodies {
+            guard body.isDynamic && !body.pinned else { continue }
+            guard let node = body.node else { continue }
+
+            // Check if body is affected by fields
+            // If fieldBitMask is 0, body is not affected by any fields
+            guard body.fieldBitMask != 0 else { continue }
+
+            // Get body position in scene coordinates
+            let bodyPosition = scene.convert(node.position, from: node.parent ?? scene)
+            let position3D = vector_float3(Float(bodyPosition.x), Float(bodyPosition.y), 0)
+            let velocity3D = vector_float3(Float(body.velocity.dx), Float(body.velocity.dy), 0)
+
+            var totalForce = vector_float3.zero
+            var hasExclusiveField = false
+            var exclusiveForce = vector_float3.zero
+
+            for field in fieldNodes {
+                guard field.isEnabled else { continue }
+
+                // Check if field affects this body (category bit mask check)
+                guard (field.categoryBitMask & body.fieldBitMask) != 0 else { continue }
+
+                // Check if body is within field's region
+                if let region = field.region {
+                    let localPoint = field.convert(bodyPosition, from: scene)
+                    guard region.contains(localPoint) else { continue }
+                }
+
+                // Calculate field position in scene coordinates
+                let fieldPos = scene.convert(.zero, from: field)
+                let fieldPosition = vector_float3(Float(fieldPos.x), Float(fieldPos.y), 0)
+
+                // Calculate force from this field
+                let force = calculateFieldForce(
+                    field: field,
+                    fieldPosition: fieldPosition,
+                    bodyPosition: position3D,
+                    bodyVelocity: velocity3D,
+                    bodyMass: Float(body.mass),
+                    bodyCharge: Float(body.charge),
+                    deltaTime: deltaTime
+                )
+
+                if field.isExclusive {
+                    if !hasExclusiveField {
+                        hasExclusiveField = true
+                        exclusiveForce = force
+                    } else {
+                        exclusiveForce += force
+                    }
+                } else {
+                    totalForce += force
+                }
+            }
+
+            // Apply the final force
+            let finalForce = hasExclusiveField ? exclusiveForce : totalForce
+
+            // Convert force to velocity change: dv = (F/m) * dt
+            if body.mass > 0 {
+                body.velocity.dx += CGFloat(finalForce.x / Float(body.mass)) * CGFloat(deltaTime)
+                body.velocity.dy += CGFloat(finalForce.y / Float(body.mass)) * CGFloat(deltaTime)
+            }
+        }
+    }
+
+    /// Calculates the force applied by a field to a body.
+    private func calculateFieldForce(
+        field: SKFieldNode,
+        fieldPosition: vector_float3,
+        bodyPosition: vector_float3,
+        bodyVelocity: vector_float3,
+        bodyMass: Float,
+        bodyCharge: Float,
+        deltaTime: TimeInterval
+    ) -> vector_float3 {
+        // Calculate displacement from field to body
+        let displacement = bodyPosition - fieldPosition
+        var distance = simd_length(displacement)
+
+        // Apply minimum radius
+        distance = max(distance, field.minimumRadius)
+
+        // Calculate falloff factor
+        let falloffFactor: Float
+        if field.falloff == 0 || distance <= field.minimumRadius {
+            falloffFactor = 1.0
+        } else {
+            falloffFactor = pow(field.minimumRadius / distance, field.falloff)
+        }
+
+        let strength = field.strength * falloffFactor
+
+        // Calculate force based on field type
+        switch field.fieldType {
+        case .radialGravity:
+            // Attracts toward the field node (force proportional to mass)
+            if distance > 0.0001 {
+                let direction = -simd_normalize(displacement)
+                return direction * strength * bodyMass
+            }
+            return .zero
+
+        case .linearGravity(let direction):
+            // Applies force in a constant direction (proportional to mass)
+            return simd_normalize(direction) * strength * bodyMass
+
+        case .drag:
+            // Drag force opposing velocity: F = -k * v
+            let speed = simd_length(bodyVelocity)
+            if speed > 0.0001 {
+                let dragDirection = -simd_normalize(bodyVelocity)
+                return dragDirection * strength * speed * bodyMass
+            }
+            return .zero
+
+        case .vortex:
+            // Perpendicular force (tangent to circle around field)
+            if distance > 0.0001 {
+                let perpendicular = vector_float3(-displacement.y, displacement.x, 0)
+                return simd_normalize(perpendicular) * strength * bodyMass
+            }
+            return .zero
+
+        case .electric:
+            // Electric field: force proportional to charge (F = qE)
+            if distance > 0.0001 {
+                let direction = simd_normalize(displacement)
+                return direction * strength * bodyCharge
+            }
+            return .zero
+
+        case .magnetic:
+            // Magnetic field: Lorentz force F = q(v × B)
+            // B is along z-axis, so F is perpendicular to velocity in xy plane
+            let magneticField = vector_float3(0, 0, strength)
+            let lorentzForce = simd_cross(bodyVelocity, magneticField)
+            return lorentzForce * bodyCharge
+
+        case .spring:
+            // Spring force toward the field node: F = -k * x
+            return -displacement * strength
+
+        case .velocityWithVector(let direction):
+            // Velocity field: applies force to match target velocity
+            let targetVelocity = simd_normalize(direction) * strength
+            let velocityDiff = targetVelocity - bodyVelocity
+            return velocityDiff * bodyMass * 10.0 // Spring-like force to reach target
+
+        case .velocityWithTexture:
+            // Texture-based velocity field (not implemented - would require texture sampling)
+            return .zero
+
+        case .noise(_, _):
+            // Noise field: random force based on position
+            let noiseX = simpleNoise(x: bodyPosition.x * 0.1, y: bodyPosition.y * 0.1)
+            let noiseY = simpleNoise(x: bodyPosition.y * 0.1, y: bodyPosition.x * 0.1)
+            return vector_float3(noiseX, noiseY, 0) * strength * bodyMass
+
+        case .turbulence(_, _):
+            // Turbulence: noise that varies with velocity
+            let speed = simd_length(bodyVelocity)
+            let turbulenceFactor = 1.0 + speed * 0.1
+            let noiseX = simpleNoise(x: bodyPosition.x * 0.2, y: bodyPosition.y * 0.2)
+            let noiseY = simpleNoise(x: bodyPosition.y * 0.2, y: bodyPosition.x * 0.2)
+            return vector_float3(noiseX, noiseY, 0) * strength * bodyMass * turbulenceFactor
+
+        case .custom(let evaluator):
+            // Custom field: call the evaluator function
+            return evaluator(bodyPosition, bodyVelocity, bodyMass, bodyCharge, deltaTime)
+        }
+    }
+
+    /// Simple noise function for field effects.
+    private func simpleNoise(x: Float, y: Float) -> Float {
+        let ix = Int(floor(x)) & 255
+        let iy = Int(floor(y)) & 255
+        let fx = x - floor(x)
+        let fy = y - floor(y)
+
+        let u = fx * fx * (3 - 2 * fx)
+        let v = fy * fy * (3 - 2 * fy)
+
+        func hash(_ n: Int) -> Float {
+            var x = n
+            x = ((x >> 16) ^ x) &* 0x45d9f3b
+            x = ((x >> 16) ^ x) &* 0x45d9f3b
+            x = (x >> 16) ^ x
+            return Float(x & 0xFFFF) / 32768.0 - 1.0
+        }
+
+        let n00 = hash(ix + iy * 57)
+        let n10 = hash(ix + 1 + iy * 57)
+        let n01 = hash(ix + (iy + 1) * 57)
+        let n11 = hash(ix + 1 + (iy + 1) * 57)
+
+        let nx0 = n00 + u * (n10 - n00)
+        let nx1 = n01 + u * (n11 - n01)
+
+        return nx0 + v * (nx1 - nx0)
     }
 
     // MARK: - Velocity Integration

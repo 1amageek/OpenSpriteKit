@@ -59,6 +59,11 @@ internal final class SKActionRunner {
         var speed: CGFloat?
         var charge: CGFloat?  // For physics body charge
         var mass: CGFloat?    // For physics body mass
+        var color: SKColor?   // For SKSpriteNode colorize
+        var colorBlendFactor: CGFloat?  // For SKSpriteNode colorize
+        var strength: Float?  // For SKFieldNode
+        var falloff: Float?   // For SKFieldNode
+        var warpGeometry: SKWarpGeometry?  // For SKWarpable nodes
     }
 
     // MARK: - Properties
@@ -286,6 +291,20 @@ internal final class SKActionRunner {
         case .changeMass:
             if let body = node.physicsBody {
                 state.mass = body.mass
+            }
+        case .colorize, .colorizeWithBlendFactor:
+            if let sprite = node as? SKSpriteNode {
+                state.color = sprite.color
+                state.colorBlendFactor = sprite.colorBlendFactor
+            }
+        case .strength, .falloff:
+            if let field = node as? SKFieldNode {
+                state.strength = field.strength
+                state.falloff = field.falloff
+            }
+        case .warp, .animateWarps:
+            if let warpable = node as? SKWarpable {
+                state.warpGeometry = warpable.warpGeometry
             }
         default:
             break
@@ -613,15 +632,36 @@ internal final class SKActionRunner {
             }
 
         // MARK: Colorize Actions
-        case .colorize(let color, let blendFactor):
+        case .colorize(let targetColor, let targetBlendFactor):
             if let sprite = node as? SKSpriteNode {
-                sprite.color = color
-                sprite.colorBlendFactor = CGFloat(progress) * blendFactor
+                let initialBlend = initialState.colorBlendFactor ?? sprite.colorBlendFactor
+                // Interpolate color if we have initial color
+                if let initialColor = initialState.color {
+                    // Interpolate RGBA components
+                    let p = CGFloat(progress)
+                    var initialR: CGFloat = 0, initialG: CGFloat = 0, initialB: CGFloat = 0, initialA: CGFloat = 0
+                    var targetR: CGFloat = 0, targetG: CGFloat = 0, targetB: CGFloat = 0, targetA: CGFloat = 0
+
+                    initialColor.getRed(&initialR, green: &initialG, blue: &initialB, alpha: &initialA)
+                    targetColor.getRed(&targetR, green: &targetG, blue: &targetB, alpha: &targetA)
+
+                    sprite.color = SKColor(
+                        red: initialR + (targetR - initialR) * p,
+                        green: initialG + (targetG - initialG) * p,
+                        blue: initialB + (targetB - initialB) * p,
+                        alpha: initialA + (targetA - initialA) * p
+                    )
+                } else {
+                    sprite.color = targetColor
+                }
+                // Interpolate blend factor from initial to target
+                sprite.colorBlendFactor = initialBlend + (targetBlendFactor - initialBlend) * CGFloat(progress)
             }
 
-        case .colorizeWithBlendFactor(let blendFactor):
+        case .colorizeWithBlendFactor(let targetBlendFactor):
             if let sprite = node as? SKSpriteNode {
-                sprite.colorBlendFactor = CGFloat(progress) * blendFactor
+                let initialBlend = initialState.colorBlendFactor ?? sprite.colorBlendFactor
+                sprite.colorBlendFactor = initialBlend + (targetBlendFactor - initialBlend) * CGFloat(progress)
             }
 
         // MARK: Sound Actions
@@ -734,21 +774,23 @@ internal final class SKActionRunner {
         // MARK: Field Actions
         case .strength(let to, let by):
             if let field = node as? SKFieldNode {
+                let initialStrength = initialState.strength ?? field.strength
                 if let targetStrength = to {
-                    let initialStrength = field.strength
                     field.strength = initialStrength + (targetStrength - initialStrength) * Float(progress)
                 } else if let delta = by {
-                    field.strength += delta * Float(progress) * Float(deltaTime)
+                    // For relative change, apply delta based on initial value
+                    field.strength = initialStrength + delta * Float(progress)
                 }
             }
 
         case .falloff(let to, let by):
             if let field = node as? SKFieldNode {
+                let initialFalloff = initialState.falloff ?? field.falloff
                 if let targetFalloff = to {
-                    let initialFalloff = field.falloff
                     field.falloff = initialFalloff + (targetFalloff - initialFalloff) * Float(progress)
                 } else if let delta = by {
-                    field.falloff += delta * Float(progress) * Float(deltaTime)
+                    // For relative change, apply delta based on initial value
+                    field.falloff = initialFalloff + delta * Float(progress)
                 }
             }
 
@@ -787,9 +829,26 @@ internal final class SKActionRunner {
             }
 
         // MARK: Warp Actions
-        case .warp(let geometry):
+        case .warp(let targetGeometry):
             if var warpable = node as? SKWarpable {
-                warpable.warpGeometry = geometry
+                // If we have both initial and target geometries, interpolate
+                if let initialGeometry = initialState.warpGeometry as? SKWarpGeometryGrid,
+                   let targetGrid = targetGeometry as? SKWarpGeometryGrid,
+                   initialGeometry.numberOfColumns == targetGrid.numberOfColumns,
+                   initialGeometry.numberOfRows == targetGrid.numberOfRows {
+                    // Interpolate destination positions
+                    let interpolatedGeometry = interpolateWarpGeometry(
+                        from: initialGeometry,
+                        to: targetGrid,
+                        progress: Float(progress)
+                    )
+                    warpable.warpGeometry = interpolatedGeometry
+                } else {
+                    // If geometries are incompatible, just set the target at completion
+                    if progress >= 1.0 {
+                        warpable.warpGeometry = targetGeometry
+                    }
+                }
             }
 
         case .animateWarps(let geometries, let times, _):
@@ -809,7 +868,24 @@ internal final class SKActionRunner {
                 }
 
                 if warpIndex < geometries.count {
-                    warpable.warpGeometry = geometries[warpIndex]
+                    // If we can interpolate to next geometry, do so
+                    if warpIndex + 1 < geometries.count,
+                       let currentGrid = geometries[warpIndex] as? SKWarpGeometryGrid,
+                       let nextGrid = geometries[warpIndex + 1] as? SKWarpGeometryGrid,
+                       currentGrid.numberOfColumns == nextGrid.numberOfColumns,
+                       currentGrid.numberOfRows == nextGrid.numberOfRows {
+                        let startTime = times[warpIndex].doubleValue
+                        let endTime = times[warpIndex + 1].doubleValue
+                        let segmentProgress = Float((currentTime - startTime) / (endTime - startTime))
+                        let clampedProgress = max(0, min(1, segmentProgress))
+                        warpable.warpGeometry = interpolateWarpGeometry(
+                            from: currentGrid,
+                            to: nextGrid,
+                            progress: clampedProgress
+                        )
+                    } else {
+                        warpable.warpGeometry = geometries[warpIndex]
+                    }
                 }
             }
 
@@ -988,5 +1064,38 @@ internal final class SKActionRunner {
         }
 
         return points.last ?? .zero
+    }
+
+    // MARK: - Warp Geometry Interpolation
+
+    /// Interpolates between two warp geometries.
+    ///
+    /// - Parameters:
+    ///   - from: The source warp geometry.
+    ///   - to: The destination warp geometry.
+    ///   - progress: The interpolation progress (0.0 to 1.0).
+    /// - Returns: An interpolated warp geometry.
+    private func interpolateWarpGeometry(from: SKWarpGeometryGrid, to: SKWarpGeometryGrid, progress: Float) -> SKWarpGeometryGrid {
+        // Interpolate destination positions
+        var interpolatedDestinations: [SIMD2<Float>] = []
+        let count = min(from.destinationPositions.count, to.destinationPositions.count)
+
+        for i in 0..<count {
+            let fromPos = from.destinationPositions[i]
+            let toPos = to.destinationPositions[i]
+            let interpolated = SIMD2<Float>(
+                fromPos.x + (toPos.x - fromPos.x) * progress,
+                fromPos.y + (toPos.y - fromPos.y) * progress
+            )
+            interpolatedDestinations.append(interpolated)
+        }
+
+        // Use the source positions from the 'from' geometry (they should be the same)
+        return SKWarpGeometryGrid(
+            columns: from.numberOfColumns,
+            rows: from.numberOfRows,
+            sourcePositions: from.sourcePositions,
+            destinationPositions: interpolatedDestinations
+        )
     }
 }
