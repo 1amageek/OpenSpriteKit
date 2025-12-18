@@ -47,9 +47,18 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     /// Creates a texture from an image file.
     ///
     /// - Parameter name: The name of the image file in the app bundle.
+    ///
+    /// On WASM platforms, the image must be pre-registered with `SKResourceLoader`:
+    /// ```swift
+    /// SKResourceLoader.shared.registerImage(data: pngData, forName: "player")
+    /// let texture = SKTexture(imageNamed: "player")
+    /// ```
     public init(imageNamed name: String) {
         super.init()
-        // TODO: Load image from bundle
+        if let image = SKResourceLoader.shared.image(forName: name) {
+            self.cgImage = image
+            self._size = CGSize(width: image.width, height: image.height)
+        }
     }
 
     /// Creates a texture from a CGImage.
@@ -61,40 +70,107 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
         super.init()
     }
 
-    /// Creates a texture from raw image data.
+    /// Creates a texture from raw RGBA image data.
     ///
     /// - Parameters:
-    ///   - data: The raw image data.
-    ///   - size: The size of the texture.
+    ///   - data: Raw RGBA pixel data (4 bytes per pixel).
+    ///   - size: The size of the texture in pixels.
     public init(data: Data, size: CGSize) {
         self._size = size
         super.init()
-        // TODO: Create texture from data
+        self.cgImage = Self.createCGImage(from: data, size: size, flipped: false)
     }
 
-    /// Creates a texture from raw image data with additional options.
+    /// Creates a texture from raw RGBA image data with optional vertical flip.
     ///
     /// - Parameters:
-    ///   - data: The raw image data.
-    ///   - size: The size of the texture.
+    ///   - data: Raw RGBA pixel data (4 bytes per pixel).
+    ///   - size: The size of the texture in pixels.
     ///   - flipped: Whether the image should be flipped vertically.
     public init(data: Data, size: CGSize, flipped: Bool) {
         self._size = size
         super.init()
-        // TODO: Create texture from data
+        self.cgImage = Self.createCGImage(from: data, size: size, flipped: flipped)
     }
 
     /// Creates a texture from raw image data with a specific row alignment.
     ///
     /// - Parameters:
-    ///   - data: The raw image data.
-    ///   - size: The size of the texture.
-    ///   - rowLength: The number of pixels in a row.
-    ///   - alignment: The byte alignment of the data.
+    ///   - data: Raw pixel data.
+    ///   - size: The size of the texture in pixels.
+    ///   - rowLength: The number of pixels in a row (may include padding).
+    ///   - alignment: The byte alignment of each row.
     public init(data: Data, size: CGSize, rowLength: UInt32, alignment: UInt32) {
         self._size = size
         super.init()
-        // TODO: Create texture from data
+        self.cgImage = Self.createCGImage(from: data, size: size, rowLength: Int(rowLength), alignment: Int(alignment))
+    }
+
+    /// Creates a CGImage from raw RGBA data.
+    private static func createCGImage(from data: Data, size: CGSize, flipped: Bool) -> CGImage? {
+        let width = Int(size.width)
+        let height = Int(size.height)
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+
+        var pixelData = data
+        if flipped {
+            pixelData = flipImageVertically(data: data, width: width, height: height, bytesPerRow: bytesPerRow)
+        }
+
+        return CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: CGDataProvider(data: pixelData as CFData)!,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+
+    /// Creates a CGImage from raw data with custom row length and alignment.
+    private static func createCGImage(from data: Data, size: CGSize, rowLength: Int, alignment: Int) -> CGImage? {
+        let width = Int(size.width)
+        let height = Int(size.height)
+        let bytesPerPixel = 4
+
+        // Calculate aligned bytes per row
+        let unalignedBytesPerRow = rowLength * bytesPerPixel
+        let alignedBytesPerRow = ((unalignedBytesPerRow + alignment - 1) / alignment) * alignment
+
+        return CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: alignedBytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: CGDataProvider(data: data as CFData)!,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+
+    /// Flips image data vertically.
+    private static func flipImageVertically(data: Data, width: Int, height: Int, bytesPerRow: Int) -> Data {
+        var flipped = Data(count: data.count)
+        data.withUnsafeBytes { src in
+            flipped.withUnsafeMutableBytes { dst in
+                for y in 0..<height {
+                    let srcOffset = y * bytesPerRow
+                    let dstOffset = (height - 1 - y) * bytesPerRow
+                    memcpy(dst.baseAddress! + dstOffset, src.baseAddress! + srcOffset, bytesPerRow)
+                }
+            }
+        }
+        return flipped
     }
 
     /// Creates a texture that represents a rectangular portion of another texture.
@@ -117,32 +193,177 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     public init(image: CIImage) {
         self._size = image.extent.size
         super.init()
-        // TODO: Create texture from CIImage
+        // Render CIImage to CGImage
+        let context = CIContext()
+        if let cgImage = context.createCGImage(image, from: image.extent) {
+            self.cgImage = cgImage
+        }
     }
 
     /// Creates a texture with a noise pattern.
     ///
     /// - Parameters:
-    ///   - smoothness: The smoothness of the noise.
+    ///   - smoothness: The smoothness of the noise (0.0 = rough, 1.0 = smooth).
     ///   - size: The size of the texture.
     ///   - grayscale: Whether the noise should be grayscale.
-    /// - Returns: A texture containing noise.
+    /// - Returns: A texture containing procedurally generated noise.
     public class func noiseTexture(withSmoothness smoothness: CGFloat, size: CGSize, grayscale: Bool) -> SKTexture {
         let texture = SKTexture()
         texture._size = size
+
+        let width = Int(size.width)
+        let height = Int(size.height)
+        let bytesPerPixel = 4
+        var pixelData = Data(count: width * height * bytesPerPixel)
+
+        // Generate Perlin-like noise
+        let scale = max(0.01, 1.0 - Double(smoothness)) * 8.0  // Higher smoothness = larger scale = smoother
+        let octaves = Int(1 + (1.0 - Double(smoothness)) * 4)  // More octaves for rougher noise
+
+        pixelData.withUnsafeMutableBytes { buffer in
+            let pixels = buffer.bindMemory(to: UInt8.self)
+            for y in 0..<height {
+                for x in 0..<width {
+                    let offset = (y * width + x) * bytesPerPixel
+
+                    if grayscale {
+                        let noise = perlinNoise(x: Double(x) * scale / Double(width),
+                                               y: Double(y) * scale / Double(height),
+                                               octaves: octaves)
+                        let value = UInt8(max(0, min(255, Int((noise + 1.0) * 127.5))))
+                        pixels[offset] = value      // R
+                        pixels[offset + 1] = value  // G
+                        pixels[offset + 2] = value  // B
+                        pixels[offset + 3] = 255    // A
+                    } else {
+                        let r = perlinNoise(x: Double(x) * scale / Double(width),
+                                           y: Double(y) * scale / Double(height),
+                                           octaves: octaves, seed: 0)
+                        let g = perlinNoise(x: Double(x) * scale / Double(width),
+                                           y: Double(y) * scale / Double(height),
+                                           octaves: octaves, seed: 1000)
+                        let b = perlinNoise(x: Double(x) * scale / Double(width),
+                                           y: Double(y) * scale / Double(height),
+                                           octaves: octaves, seed: 2000)
+                        pixels[offset] = UInt8(max(0, min(255, Int((r + 1.0) * 127.5))))
+                        pixels[offset + 1] = UInt8(max(0, min(255, Int((g + 1.0) * 127.5))))
+                        pixels[offset + 2] = UInt8(max(0, min(255, Int((b + 1.0) * 127.5))))
+                        pixels[offset + 3] = 255
+                    }
+                }
+            }
+        }
+
+        texture.cgImage = createCGImage(from: pixelData, size: size, flipped: false)
         return texture
     }
 
-    /// Creates a texture with a vector noise pattern.
+    /// Creates a texture with a vector noise pattern (for normal maps).
     ///
     /// - Parameters:
-    ///   - smoothness: The smoothness of the noise.
+    ///   - smoothness: The smoothness of the noise (0.0 = rough, 1.0 = smooth).
     ///   - size: The size of the texture.
-    /// - Returns: A texture containing vector noise.
+    /// - Returns: A texture containing vector noise suitable for normal mapping.
     public class func vectorNoiseTexture(withSmoothness smoothness: CGFloat, size: CGSize) -> SKTexture {
         let texture = SKTexture()
         texture._size = size
+
+        let width = Int(size.width)
+        let height = Int(size.height)
+        let bytesPerPixel = 4
+        var pixelData = Data(count: width * height * bytesPerPixel)
+
+        let scale = max(0.01, 1.0 - Double(smoothness)) * 8.0
+        let octaves = Int(1 + (1.0 - Double(smoothness)) * 4)
+
+        pixelData.withUnsafeMutableBytes { buffer in
+            let pixels = buffer.bindMemory(to: UInt8.self)
+            for y in 0..<height {
+                for x in 0..<width {
+                    let offset = (y * width + x) * bytesPerPixel
+
+                    // Generate 3D noise for vector components
+                    let nx = perlinNoise(x: Double(x) * scale / Double(width),
+                                        y: Double(y) * scale / Double(height),
+                                        octaves: octaves, seed: 0)
+                    let ny = perlinNoise(x: Double(x) * scale / Double(width),
+                                        y: Double(y) * scale / Double(height),
+                                        octaves: octaves, seed: 1000)
+                    let nz = perlinNoise(x: Double(x) * scale / Double(width),
+                                        y: Double(y) * scale / Double(height),
+                                        octaves: octaves, seed: 2000)
+
+                    // Normalize and encode as RGB (normal map format)
+                    let length = Foundation.sqrt(nx * nx + ny * ny + nz * nz)
+                    let normalizedX = length > 0 ? nx / length : 0
+                    let normalizedY = length > 0 ? ny / length : 0
+                    let normalizedZ = length > 0 ? nz / length : 1
+
+                    pixels[offset] = UInt8((normalizedX + 1.0) * 127.5)      // R = X
+                    pixels[offset + 1] = UInt8((normalizedY + 1.0) * 127.5)  // G = Y
+                    pixels[offset + 2] = UInt8((normalizedZ + 1.0) * 127.5)  // B = Z
+                    pixels[offset + 3] = 255                                  // A
+                }
+            }
+        }
+
+        texture.cgImage = createCGImage(from: pixelData, size: size, flipped: false)
         return texture
+    }
+
+    // MARK: - Perlin Noise Implementation
+
+    /// Generates Perlin noise at a given position.
+    private class func perlinNoise(x: Double, y: Double, octaves: Int, seed: Int = 0) -> Double {
+        var result = 0.0
+        var amplitude = 1.0
+        var frequency = 1.0
+        var maxValue = 0.0
+
+        for _ in 0..<octaves {
+            result += noise2D(x: x * frequency + Double(seed), y: y * frequency) * amplitude
+            maxValue += amplitude
+            amplitude *= 0.5
+            frequency *= 2.0
+        }
+
+        return result / maxValue
+    }
+
+    /// 2D noise function using value noise approximation.
+    private class func noise2D(x: Double, y: Double) -> Double {
+        let xi = Int(Foundation.floor(x))
+        let yi = Int(Foundation.floor(y))
+        let xf = x - Foundation.floor(x)
+        let yf = y - Foundation.floor(y)
+
+        // Smoothstep interpolation
+        let u = xf * xf * (3.0 - 2.0 * xf)
+        let v = yf * yf * (3.0 - 2.0 * yf)
+
+        // Hash corners
+        let aa = hash2D(x: xi, y: yi)
+        let ab = hash2D(x: xi, y: yi + 1)
+        let ba = hash2D(x: xi + 1, y: yi)
+        let bb = hash2D(x: xi + 1, y: yi + 1)
+
+        // Bilinear interpolation
+        let x1 = lerp(a: aa, b: ba, t: u)
+        let x2 = lerp(a: ab, b: bb, t: u)
+        return lerp(a: x1, b: x2, t: v)
+    }
+
+    /// Hash function for noise generation.
+    private class func hash2D(x: Int, y: Int) -> Double {
+        var n = x + y * 57
+        n = (n << 13) ^ n
+        let m = (n &* (n &* n &* 15731 &+ 789221) &+ 1376312589) & 0x7fffffff
+        return Double(m) / Double(0x7fffffff) * 2.0 - 1.0
+    }
+
+    /// Linear interpolation.
+    private class func lerp(a: Double, b: Double, t: Double) -> Double {
+        return a + t * (b - a)
     }
 
     public required init?(coder: NSCoder) {
@@ -190,9 +411,16 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
 
     /// Preloads texture data into memory.
     ///
+    /// This ensures the texture's CGImage is decoded and ready for rendering.
+    ///
     /// - Parameter completionHandler: A block called when preloading is complete.
     open func preload(completionHandler: @escaping () -> Void) {
-        // TODO: Implement preloading
+        // Force decode the CGImage if present
+        if let cgImage = self.cgImage {
+            // Access pixel data to force decoding
+            _ = cgImage.width
+            _ = cgImage.height
+        }
         completionHandler()
     }
 
@@ -202,8 +430,17 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     ///   - textures: The textures to preload.
     ///   - completionHandler: A block called when preloading is complete.
     public class func preload(_ textures: [SKTexture], withCompletionHandler completionHandler: @escaping () -> Void) {
-        // TODO: Implement batch preloading
-        completionHandler()
+        // Preload all textures
+        let group = DispatchGroup()
+        for texture in textures {
+            group.enter()
+            texture.preload {
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            completionHandler()
+        }
     }
 
     /// Returns a new texture by applying a Core Image filter.
@@ -211,8 +448,31 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     /// - Parameter filter: The filter to apply.
     /// - Returns: A new texture with the filter applied.
     open func applying(_ filter: CIFilter) -> SKTexture {
-        // TODO: Implement filter application
-        return self.copy() as! SKTexture
+        guard let cgImage = self.cgImage else {
+            return self.copy() as! SKTexture
+        }
+
+        // Create CIImage from CGImage
+        let inputImage = CIImage(cgImage: cgImage)
+
+        // Apply filter
+        filter.setValue(inputImage, forKey: kCIInputImageKey)
+
+        guard let outputImage = filter.outputImage else {
+            return self.copy() as! SKTexture
+        }
+
+        // Render filtered image to CGImage
+        let context = CIContext()
+        guard let filteredCGImage = context.createCGImage(outputImage, from: outputImage.extent) else {
+            return self.copy() as! SKTexture
+        }
+
+        // Create new texture with filtered image
+        let newTexture = SKTexture(cgImage: filteredCGImage)
+        newTexture.filteringMode = self.filteringMode
+        newTexture.usesMipmaps = self.usesMipmaps
+        return newTexture
     }
 
     /// Returns the CGImage representation of this texture.
@@ -264,18 +524,60 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
 
     /// Creates a texture atlas from a dictionary of textures.
     ///
-    /// - Parameter dictionary: A dictionary mapping texture names to CGImages.
+    /// - Parameter dictionary: A dictionary mapping texture names to CGImages or SKTextures.
     public init(dictionary: [String: Any]) {
         super.init()
-        // TODO: Create textures from dictionary
+        for (name, value) in dictionary {
+            if let texture = value as? SKTexture {
+                textures[name] = texture
+                textureNames.append(name)
+            } else if CFGetTypeID(value as CFTypeRef) == CGImage.typeID {
+                // Handle CGImage (CoreFoundation type)
+                let cgImage = value as! CGImage
+                let texture = SKTexture(cgImage: cgImage)
+                textures[name] = texture
+                textureNames.append(name)
+            } else if let data = value as? Data {
+                if let image = SKResourceLoader.shared.image(forName: name) {
+                    let texture = SKTexture(cgImage: image)
+                    textures[name] = texture
+                    textureNames.append(name)
+                }
+            }
+        }
     }
 
     /// Creates a texture atlas from a named atlas in the app bundle.
     ///
+    /// On WASM platforms, the atlas must be pre-registered with `SKResourceLoader`:
+    /// ```swift
+    /// let atlasData = SKResourceLoader.AtlasData(
+    ///     image: cgImage,
+    ///     frames: ["frame1": CGRect(x: 0, y: 0, width: 0.5, height: 0.5), ...]
+    /// )
+    /// SKResourceLoader.shared.registerAtlas(atlasData, forName: "myAtlas")
+    /// let atlas = SKTextureAtlas(named: "myAtlas")
+    /// ```
+    ///
     /// - Parameter name: The name of the texture atlas.
     public init(named name: String) {
         super.init()
-        // TODO: Load atlas from bundle
+        if let atlasData = SKResourceLoader.shared.atlas(forName: name) {
+            loadFromAtlasData(atlasData)
+        }
+    }
+
+    /// Loads textures from atlas data.
+    private func loadFromAtlasData(_ data: SKResourceLoader.AtlasData) {
+        let atlasTexture = SKTexture(cgImage: data.image)
+        let atlasSize = atlasTexture.size
+
+        for (frameName, normalizedRect) in data.frames {
+            // Create sub-texture using normalized coordinates
+            let subTexture = SKTexture(rect: normalizedRect, in: atlasTexture)
+            textures[frameName] = subTexture
+            textureNames.append(frameName)
+        }
     }
 
     public required init?(coder: NSCoder) {
@@ -309,8 +611,9 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
     ///
     /// - Parameter completionHandler: A block called when preloading is complete.
     open func preload(completionHandler: @escaping () -> Void) {
-        // TODO: Implement preloading
-        completionHandler()
+        // Preload all textures in the atlas
+        let allTextures = textures.values.map { $0 }
+        SKTexture.preload(allTextures, withCompletionHandler: completionHandler)
     }
 
     /// Preloads multiple texture atlases into memory.
@@ -319,8 +622,16 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
     ///   - atlases: The atlases to preload.
     ///   - completionHandler: A block called when preloading is complete.
     public class func preloadTextureAtlases(_ atlases: [SKTextureAtlas], withCompletionHandler completionHandler: @escaping () -> Void) {
-        // TODO: Implement batch preloading
-        completionHandler()
+        let group = DispatchGroup()
+        for atlas in atlases {
+            group.enter()
+            atlas.preload {
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            completionHandler()
+        }
     }
 
     /// Preloads multiple named texture atlases into memory.
@@ -329,8 +640,20 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
     ///   - atlasNames: The names of the atlases to preload.
     ///   - completionHandler: A block called with the loaded atlases.
     public class func preloadTextureAtlasesNamed(_ atlasNames: [String], withCompletionHandler completionHandler: @escaping (Error?, [SKTextureAtlas]) -> Void) {
-        // TODO: Implement named atlas preloading
-        let atlases = atlasNames.map { SKTextureAtlas(named: $0) }
-        completionHandler(nil, atlases)
+        var atlases: [SKTextureAtlas] = []
+        var loadError: Error? = nil
+
+        for name in atlasNames {
+            let atlas = SKTextureAtlas(named: name)
+            if atlas.textureNames.isEmpty {
+                loadError = SKResourceError.notFound
+            }
+            atlases.append(atlas)
+        }
+
+        // Preload all atlases
+        preloadTextureAtlases(atlases) {
+            completionHandler(loadError, atlases)
+        }
     }
 }

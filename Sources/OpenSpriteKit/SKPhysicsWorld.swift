@@ -430,14 +430,220 @@ open class SKPhysicsWorld: NSObject, NSSecureCoding {
     /// - Parameter position: The position at which to sample the fields.
     /// - Returns: The total force vector at that position.
     open func sampleFields(at position: vector_float3) -> vector_float3 {
-        // TODO: Implement field sampling
-        return .zero
+        guard let scene = scene else { return .zero }
+
+        var totalForce = vector_float3.zero
+        var hasExclusiveField = false
+        var exclusiveForce = vector_float3.zero
+
+        // Collect all field nodes in the scene
+        var fieldNodes: [SKFieldNode] = []
+        collectFieldNodes(from: scene, into: &fieldNodes)
+
+        let positionPoint = CGPoint(x: CGFloat(position.x), y: CGFloat(position.y))
+
+        for field in fieldNodes {
+            guard field.isEnabled else { continue }
+
+            // Check if position is within the field's region
+            if let region = field.region {
+                // Convert position to field's local coordinate space
+                let localPoint = field.convert(positionPoint, from: scene)
+                guard region.contains(localPoint) else { continue }
+            }
+
+            // Calculate field position in scene coordinates
+            let fieldPos = scene.convert(.zero, from: field)
+            let fieldPosition = vector_float3(Float(fieldPos.x), Float(fieldPos.y), 0)
+
+            // Calculate force from this field
+            let force = calculateFieldForce(
+                field: field,
+                fieldPosition: fieldPosition,
+                samplePosition: position
+            )
+
+            if field.isExclusive {
+                // Exclusive fields override all others
+                if !hasExclusiveField {
+                    hasExclusiveField = true
+                    exclusiveForce = force
+                } else {
+                    // Multiple exclusive fields - add them together
+                    exclusiveForce += force
+                }
+            } else {
+                totalForce += force
+            }
+        }
+
+        return hasExclusiveField ? exclusiveForce : totalForce
+    }
+
+    /// Recursively collects all SKFieldNode instances in a node tree.
+    private func collectFieldNodes(from node: SKNode, into fieldNodes: inout [SKFieldNode]) {
+        if let field = node as? SKFieldNode {
+            fieldNodes.append(field)
+        }
+        for child in node.children {
+            collectFieldNodes(from: child, into: &fieldNodes)
+        }
+    }
+
+    /// Calculates the force applied by a field at a given position.
+    private func calculateFieldForce(field: SKFieldNode, fieldPosition: vector_float3, samplePosition: vector_float3) -> vector_float3 {
+        // Calculate displacement from field to sample position
+        let displacement = samplePosition - fieldPosition
+        var distance = simd_length(displacement)
+
+        // Apply minimum radius
+        distance = max(distance, field.minimumRadius)
+
+        // Calculate falloff factor
+        let falloffFactor: Float
+        if field.falloff == 0 || distance <= field.minimumRadius {
+            falloffFactor = 1.0
+        } else {
+            falloffFactor = pow(field.minimumRadius / distance, field.falloff)
+        }
+
+        let strength = field.strength * falloffFactor
+
+        // Calculate force based on field type
+        switch field.fieldType {
+        case .radialGravity:
+            // Attracts toward the field node
+            if distance > 0.0001 {
+                let direction = -simd_normalize(displacement)
+                return direction * strength
+            }
+            return .zero
+
+        case .linearGravity(let direction):
+            // Applies force in a constant direction
+            return simd_normalize(direction) * strength
+
+        case .drag:
+            // Drag depends on velocity, but for sampling we return zero
+            // since we don't have velocity information
+            return .zero
+
+        case .vortex:
+            // Perpendicular force (tangent to circle around field)
+            if distance > 0.0001 {
+                // 2D: rotate displacement 90 degrees
+                let perpendicular = vector_float3(-displacement.y, displacement.x, 0)
+                return simd_normalize(perpendicular) * strength
+            }
+            return .zero
+
+        case .electric:
+            // Electric field: force proportional to charge
+            // For sampling, we assume charge = 1.0
+            if distance > 0.0001 {
+                let direction = simd_normalize(displacement)
+                return direction * strength
+            }
+            return .zero
+
+        case .magnetic:
+            // Magnetic field depends on velocity (Lorentz force)
+            // For sampling without velocity, we return zero
+            return .zero
+
+        case .spring:
+            // Spring force toward the field node (F = -kx)
+            return -displacement * strength
+
+        case .velocityWithVector(let direction):
+            // Sets velocity, not force - return the direction scaled by strength
+            return simd_normalize(direction) * strength
+
+        case .velocityWithTexture:
+            // Texture-based velocity field would require texture sampling
+            // Return zero for now as it needs texture coordinate lookup
+            return .zero
+
+        case .noise(let smoothness, let animationSpeed):
+            // Simple noise-based force
+            // Use position as seed for deterministic noise
+            let noiseX = simplexNoise(x: samplePosition.x * Float(1.0 / (smoothness + 0.1)),
+                                       y: samplePosition.y * Float(1.0 / (smoothness + 0.1)),
+                                       z: Float(animationSpeed))
+            let noiseY = simplexNoise(x: samplePosition.y * Float(1.0 / (smoothness + 0.1)),
+                                       y: samplePosition.x * Float(1.0 / (smoothness + 0.1)),
+                                       z: Float(animationSpeed) + 1000)
+            return vector_float3(noiseX, noiseY, 0) * strength
+
+        case .turbulence(let smoothness, let animationSpeed):
+            // Turbulence is similar to noise but potentially more chaotic
+            let noiseX = simplexNoise(x: samplePosition.x * Float(1.0 / (smoothness + 0.1)) * 2,
+                                       y: samplePosition.y * Float(1.0 / (smoothness + 0.1)) * 2,
+                                       z: Float(animationSpeed))
+            let noiseY = simplexNoise(x: samplePosition.y * Float(1.0 / (smoothness + 0.1)) * 2,
+                                       y: samplePosition.x * Float(1.0 / (smoothness + 0.1)) * 2,
+                                       z: Float(animationSpeed) + 1000)
+            return vector_float3(noiseX, noiseY, 0) * strength
+
+        case .custom(let evaluator):
+            // Custom evaluator - pass default values since we don't have body info
+            return evaluator(samplePosition, .zero, 1.0, 1.0, 0)
+        }
+    }
+
+    /// Simple noise function for field sampling.
+    /// This is a simplified Perlin-like noise for basic randomization.
+    private func simplexNoise(x: Float, y: Float, z: Float) -> Float {
+        // Simple hash-based noise approximation
+        let ix = Int(floor(x)) & 255
+        let iy = Int(floor(y)) & 255
+        let iz = Int(floor(z)) & 255
+
+        let fx = x - floor(x)
+        let fy = y - floor(y)
+        let fz = z - floor(z)
+
+        // Smooth interpolation
+        let u = fx * fx * (3 - 2 * fx)
+        let v = fy * fy * (3 - 2 * fy)
+        let w = fz * fz * (3 - 2 * fz)
+
+        // Hash function
+        func hash(_ n: Int) -> Float {
+            var x = n
+            x = ((x >> 16) ^ x) &* 0x45d9f3b
+            x = ((x >> 16) ^ x) &* 0x45d9f3b
+            x = (x >> 16) ^ x
+            return Float(x & 0xFFFF) / 32768.0 - 1.0
+        }
+
+        // Trilinear interpolation
+        let n000 = hash(ix + iy * 57 + iz * 113)
+        let n100 = hash(ix + 1 + iy * 57 + iz * 113)
+        let n010 = hash(ix + (iy + 1) * 57 + iz * 113)
+        let n110 = hash(ix + 1 + (iy + 1) * 57 + iz * 113)
+        let n001 = hash(ix + iy * 57 + (iz + 1) * 113)
+        let n101 = hash(ix + 1 + iy * 57 + (iz + 1) * 113)
+        let n011 = hash(ix + (iy + 1) * 57 + (iz + 1) * 113)
+        let n111 = hash(ix + 1 + (iy + 1) * 57 + (iz + 1) * 113)
+
+        let nx00 = n000 + u * (n100 - n000)
+        let nx10 = n010 + u * (n110 - n010)
+        let nx01 = n001 + u * (n101 - n001)
+        let nx11 = n011 + u * (n111 - n011)
+
+        let nxy0 = nx00 + v * (nx10 - nx00)
+        let nxy1 = nx01 + v * (nx11 - nx01)
+
+        return nxy0 + w * (nxy1 - nxy0)
     }
 }
 
-// MARK: - NSCoder Extensions for CGVector
+// MARK: - NSCoder Extensions for CG Types
 
 extension NSCoder {
+    // MARK: CGVector
+
     func decodeCGVector(forKey key: String) -> CGVector {
         let dx = decodeDouble(forKey: "\(key).dx")
         let dy = decodeDouble(forKey: "\(key).dy")
@@ -447,5 +653,31 @@ extension NSCoder {
     func encode(_ vector: CGVector, forKey key: String) {
         encode(Double(vector.dx), forKey: "\(key).dx")
         encode(Double(vector.dy), forKey: "\(key).dy")
+    }
+
+    // MARK: CGPoint
+
+    func decodeCGPoint(forKey key: String) -> CGPoint {
+        let x = decodeDouble(forKey: "\(key).x")
+        let y = decodeDouble(forKey: "\(key).y")
+        return CGPoint(x: x, y: y)
+    }
+
+    func encode(_ point: CGPoint, forKey key: String) {
+        encode(Double(point.x), forKey: "\(key).x")
+        encode(Double(point.y), forKey: "\(key).y")
+    }
+
+    // MARK: CGSize
+
+    func decodeCGSize(forKey key: String) -> CGSize {
+        let width = decodeDouble(forKey: "\(key).width")
+        let height = decodeDouble(forKey: "\(key).height")
+        return CGSize(width: width, height: height)
+    }
+
+    func encode(_ size: CGSize, forKey key: String) {
+        encode(Double(size.width), forKey: "\(key).width")
+        encode(Double(size.height), forKey: "\(key).height")
     }
 }

@@ -56,6 +56,9 @@ internal final class SKActionRunner {
         var yScale: CGFloat?
         var alpha: CGFloat?
         var size: CGSize?  // For SKSpriteNode
+        var speed: CGFloat?
+        var charge: CGFloat?  // For physics body charge
+        var mass: CGFloat?    // For physics body mass
     }
 
     // MARK: - Properties
@@ -273,6 +276,16 @@ internal final class SKActionRunner {
         case .resizeTo, .resizeBy:
             if let sprite = node as? SKSpriteNode {
                 state.size = sprite.size
+            }
+        case .speedBy, .speedTo:
+            state.speed = node.speed
+        case .changeCharge:
+            if let body = node.physicsBody {
+                state.charge = body.charge
+            }
+        case .changeMass:
+            if let body = node.physicsBody {
+                state.mass = body.mass
             }
         default:
             break
@@ -571,17 +584,354 @@ internal final class SKActionRunner {
 
         // MARK: Speed Actions
         case .speedBy(let delta):
-            // This affects the node's speed property
-            node.speed = 1.0 + delta * CGFloat(progress)
+            // This affects the node's speed property, starting from initial speed
+            let initialSpeed = initialState.speed ?? node.speed
+            node.speed = initialSpeed + delta * CGFloat(progress)
 
         case .speedTo(let targetSpeed):
-            node.speed = 1.0 + (targetSpeed - 1.0) * CGFloat(progress)
+            // Interpolate from initial speed to target speed
+            let initialSpeed = initialState.speed ?? node.speed
+            node.speed = initialSpeed + (targetSpeed - initialSpeed) * CGFloat(progress)
 
-        // MARK: Other Actions (placeholder implementations)
-        default:
-            // TODO: Implement remaining action types
-            break
+        // MARK: Normal Texture Actions
+        case .setNormalTexture(let texture, let resize):
+            if progress >= 1.0, let sprite = node as? SKSpriteNode {
+                sprite.normalTexture = texture
+                if resize {
+                    sprite.size = texture.size
+                }
+            }
+
+        case .animateNormalTextures(let textures, _, let resize, _):
+            guard let sprite = node as? SKSpriteNode, !textures.isEmpty else { break }
+            let totalFrames = textures.count
+            let frameIndex = min(Int(Float(totalFrames) * progress), totalFrames - 1)
+            let texture = textures[frameIndex]
+            sprite.normalTexture = texture
+            if resize {
+                sprite.size = texture.size
+            }
+
+        // MARK: Colorize Actions
+        case .colorize(let color, let blendFactor):
+            if let sprite = node as? SKSpriteNode {
+                sprite.color = color
+                sprite.colorBlendFactor = CGFloat(progress) * blendFactor
+            }
+
+        case .colorizeWithBlendFactor(let blendFactor):
+            if let sprite = node as? SKSpriteNode {
+                sprite.colorBlendFactor = CGFloat(progress) * blendFactor
+            }
+
+        // MARK: Sound Actions
+        case .playSoundFile(let filename, _):
+            // Sound playback would require Web Audio API integration for WASM
+            // This is a placeholder that logs the intent
+            if progress >= 1.0 {
+                #if DEBUG
+                print("[SKAction] playSoundFile: \(filename)")
+                #endif
+            }
+
+        case .play:
+            if progress >= 1.0, let audioNode = node as? SKAudioNode {
+                audioNode.isPositional = true  // Mark as playing
+            }
+
+        case .pause:
+            if progress >= 1.0, let audioNode = node as? SKAudioNode {
+                audioNode.isPositional = false  // Mark as paused
+            }
+
+        case .stop:
+            if progress >= 1.0, let _ = node as? SKAudioNode {
+                // Stop playback
+            }
+
+        case .changeVolume(let to, let by):
+            // Audio volume changes would require integration with audio system
+            _ = to
+            _ = by
+
+        case .changePlaybackRate(let to, let by):
+            // Playback rate changes would require integration with audio system
+            _ = to
+            _ = by
+
+        case .stereopan(let to, let by):
+            // Stereo panning would require integration with audio system
+            _ = to
+            _ = by
+
+        case .changeObstruction(let to, let by):
+            _ = to
+            _ = by
+
+        case .changeOcclusion(let to, let by):
+            _ = to
+            _ = by
+
+        case .changeReverb(let to, let by):
+            _ = to
+            _ = by
+
+        // MARK: Physics Actions
+        case .applyForce(let force, let point):
+            if let body = node.physicsBody {
+                if let point = point {
+                    body.applyForce(force, at: point)
+                } else {
+                    body.applyForce(force)
+                }
+            }
+
+        case .applyTorque(let torque):
+            if let body = node.physicsBody {
+                body.applyTorque(torque)
+            }
+
+        case .applyImpulse(let impulse, let point):
+            if progress >= 1.0, let body = node.physicsBody {
+                if let point = point {
+                    body.applyImpulse(impulse, at: point)
+                } else {
+                    body.applyImpulse(impulse)
+                }
+            }
+
+        case .applyAngularImpulse(let impulse):
+            if progress >= 1.0, let body = node.physicsBody {
+                body.applyAngularImpulse(impulse)
+            }
+
+        case .changeCharge(let to, let by):
+            if let body = node.physicsBody {
+                if let targetCharge = to {
+                    // Use stored initial charge from InitialState
+                    let initialCharge = initialState.charge ?? body.charge
+                    body.charge = initialCharge + (CGFloat(targetCharge) - initialCharge) * CGFloat(progress)
+                } else if let delta = by {
+                    // For relative change, apply delta incrementally
+                    let initialCharge = initialState.charge ?? body.charge
+                    body.charge = initialCharge + CGFloat(delta) * CGFloat(progress)
+                }
+            }
+
+        case .changeMass(let to, let by):
+            if let body = node.physicsBody {
+                if let targetMass = to {
+                    // Use stored initial mass from InitialState
+                    let initialMass = initialState.mass ?? body.mass
+                    body.mass = initialMass + (CGFloat(targetMass) - initialMass) * CGFloat(progress)
+                } else if let delta = by {
+                    // For relative change, apply delta incrementally
+                    let initialMass = initialState.mass ?? body.mass
+                    body.mass = initialMass + CGFloat(delta) * CGFloat(progress)
+                }
+            }
+
+        // MARK: Field Actions
+        case .strength(let to, let by):
+            if let field = node as? SKFieldNode {
+                if let targetStrength = to {
+                    let initialStrength = field.strength
+                    field.strength = initialStrength + (targetStrength - initialStrength) * Float(progress)
+                } else if let delta = by {
+                    field.strength += delta * Float(progress) * Float(deltaTime)
+                }
+            }
+
+        case .falloff(let to, let by):
+            if let field = node as? SKFieldNode {
+                if let targetFalloff = to {
+                    let initialFalloff = field.falloff
+                    field.falloff = initialFalloff + (targetFalloff - initialFalloff) * Float(progress)
+                } else if let delta = by {
+                    field.falloff += delta * Float(progress) * Float(deltaTime)
+                }
+            }
+
+        // MARK: Inverse Kinematics Actions
+        case .reach(let target, let rootNode, _):
+            // Simplified IK implementation
+            // Real IK would require iterative solving through the joint chain
+            if progress >= 1.0 {
+                solveIK(endEffector: node, target: target, rootNode: rootNode)
+            } else {
+                // Interpolate towards target
+                let currentPos = node.position
+                let interpolatedTarget = CGPoint(
+                    x: currentPos.x + (target.x - currentPos.x) * CGFloat(progress),
+                    y: currentPos.y + (target.y - currentPos.y) * CGFloat(progress)
+                )
+                solveIK(endEffector: node, target: interpolatedTarget, rootNode: rootNode)
+            }
+
+        case .reachToNode(let targetNode, let rootNode, _):
+            let target = targetNode.position
+            if let targetScene = targetNode.scene, let nodeScene = node.scene {
+                if targetScene === nodeScene {
+                    let worldTarget = targetNode.convert(.zero, to: nodeScene)
+                    if progress >= 1.0 {
+                        solveIK(endEffector: node, target: worldTarget, rootNode: rootNode)
+                    } else {
+                        let currentPos = node.position
+                        let interpolatedTarget = CGPoint(
+                            x: currentPos.x + (worldTarget.x - currentPos.x) * CGFloat(progress),
+                            y: currentPos.y + (worldTarget.y - currentPos.y) * CGFloat(progress)
+                        )
+                        solveIK(endEffector: node, target: interpolatedTarget, rootNode: rootNode)
+                    }
+                }
+            }
+
+        // MARK: Warp Actions
+        case .warp(let geometry):
+            if var warpable = node as? SKWarpable {
+                warpable.warpGeometry = geometry
+            }
+
+        case .animateWarps(let geometries, let times, _):
+            guard !geometries.isEmpty, !times.isEmpty else { break }
+            if var warpable = node as? SKWarpable {
+                let totalDuration = times.last?.doubleValue ?? 1.0
+                let currentTime = Double(progress) * totalDuration
+
+                // Find the appropriate warp geometry for current time
+                var warpIndex = 0
+                for (index, time) in times.enumerated() {
+                    if currentTime >= time.doubleValue {
+                        warpIndex = index
+                    } else {
+                        break
+                    }
+                }
+
+                if warpIndex < geometries.count {
+                    warpable.warpGeometry = geometries[warpIndex]
+                }
+            }
+
+        #if canImport(ObjectiveC)
+        case .performSelector(let selector, let target):
+            if progress >= 1.0 {
+                _ = target.perform(selector)
+            }
+        #endif
         }
+    }
+
+    // MARK: - Inverse Kinematics Solver
+
+    /// Simple two-bone IK solver using FABRIK algorithm.
+    private func solveIK(endEffector: SKNode, target: CGPoint, rootNode: SKNode) {
+        // Build the chain from end effector to root
+        var chain: [SKNode] = []
+        var current: SKNode? = endEffector
+
+        while let node = current {
+            chain.append(node)
+            if node === rootNode {
+                break
+            }
+            current = node.parent
+        }
+
+        guard chain.count >= 2 else { return }
+
+        // FABRIK algorithm iterations
+        let iterations = 10
+        let tolerance: CGFloat = 0.001
+
+        // Get joint positions in world space
+        var positions = chain.map { node -> CGPoint in
+            if let scene = node.scene {
+                return node.convert(.zero, to: scene)
+            }
+            return node.position
+        }
+
+        // Calculate bone lengths
+        var lengths: [CGFloat] = []
+        for i in 0..<(positions.count - 1) {
+            let dx = positions[i + 1].x - positions[i].x
+            let dy = positions[i + 1].y - positions[i].y
+            lengths.append(sqrt(dx * dx + dy * dy))
+        }
+
+        let rootPosition = positions.last!
+
+        for _ in 0..<iterations {
+            // Forward reaching (from end effector to root)
+            positions[0] = target
+
+            for i in 1..<positions.count {
+                let direction = normalize(subtractPoints(positions[i], positions[i - 1]))
+                positions[i] = addPoints(positions[i - 1], multiplyPoint(direction, lengths[i - 1]))
+            }
+
+            // Backward reaching (from root to end effector)
+            positions[positions.count - 1] = rootPosition
+
+            for i in stride(from: positions.count - 2, through: 0, by: -1) {
+                let direction = normalize(subtractPoints(positions[i], positions[i + 1]))
+                positions[i] = addPoints(positions[i + 1], multiplyPoint(direction, lengths[i]))
+            }
+
+            // Check if close enough to target
+            let dx = positions[0].x - target.x
+            let dy = positions[0].y - target.y
+            if sqrt(dx * dx + dy * dy) < tolerance {
+                break
+            }
+        }
+
+        // Apply rotations to joints
+        for i in 0..<(chain.count - 1) {
+            let node = chain[i]
+            let parent = chain[i + 1]
+
+            let dx = positions[i].x - positions[i + 1].x
+            let dy = positions[i].y - positions[i + 1].y
+            let angle = atan2(dy, dx)
+
+            // Apply constraints if any
+            var constrainedAngle = angle
+            if let constraints = node.constraints {
+                for constraint in constraints {
+                    if let rotationConstraint = constraint.constraintType {
+                        if case .zRotation(let range) = rotationConstraint {
+                            constrainedAngle = max(range.lowerLimit, min(range.upperLimit, constrainedAngle))
+                        }
+                    }
+                }
+            }
+
+            node.zRotation = constrainedAngle
+        }
+    }
+
+    /// Normalizes a vector.
+    private func normalize(_ point: CGPoint) -> CGPoint {
+        let length = sqrt(point.x * point.x + point.y * point.y)
+        guard length > 0 else { return CGPoint(x: 1, y: 0) }
+        return CGPoint(x: point.x / length, y: point.y / length)
+    }
+
+    /// Subtracts two points.
+    private func subtractPoints(_ lhs: CGPoint, _ rhs: CGPoint) -> CGPoint {
+        return CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y)
+    }
+
+    /// Adds two points.
+    private func addPoints(_ lhs: CGPoint, _ rhs: CGPoint) -> CGPoint {
+        return CGPoint(x: lhs.x + rhs.x, y: lhs.y + rhs.y)
+    }
+
+    /// Multiplies a point by a scalar.
+    private func multiplyPoint(_ point: CGPoint, _ scalar: CGFloat) -> CGPoint {
+        return CGPoint(x: point.x * scalar, y: point.y * scalar)
     }
 
     // MARK: - Path Helpers

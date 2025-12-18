@@ -271,16 +271,67 @@ open class SKNode: NSObject, NSCopying, NSSecureCoding {
         var accumulated = frame
         for child in children {
             let childFrame = child.calculateAccumulatedFrame()
-            // Convert child frame to this node's coordinate system
-            let convertedFrame = CGRect(
-                x: childFrame.origin.x + child.position.x,
-                y: childFrame.origin.y + child.position.y,
-                width: childFrame.width,
-                height: childFrame.height
-            )
+            // Transform the child frame to this node's coordinate system
+            // accounting for the child's position, scale, and rotation
+            let convertedFrame = transformChildFrame(childFrame, child: child)
             accumulated = accumulated.union(convertedFrame)
         }
         return accumulated
+    }
+
+    /// Transforms a child's frame to this node's coordinate system,
+    /// accounting for the child's position, scale, and rotation.
+    private func transformChildFrame(_ rect: CGRect, child: SKNode) -> CGRect {
+        // If no rotation, just apply position and scale
+        if child.zRotation == 0 {
+            let scaledWidth = rect.width * abs(child.xScale)
+            let scaledHeight = rect.height * abs(child.yScale)
+            let scaledX = rect.origin.x * child.xScale
+            let scaledY = rect.origin.y * child.yScale
+            return CGRect(
+                x: scaledX + child.position.x,
+                y: scaledY + child.position.y,
+                width: scaledWidth,
+                height: scaledHeight
+            )
+        }
+
+        // With rotation, we need to transform all four corners and compute AABB
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY)
+        ]
+
+        let cosAngle = cos(child.zRotation)
+        let sinAngle = sin(child.zRotation)
+
+        var minX = CGFloat.greatestFiniteMagnitude
+        var minY = CGFloat.greatestFiniteMagnitude
+        var maxX = -CGFloat.greatestFiniteMagnitude
+        var maxY = -CGFloat.greatestFiniteMagnitude
+
+        for corner in corners {
+            // Apply scale
+            let scaledX = corner.x * child.xScale
+            let scaledY = corner.y * child.yScale
+
+            // Apply rotation
+            let rotatedX = scaledX * cosAngle - scaledY * sinAngle
+            let rotatedY = scaledX * sinAngle + scaledY * cosAngle
+
+            // Apply position
+            let finalX = rotatedX + child.position.x
+            let finalY = rotatedY + child.position.y
+
+            minX = min(minX, finalX)
+            minY = min(minY, finalY)
+            maxX = max(maxX, finalX)
+            maxY = max(maxY, finalY)
+        }
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     // MARK: - Node Tree Modification
@@ -813,23 +864,10 @@ open class SKNode: NSObject, NSCopying, NSSecureCoding {
         }
 
         // Convert point from source node to scene coordinates
-        var scenePoint = point
-        var current: SKNode? = node
-        while let n = current, !(n is SKScene) {
-            scenePoint.x += n.position.x
-            scenePoint.y += n.position.y
-            current = n.parent
-        }
+        let scenePoint = node.convertToScene(point)
 
-        // Convert from scene coordinates to this node (no array allocation)
-        current = self
-        while let n = current, !(n is SKScene) {
-            scenePoint.x -= n.position.x
-            scenePoint.y -= n.position.y
-            current = n.parent
-        }
-
-        return scenePoint
+        // Convert from scene coordinates to this node's coordinate system
+        return convertFromScene(scenePoint)
     }
 
     /// Converts a point in this node's coordinate system to the coordinate system
@@ -846,29 +884,82 @@ open class SKNode: NSObject, NSCopying, NSSecureCoding {
         }
 
         // Convert point from this node to scene coordinates
-        var scenePoint = point
-        var current: SKNode? = self
-        while let n = current, !(n is SKScene) {
-            scenePoint.x += n.position.x
-            scenePoint.y += n.position.y
-            current = n.parent
-        }
+        let scenePoint = convertToScene(point)
 
         // Convert from scene coordinates to target node
-        // We need to collect the path to subtract in reverse order
-        var targetPath: [SKNode] = []
-        current = node
+        return node.convertFromScene(scenePoint)
+    }
+
+    // MARK: - Internal Coordinate Conversion Helpers
+
+    /// Converts a point from this node's local coordinate system to scene coordinates.
+    /// Applies scale, rotation, and position transforms up the hierarchy.
+    private func convertToScene(_ point: CGPoint) -> CGPoint {
+        var result = point
+        var current: SKNode? = self
+
         while let n = current, !(n is SKScene) {
-            targetPath.append(n)
+            // Apply scale
+            result.x *= n.xScale
+            result.y *= n.yScale
+
+            // Apply rotation
+            if n.zRotation != 0 {
+                let cosAngle = cos(n.zRotation)
+                let sinAngle = sin(n.zRotation)
+                let rotatedX = result.x * cosAngle - result.y * sinAngle
+                let rotatedY = result.x * sinAngle + result.y * cosAngle
+                result.x = rotatedX
+                result.y = rotatedY
+            }
+
+            // Apply position (translate to parent's coordinate system)
+            result.x += n.position.x
+            result.y += n.position.y
+
             current = n.parent
         }
 
-        // Subtract in reverse order (from scene down to target)
-        for n in targetPath.reversed() {
-            scenePoint.x -= n.position.x
-            scenePoint.y -= n.position.y
+        return result
+    }
+
+    /// Converts a point from scene coordinates to this node's local coordinate system.
+    /// Applies inverse transforms (position, rotation, scale) down the hierarchy.
+    private func convertFromScene(_ point: CGPoint) -> CGPoint {
+        // Build the path from scene to this node
+        var path: [SKNode] = []
+        var current: SKNode? = self
+        while let n = current, !(n is SKScene) {
+            path.append(n)
+            current = n.parent
         }
 
-        return scenePoint
+        // Apply inverse transforms from scene down to this node
+        var result = point
+        for n in path.reversed() {
+            // Inverse position (translate from parent's coordinate system)
+            result.x -= n.position.x
+            result.y -= n.position.y
+
+            // Inverse rotation
+            if n.zRotation != 0 {
+                let cosAngle = cos(-n.zRotation)
+                let sinAngle = sin(-n.zRotation)
+                let rotatedX = result.x * cosAngle - result.y * sinAngle
+                let rotatedY = result.x * sinAngle + result.y * cosAngle
+                result.x = rotatedX
+                result.y = rotatedY
+            }
+
+            // Inverse scale
+            if n.xScale != 0 {
+                result.x /= n.xScale
+            }
+            if n.yScale != 0 {
+                result.y /= n.yScale
+            }
+        }
+
+        return result
     }
 }

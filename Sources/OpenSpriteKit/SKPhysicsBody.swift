@@ -128,8 +128,34 @@ open class SKPhysicsBody: NSObject, NSCopying, NSSecureCoding {
     open var joints: [SKPhysicsJoint] = []
 
     /// All bodies that this body is in contact with.
+    ///
+    /// This property returns an array of all physics bodies currently in contact with this body.
+    /// The contacts are tracked by the physics engine during simulation.
     open var allContactedBodies: [SKPhysicsBody] {
-        return []
+        guard let node = node,
+              let scene = node.scene else {
+            return []
+        }
+
+        let world = scene.physicsWorld
+        var contactedBodies: [SKPhysicsBody] = []
+        let selfId = ObjectIdentifier(self)
+
+        for pair in world.activeContacts {
+            if pair.bodyA == selfId {
+                // Find the body for bodyB
+                if let contact = world.contactCache[pair] {
+                    contactedBodies.append(contact.bodyB)
+                }
+            } else if pair.bodyB == selfId {
+                // Find the body for bodyA
+                if let contact = world.contactCache[pair] {
+                    contactedBodies.append(contact.bodyA)
+                }
+            }
+        }
+
+        return contactedBodies
     }
 
     // MARK: - Initializers

@@ -24,6 +24,7 @@ internal typealias OCADisplayLink = OpenCoreAnimation.CADisplayLink
 /// - Run the SpriteKit frame cycle (update, actions, physics, etc.)
 /// - Coordinate with CADisplayLink for frame timing
 /// - Render the scene's layer tree via CAWebGPURenderer (on WASM)
+@MainActor
 internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
 
     // MARK: - Properties
@@ -42,7 +43,10 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     init() {}
 
     deinit {
-        stop()
+        // Directly clean up resources without calling MainActor-isolated methods
+        isRunning = false
+        displayLink?.invalidate()
+        displayLink = nil
     }
 
     // MARK: - Lifecycle
@@ -105,24 +109,57 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     // MARK: - CADisplayLinkDelegate
 
     /// Called by CADisplayLink on each frame.
-    public func displayLinkDidFire(_ displayLink: OCADisplayLink) {
-        guard isRunning else { return }
-        guard let view = view else { return }
+    nonisolated public func displayLinkDidFire(_ displayLink: OCADisplayLink) {
+        MainActor.assumeIsolated {
+            guard isRunning else { return }
+            guard let view = view else { return }
 
-        // Check pause state
-        if view.isPaused { return }
+            // Check pause state
+            if view.isPaused { return }
 
-        guard let scene = view.scene else { return }
+            let currentTime = displayLink.timestamp
+            let deltaTime = lastUpdateTime > 0 ? currentTime - lastUpdateTime : 0
+            lastUpdateTime = currentTime
 
-        let currentTime = displayLink.timestamp
-        let deltaTime = lastUpdateTime > 0 ? currentTime - lastUpdateTime : 0
-        lastUpdateTime = currentTime
+            // Update transition if one is in progress
+            let isTransitioning = SKTransitionManager.shared.update(currentTime: currentTime)
 
-        // Execute the frame cycle
-        executeFrameCycle(scene: scene, currentTime: currentTime, deltaTime: deltaTime)
+            guard let scene = view.scene else { return }
 
-        // Render the scene
-        renderScene(scene)
+            // Execute the frame cycle (scene may be different during transition)
+            executeFrameCycle(scene: scene, currentTime: currentTime, deltaTime: deltaTime)
+
+            // Render the scene (and transition if in progress)
+            if isTransitioning {
+                // During transition, render both scenes
+                renderTransition(currentTime: currentTime)
+            } else {
+                renderScene(scene)
+            }
+        }
+    }
+
+    /// Renders both scenes during a transition.
+    private func renderTransition(currentTime: TimeInterval) {
+        #if arch(wasm32)
+        // For WASM, the transition rendering needs to composite both scenes
+        // This is handled by the SKTransitionManager modifying scene alpha/position
+        // The actual rendering is done through the layer system
+        if let transitionFromScene = SKTransitionManager.shared.fromScene {
+            renderer?.render(layer: transitionFromScene.layer)
+        }
+        if let transitionToScene = SKTransitionManager.shared.toScene {
+            renderer?.render(layer: transitionToScene.layer)
+        }
+        #else
+        // On native platforms, CALayer handles compositing automatically
+        if let transitionFromScene = SKTransitionManager.shared.fromScene {
+            transitionFromScene.layer.setNeedsDisplay()
+        }
+        if let transitionToScene = SKTransitionManager.shared.toScene {
+            transitionToScene.layer.setNeedsDisplay()
+        }
+        #endif
     }
 
     // MARK: - Frame Cycle
@@ -135,32 +172,36 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     /// 3. `didEvaluateActions()` - Post-action callback
     /// 4. Physics simulation - Run physics
     /// 5. `didSimulatePhysics()` - Post-physics callback
-    /// 6. Constraint evaluation - Apply constraints
-    /// 7. `didApplyConstraints()` - Post-constraint callback
-    /// 8. `didFinishUpdate()` - Final frame callback
+    /// 6. Particle system update - Update emitter particles
+    /// 7. Constraint evaluation - Apply constraints
+    /// 8. `didApplyConstraints()` - Post-constraint callback
+    /// 9. `didFinishUpdate()` - Final frame callback
     private func executeFrameCycle(scene: SKScene, currentTime: TimeInterval, deltaTime: TimeInterval) {
         // 1. User update
         scene.update(currentTime)
 
-        // 2. Evaluate actions (Phase 2で実装)
+        // 2. Evaluate actions
         evaluateActions(for: scene, deltaTime: deltaTime)
 
         // 3. Post-actions callback
         scene.didEvaluateActions()
 
-        // 4. Physics simulation (Phase 4で実装)
+        // 4. Physics simulation
         simulatePhysics(for: scene, deltaTime: deltaTime)
 
         // 5. Post-physics callback
         scene.didSimulatePhysics()
 
-        // 6. Apply constraints (後で実装)
+        // 6. Update particle systems
+        updateParticleSystems(for: scene, deltaTime: deltaTime)
+
+        // 7. Apply constraints
         applyConstraints(for: scene)
 
-        // 7. Post-constraints callback
+        // 8. Post-constraints callback
         scene.didApplyConstraints()
 
-        // 8. Final callback
+        // 9. Final callback
         scene.didFinishUpdate()
     }
 
@@ -176,11 +217,25 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: deltaTime)
     }
 
+    // MARK: - Particle System Update
+
+    private func updateParticleSystems(for scene: SKScene, deltaTime: TimeInterval) {
+        updateEmittersRecursively(node: scene, deltaTime: deltaTime)
+    }
+
+    private func updateEmittersRecursively(node: SKNode, deltaTime: TimeInterval) {
+        if let emitter = node as? SKEmitterNode {
+            emitter.updateParticles(deltaTime: deltaTime)
+        }
+        for child in node.children {
+            updateEmittersRecursively(node: child, deltaTime: deltaTime)
+        }
+    }
+
     // MARK: - Constraint Application
 
     private func applyConstraints(for scene: SKScene) {
-        // TODO: 制約適用の実装
-        // applyConstraintsRecursively(node: scene)
+        SKConstraintSolver.shared.applyConstraints(for: scene)
     }
 
     // MARK: - Rendering

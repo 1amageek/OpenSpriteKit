@@ -17,7 +17,7 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
     // MARK: - Properties
 
     /// Returns a Core Graphics path that defines the region.
-    open private(set) var path: CGPath?
+    open internal(set) var path: CGPath?
 
     /// Whether this is an infinite region.
     private var isInfinite: Bool = false
@@ -104,10 +104,17 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
     ///
     /// - Parameter region: The region to subtract.
     /// - Returns: A new region containing all points in this region that are not in the other region.
+    ///
+    /// - Note: This implementation uses a composite region approach since CGPath doesn't
+    ///   have native boolean operations. The resulting region correctly tests containment
+    ///   but the path property may not represent the exact geometric difference.
     open func byDifference(from region: SKRegion) -> SKRegion {
-        // Difference = A AND (NOT B)
-        let newRegion = SKRegion()
-        // TODO: Implement proper path difference using CGPath operations
+        let newRegion = CompositeRegion(
+            type: .difference,
+            regionA: self,
+            regionB: region
+        )
+        // Keep the original path for rendering purposes
         newRegion.path = self.path
         return newRegion
     }
@@ -116,10 +123,30 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
     ///
     /// - Parameter region: The region to intersect with.
     /// - Returns: A new region containing only points that are in both regions.
+    ///
+    /// - Note: This implementation uses a composite region approach. The resulting region
+    ///   correctly tests containment but the path property may not represent the exact
+    ///   geometric intersection.
     open func byIntersection(with region: SKRegion) -> SKRegion {
-        let newRegion = SKRegion()
-        // TODO: Implement proper path intersection using CGPath operations
-        newRegion.path = self.path
+        let newRegion = CompositeRegion(
+            type: .intersection,
+            regionA: self,
+            regionB: region
+        )
+
+        // Approximate the intersection path by using the smaller bounding box
+        if let path1 = self.path, let path2 = region.path {
+            let bounds1 = path1.boundingBox
+            let bounds2 = path2.boundingBox
+            let intersection = bounds1.intersection(bounds2)
+
+            if !intersection.isEmpty {
+                let mutablePath = CGMutablePath()
+                mutablePath.addRect(intersection)
+                newRegion.path = mutablePath
+            }
+        }
+
         return newRegion
     }
 
@@ -128,8 +155,13 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
     /// - Parameter region: The region to combine with.
     /// - Returns: A new region containing all points that are in either region.
     open func byUnion(with region: SKRegion) -> SKRegion {
-        let newRegion = SKRegion()
-        // TODO: Implement proper path union using CGPath operations
+        let newRegion = CompositeRegion(
+            type: .union,
+            regionA: self,
+            regionB: region
+        )
+
+        // Combine paths for rendering
         if let path1 = self.path, let path2 = region.path {
             let mutablePath = CGMutablePath()
             mutablePath.addPath(path1)
@@ -138,6 +170,7 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
         } else {
             newRegion.path = self.path ?? region.path
         }
+
         return newRegion
     }
 
@@ -228,5 +261,85 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
             coder.encode(Double(size.width), forKey: "rectSize.width")
             coder.encode(Double(size.height), forKey: "rectSize.height")
         }
+    }
+}
+
+// MARK: - Composite Region (for CSG Operations)
+
+/// A region that represents the result of a boolean operation between two regions.
+///
+/// This class handles containment testing for union, intersection, and difference operations.
+internal final class CompositeRegion: SKRegion {
+
+    enum CompositeType {
+        case union
+        case intersection
+        case difference
+    }
+
+    private let type: CompositeType
+    private let regionA: SKRegion
+    private let regionB: SKRegion
+
+    init(type: CompositeType, regionA: SKRegion, regionB: SKRegion) {
+        self.type = type
+        self.regionA = regionA
+        self.regionB = regionB
+        super.init()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("CompositeRegion does not support NSCoding")
+    }
+
+    override func contains(_ point: CGPoint) -> Bool {
+        let inA = regionA.contains(point)
+        let inB = regionB.contains(point)
+
+        switch type {
+        case .union:
+            return inA || inB
+        case .intersection:
+            return inA && inB
+        case .difference:
+            return inA && !inB
+        }
+    }
+
+    override func inverse() -> SKRegion {
+        // De Morgan's laws for set operations:
+        // ¬(A ∪ B) = ¬A ∩ ¬B
+        // ¬(A ∩ B) = ¬A ∪ ¬B
+        // ¬(A - B) = ¬A ∪ B
+        switch type {
+        case .union:
+            return CompositeRegion(
+                type: .intersection,
+                regionA: regionA.inverse(),
+                regionB: regionB.inverse()
+            )
+        case .intersection:
+            return CompositeRegion(
+                type: .union,
+                regionA: regionA.inverse(),
+                regionB: regionB.inverse()
+            )
+        case .difference:
+            return CompositeRegion(
+                type: .union,
+                regionA: regionA.inverse(),
+                regionB: regionB
+            )
+        }
+    }
+
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let copy = CompositeRegion(
+            type: type,
+            regionA: regionA.copy() as! SKRegion,
+            regionB: regionB.copy() as! SKRegion
+        )
+        copy.path = self.path
+        return copy
     }
 }

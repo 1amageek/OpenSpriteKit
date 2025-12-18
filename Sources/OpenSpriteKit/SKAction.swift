@@ -270,11 +270,118 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
     /// Creates an action that moves the node at a specified speed along a path.
     public class func follow(_ path: CGPath, asOffset offset: Bool, orientToPath orient: Bool, speed: CGFloat) -> SKAction {
         // Calculate duration based on path length and speed
-        // For now, use a default duration
+        let pathLength = Self.calculatePathLength(path)
+        let duration = speed > 0 ? TimeInterval(pathLength / speed) : 0
+
         let action = SKAction()
-        action.duration = 1.0 // TODO: Calculate from path length
+        action.duration = duration
         action.actionType = .followPath(path: path, asOffset: offset, orientToPath: orient)
         return action
+    }
+
+    /// Calculates the total length of a CGPath.
+    ///
+    /// This method approximates the path length by iterating through path elements
+    /// and calculating distances. Bezier curves are approximated using subdivision.
+    ///
+    /// - Parameter path: The path to measure.
+    /// - Returns: The approximate total length of the path.
+    public class func calculatePathLength(_ path: CGPath) -> CGFloat {
+        var length: CGFloat = 0
+        var currentPoint: CGPoint = .zero
+        var startPoint: CGPoint = .zero
+
+        path.applyWithBlock { element in
+            let points = element.pointee.points
+
+            switch element.pointee.type {
+            case .moveToPoint:
+                currentPoint = points[0]
+                startPoint = currentPoint
+
+            case .addLineToPoint:
+                let endPoint = points[0]
+                length += distance(from: currentPoint, to: endPoint)
+                currentPoint = endPoint
+
+            case .addQuadCurveToPoint:
+                let controlPoint = points[0]
+                let endPoint = points[1]
+                length += quadraticBezierLength(from: currentPoint, control: controlPoint, to: endPoint)
+                currentPoint = endPoint
+
+            case .addCurveToPoint:
+                let control1 = points[0]
+                let control2 = points[1]
+                let endPoint = points[2]
+                length += cubicBezierLength(from: currentPoint, control1: control1, control2: control2, to: endPoint)
+                currentPoint = endPoint
+
+            case .closeSubpath:
+                length += distance(from: currentPoint, to: startPoint)
+                currentPoint = startPoint
+
+            @unknown default:
+                break
+            }
+        }
+
+        return length
+    }
+
+    // MARK: - Path Length Helpers
+
+    /// Calculates the distance between two points.
+    private class func distance(from: CGPoint, to: CGPoint) -> CGFloat {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    /// Approximates the length of a quadratic Bezier curve using subdivision.
+    private class func quadraticBezierLength(from p0: CGPoint, control p1: CGPoint, to p2: CGPoint, segments: Int = 10) -> CGFloat {
+        var length: CGFloat = 0
+        var previousPoint = p0
+
+        for i in 1...segments {
+            let t = CGFloat(i) / CGFloat(segments)
+            let oneMinusT = 1 - t
+
+            // Quadratic Bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+            let x = oneMinusT * oneMinusT * p0.x + 2 * oneMinusT * t * p1.x + t * t * p2.x
+            let y = oneMinusT * oneMinusT * p0.y + 2 * oneMinusT * t * p1.y + t * t * p2.y
+            let point = CGPoint(x: x, y: y)
+
+            length += distance(from: previousPoint, to: point)
+            previousPoint = point
+        }
+
+        return length
+    }
+
+    /// Approximates the length of a cubic Bezier curve using subdivision.
+    private class func cubicBezierLength(from p0: CGPoint, control1 p1: CGPoint, control2 p2: CGPoint, to p3: CGPoint, segments: Int = 10) -> CGFloat {
+        var length: CGFloat = 0
+        var previousPoint = p0
+
+        for i in 1...segments {
+            let t = CGFloat(i) / CGFloat(segments)
+            let oneMinusT = 1 - t
+            let oneMinusT2 = oneMinusT * oneMinusT
+            let oneMinusT3 = oneMinusT2 * oneMinusT
+            let t2 = t * t
+            let t3 = t2 * t
+
+            // Cubic Bezier: B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
+            let x = oneMinusT3 * p0.x + 3 * oneMinusT2 * t * p1.x + 3 * oneMinusT * t2 * p2.x + t3 * p3.x
+            let y = oneMinusT3 * p0.y + 3 * oneMinusT2 * t * p1.y + 3 * oneMinusT * t2 * p2.y + t3 * p3.y
+            let point = CGPoint(x: x, y: y)
+
+            length += distance(from: previousPoint, to: point)
+            previousPoint = point
+        }
+
+        return length
     }
 
     // MARK: - Rotation Actions

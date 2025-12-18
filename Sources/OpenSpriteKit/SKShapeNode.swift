@@ -103,9 +103,116 @@ open class SKShapeNode: SKNode {
     open var isAntialiased: Bool = true
 
     /// The length of the line defined by the shape node.
+    ///
+    /// This property calculates the total length of all line segments and curves in the path.
     open var lineLength: CGFloat {
-        // TODO: Calculate actual line length from path
-        return 0.0
+        guard let path = path else { return 0.0 }
+        return Self.calculatePathLength(path)
+    }
+
+    /// Calculates the total length of a CGPath.
+    private static func calculatePathLength(_ path: CGPath) -> CGFloat {
+        var totalLength: CGFloat = 0.0
+        var currentPoint: CGPoint = .zero
+        var subpathStart: CGPoint = .zero
+
+        path.applyWithBlock { element in
+            switch element.pointee.type {
+            case .moveToPoint:
+                currentPoint = element.pointee.points[0]
+                subpathStart = currentPoint
+
+            case .addLineToPoint:
+                let endPoint = element.pointee.points[0]
+                let dx = endPoint.x - currentPoint.x
+                let dy = endPoint.y - currentPoint.y
+                totalLength += sqrt(dx * dx + dy * dy)
+                currentPoint = endPoint
+
+            case .addQuadCurveToPoint:
+                let controlPoint = element.pointee.points[0]
+                let endPoint = element.pointee.points[1]
+                totalLength += quadraticBezierLength(
+                    start: currentPoint,
+                    control: controlPoint,
+                    end: endPoint
+                )
+                currentPoint = endPoint
+
+            case .addCurveToPoint:
+                let control1 = element.pointee.points[0]
+                let control2 = element.pointee.points[1]
+                let endPoint = element.pointee.points[2]
+                totalLength += cubicBezierLength(
+                    start: currentPoint,
+                    control1: control1,
+                    control2: control2,
+                    end: endPoint
+                )
+                currentPoint = endPoint
+
+            case .closeSubpath:
+                let dx = subpathStart.x - currentPoint.x
+                let dy = subpathStart.y - currentPoint.y
+                totalLength += sqrt(dx * dx + dy * dy)
+                currentPoint = subpathStart
+
+            @unknown default:
+                break
+            }
+        }
+
+        return totalLength
+    }
+
+    /// Calculates the approximate length of a quadratic Bezier curve.
+    private static func quadraticBezierLength(start: CGPoint, control: CGPoint, end: CGPoint) -> CGFloat {
+        // Use adaptive subdivision for accurate length
+        let segments = 20
+        var length: CGFloat = 0.0
+        var prevPoint = start
+
+        for i in 1...segments {
+            let t = CGFloat(i) / CGFloat(segments)
+            let invT = 1 - t
+
+            let point = CGPoint(
+                x: invT * invT * start.x + 2 * invT * t * control.x + t * t * end.x,
+                y: invT * invT * start.y + 2 * invT * t * control.y + t * t * end.y
+            )
+
+            let dx = point.x - prevPoint.x
+            let dy = point.y - prevPoint.y
+            length += sqrt(dx * dx + dy * dy)
+            prevPoint = point
+        }
+
+        return length
+    }
+
+    /// Calculates the approximate length of a cubic Bezier curve.
+    private static func cubicBezierLength(start: CGPoint, control1: CGPoint, control2: CGPoint, end: CGPoint) -> CGFloat {
+        // Use adaptive subdivision for accurate length
+        let segments = 20
+        var length: CGFloat = 0.0
+        var prevPoint = start
+
+        for i in 1...segments {
+            let t = CGFloat(i) / CGFloat(segments)
+            let invT = 1 - t
+
+            let point = CGPoint(
+                x: invT * invT * invT * start.x + 3 * invT * invT * t * control1.x + 3 * invT * t * t * control2.x + t * t * t * end.x,
+                y: invT * invT * invT * start.y + 3 * invT * invT * t * control1.y + 3 * invT * t * t * control2.y + t * t * t * end.y
+            )
+
+            let dx = point.x - prevPoint.x
+            let dy = point.y - prevPoint.y
+            length += sqrt(dx * dx + dy * dy)
+            prevPoint = point
+        }
+
+        return length
     }
 
     // MARK: - Blending Properties
@@ -204,8 +311,18 @@ open class SKShapeNode: SKNode {
     public convenience init(path: CGPath, centered: Bool) {
         self.init()
         if centered {
-            // TODO: Center the path
-            self.path = path
+            // Calculate the center of the path's bounding box
+            let bounds = path.boundingBox
+            let centerX = bounds.midX
+            let centerY = bounds.midY
+
+            // Create a transformed path that's centered at origin
+            var transform = CGAffineTransform(translationX: -centerX, y: -centerY)
+            if let centeredPath = path.copy(using: &transform) {
+                self.path = centeredPath
+            } else {
+                self.path = path
+            }
         } else {
             self.path = path
         }
@@ -325,7 +442,7 @@ open class SKShapeNode: SKNode {
         self.path = path
     }
 
-    /// Creates a shape node from a series of spline points.
+    /// Creates a shape node from a series of spline points using Catmull-Rom interpolation.
     ///
     /// - Parameters:
     ///   - splinePoints: A pointer to an array of points for the spline.
@@ -344,13 +461,118 @@ open class SKShapeNode: SKNode {
             }
             return
         }
-        // TODO: Implement spline interpolation
-        let path = CGMutablePath()
-        path.move(to: splinePoints[0])
-        for i in 1..<count {
-            path.addLine(to: splinePoints[i])
+
+        // Copy points to array
+        var points: [CGPoint] = []
+        for i in 0..<count {
+            points.append(splinePoints[i])
         }
-        self.path = path
+
+        // Generate Catmull-Rom spline path
+        self.path = Self.createCatmullRomPath(points: points)
+    }
+
+    /// Creates a Catmull-Rom spline path through the given points.
+    ///
+    /// Catmull-Rom splines pass through all control points and provide smooth curves.
+    private static func createCatmullRomPath(points: [CGPoint], alpha: CGFloat = 0.5, closed: Bool = false) -> CGPath {
+        let path = CGMutablePath()
+
+        guard points.count >= 2 else {
+            if let first = points.first {
+                path.move(to: first)
+            }
+            return path
+        }
+
+        // For a Catmull-Rom spline, we need 4 points to define each segment
+        // We'll extend the endpoints by mirroring
+        var extendedPoints = points
+
+        // Add virtual points at the ends for open curves
+        if !closed {
+            // Mirror first point
+            let first = points[0]
+            let second = points[1]
+            let p0 = CGPoint(
+                x: 2 * first.x - second.x,
+                y: 2 * first.y - second.y
+            )
+            extendedPoints.insert(p0, at: 0)
+
+            // Mirror last point
+            let last = points[points.count - 1]
+            let secondLast = points[points.count - 2]
+            let pn = CGPoint(
+                x: 2 * last.x - secondLast.x,
+                y: 2 * last.y - secondLast.y
+            )
+            extendedPoints.append(pn)
+        }
+
+        // Start the path
+        path.move(to: points[0])
+
+        // Generate curve segments
+        let segments = 20  // Segments per curve for smoothness
+
+        for i in 1..<extendedPoints.count - 2 {
+            let p0 = extendedPoints[i - 1]
+            let p1 = extendedPoints[i]
+            let p2 = extendedPoints[i + 1]
+            let p3 = extendedPoints[i + 2]
+
+            // Generate points along this segment
+            for j in 1...segments {
+                let t = CGFloat(j) / CGFloat(segments)
+                let point = catmullRomPoint(p0: p0, p1: p1, p2: p2, p3: p3, t: t, alpha: alpha)
+                path.addLine(to: point)
+            }
+        }
+
+        if closed {
+            path.closeSubpath()
+        }
+
+        return path
+    }
+
+    /// Calculates a point on a Catmull-Rom spline segment.
+    private static func catmullRomPoint(p0: CGPoint, p1: CGPoint, p2: CGPoint, p3: CGPoint, t: CGFloat, alpha: CGFloat) -> CGPoint {
+        // Calculate knot intervals using centripetal parameterization
+        func knotInterval(p1: CGPoint, p2: CGPoint) -> CGFloat {
+            let dx = p2.x - p1.x
+            let dy = p2.y - p1.y
+            let distSquared = dx * dx + dy * dy
+            return pow(distSquared, alpha / 2)
+        }
+
+        let t01 = knotInterval(p1: p0, p2: p1)
+        let t12 = knotInterval(p1: p1, p2: p2)
+        let t23 = knotInterval(p1: p2, p2: p3)
+
+        // Remap t to [0, 1] for this segment
+        let m1x = (p1.x - p0.x) / t01 - (p2.x - p0.x) / (t01 + t12) + (p2.x - p1.x) / t12
+        let m1y = (p1.y - p0.y) / t01 - (p2.y - p0.y) / (t01 + t12) + (p2.y - p1.y) / t12
+        let m2x = (p2.x - p1.x) / t12 - (p3.x - p1.x) / (t12 + t23) + (p3.x - p2.x) / t23
+        let m2y = (p2.y - p1.y) / t12 - (p3.y - p1.y) / (t12 + t23) + (p3.y - p2.y) / t23
+
+        let m1 = CGPoint(x: m1x * t12, y: m1y * t12)
+        let m2 = CGPoint(x: m2x * t12, y: m2y * t12)
+
+        // Hermite basis functions
+        let t2 = t * t
+        let t3 = t2 * t
+
+        let h00 = 2 * t3 - 3 * t2 + 1
+        let h10 = t3 - 2 * t2 + t
+        let h01 = -2 * t3 + 3 * t2
+        let h11 = t3 - t2
+
+        return CGPoint(
+            x: h00 * p1.x + h10 * m1.x + h01 * p2.x + h11 * m2.x,
+            y: h00 * p1.y + h10 * m1.y + h01 * p2.y + h11 * m2.y
+        )
     }
 
     public required init?(coder: NSCoder) {
