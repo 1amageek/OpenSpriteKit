@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# CocoaPods (if used)
+Pods/
+
+# Carthage (if used)
+Carthage/Build/
+
+# WASM build artifacts
+*.wasm
+*.wat
+
+# IDE
+*.idea/
+*.vscode/
+
+# Credentials
+.netrc
+*.pem
+*.p12
+
+# Logs
+*.log
+
+# Test artifacts
+.coverage/
+*.profraw
+*.profdata
