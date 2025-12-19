@@ -224,13 +224,86 @@ open class SKNode: NSObject, NSCopying, NSSecureCoding {
     /// - Parameter coder: The coder to read data from.
     public required init?(coder: NSCoder) {
         super.init()
-        // TODO: Implement decoding
+
+        // Position and transform
+        let posX = CGFloat(coder.decodeDouble(forKey: "position.x"))
+        let posY = CGFloat(coder.decodeDouble(forKey: "position.y"))
+        position = CGPoint(x: posX, y: posY)
+        zPosition = CGFloat(coder.decodeDouble(forKey: "zPosition"))
+        zRotation = CGFloat(coder.decodeDouble(forKey: "zRotation"))
+        xScale = CGFloat(coder.decodeDouble(forKey: "xScale"))
+        yScale = CGFloat(coder.decodeDouble(forKey: "yScale"))
+
+        // Visibility
+        alpha = CGFloat(coder.decodeDouble(forKey: "alpha"))
+        isHidden = coder.decodeBool(forKey: "isHidden")
+
+        // Action properties
+        speed = CGFloat(coder.decodeDouble(forKey: "speed"))
+        isPaused = coder.decodeBool(forKey: "isPaused")
+
+        // User interaction
+        isUserInteractionEnabled = coder.decodeBool(forKey: "isUserInteractionEnabled")
+        if let focusBehaviorRaw = coder.decodeObject(forKey: "focusBehavior") as? Int,
+           let behavior = SKNodeFocusBehavior(rawValue: focusBehaviorRaw) {
+            focusBehavior = behavior
+        }
+
+        // Metadata
+        name = coder.decodeObject(forKey: "name") as? String
+        userData = coder.decodeObject(forKey: "userData") as? NSMutableDictionary
+
+        // Physics
+        physicsBody = coder.decodeObject(forKey: "physicsBody") as? SKPhysicsBody
+
+        // Constraints
+        constraints = coder.decodeObject(forKey: "constraints") as? [SKConstraint]
+        reachConstraints = coder.decodeObject(forKey: "reachConstraints") as? SKReachConstraints
+
+        // Children
+        if let decodedChildren = coder.decodeObject(forKey: "children") as? [SKNode] {
+            for child in decodedChildren {
+                addChild(child)
+            }
+        }
     }
 
     // MARK: - NSCoding
 
     public func encode(with coder: NSCoder) {
-        // TODO: Implement encoding
+        // Position and transform
+        coder.encode(Double(position.x), forKey: "position.x")
+        coder.encode(Double(position.y), forKey: "position.y")
+        coder.encode(Double(zPosition), forKey: "zPosition")
+        coder.encode(Double(zRotation), forKey: "zRotation")
+        coder.encode(Double(xScale), forKey: "xScale")
+        coder.encode(Double(yScale), forKey: "yScale")
+
+        // Visibility
+        coder.encode(Double(alpha), forKey: "alpha")
+        coder.encode(isHidden, forKey: "isHidden")
+
+        // Action properties
+        coder.encode(Double(speed), forKey: "speed")
+        coder.encode(isPaused, forKey: "isPaused")
+
+        // User interaction
+        coder.encode(isUserInteractionEnabled, forKey: "isUserInteractionEnabled")
+        coder.encode(focusBehavior.rawValue, forKey: "focusBehavior")
+
+        // Metadata
+        coder.encode(name, forKey: "name")
+        coder.encode(userData, forKey: "userData")
+
+        // Physics
+        coder.encode(physicsBody, forKey: "physicsBody")
+
+        // Constraints
+        coder.encode(constraints, forKey: "constraints")
+        coder.encode(reachConstraints, forKey: "reachConstraints")
+
+        // Children
+        coder.encode(children, forKey: "children")
     }
 
     // MARK: - NSCopying

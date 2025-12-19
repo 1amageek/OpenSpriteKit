@@ -62,7 +62,8 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
         case followPath(path: CGPath, asOffset: Bool, orientToPath: Bool)
         case rotateBy(angle: CGFloat)
         case rotateTo(angle: CGFloat, shortestUnitArc: Bool)
-        case scaleBy(xScale: CGFloat, yScale: CGFloat)
+        case scaleBy(xScale: CGFloat, yScale: CGFloat)  // Multiplicative: scale *= value
+        case scaleXYBy(dx: CGFloat, dy: CGFloat)          // Additive: scale += value
         case scaleTo(xScale: CGFloat?, yScale: CGFloat?)
         case scaleToSize(size: CGSize)
         case speedBy(delta: CGFloat)
@@ -168,7 +169,13 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
         case .rotateBy(let angle):
             reversed.actionType = .rotateBy(angle: -angle)
         case .scaleBy(let xScale, let yScale):
-            reversed.actionType = .scaleBy(xScale: -xScale, yScale: -yScale)
+            // Multiplicative reverse: if we multiplied by x, reverse is divide by x (multiply by 1/x)
+            let reverseX = xScale != 0 ? 1.0 / xScale : 1.0
+            let reverseY = yScale != 0 ? 1.0 / yScale : 1.0
+            reversed.actionType = .scaleBy(xScale: reverseX, yScale: reverseY)
+        case .scaleXYBy(let dx, let dy):
+            // Additive reverse: simply negate
+            reversed.actionType = .scaleXYBy(dx: -dx, dy: -dy)
         case .fadeAlphaBy(let delta):
             reversed.actionType = .fadeAlphaBy(delta: -delta)
         case .sequence(let actions):
@@ -452,10 +459,12 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
     }
 
     /// Creates an action that adds relative values to the x and y scale values of a node.
+    ///
+    /// Unlike `scale(by:)` which multiplies, this method adds the values to the current scale.
     public class func scaleX(by xScale: CGFloat, y yScale: CGFloat, duration: TimeInterval) -> SKAction {
         let action = SKAction()
         action.duration = duration
-        action.actionType = .scaleBy(xScale: xScale, yScale: yScale)
+        action.actionType = .scaleXYBy(dx: xScale, dy: yScale)
         return action
     }
 

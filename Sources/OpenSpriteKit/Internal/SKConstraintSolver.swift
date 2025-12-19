@@ -62,26 +62,34 @@ internal final class SKConstraintSolver {
         case .zRotation(let range):
             node.zRotation = clamp(node.zRotation, range: range)
 
-        case .orientToNode(let targetNode, let offset):
+        case .orientToNode(let weakTarget, let offset):
+            // Check if target node is still alive (weak reference)
+            guard let targetNode = weakTarget.node else { return }
             orientNode(node, to: targetNode.position, offset: offset, referenceNode: constraint.referenceNode)
 
         case .orientToPoint(let point, let offset):
             orientNode(node, to: point, offset: offset, referenceNode: constraint.referenceNode)
 
-        case .orientToPointInNode(let point, let targetNode, let offset):
+        case .orientToPointInNode(let point, let weakTarget, let offset):
+            // Check if target node is still alive (weak reference)
+            guard let targetNode = weakTarget.node else { return }
             // Convert point from target node's coordinate space to scene coordinates
             if let scene = node.scene {
                 let worldPoint = targetNode.convert(point, to: scene)
                 orientNode(node, to: worldPoint, offset: offset, referenceNode: constraint.referenceNode)
             }
 
-        case .distanceToNode(let range, let targetNode):
+        case .distanceToNode(let range, let weakTarget):
+            // Check if target node is still alive (weak reference)
+            guard let targetNode = weakTarget.node else { return }
             constrainDistance(of: node, to: targetNode.position, range: range, referenceNode: constraint.referenceNode)
 
         case .distanceToPoint(let range, let point):
             constrainDistance(of: node, to: point, range: range, referenceNode: constraint.referenceNode)
 
-        case .distanceToPointInNode(let range, let point, let targetNode):
+        case .distanceToPointInNode(let range, let point, let weakTarget):
+            // Check if target node is still alive (weak reference)
+            guard let targetNode = weakTarget.node else { return }
             // Convert point from target node's coordinate space
             if let scene = node.scene {
                 let worldPoint = targetNode.convert(point, to: scene)

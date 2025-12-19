@@ -273,7 +273,7 @@ internal final class SKActionRunner {
             state.position = node.position
         case .rotateTo, .rotateBy:
             state.zRotation = node.zRotation
-        case .scaleTo, .scaleBy, .scaleToSize:
+        case .scaleTo, .scaleBy, .scaleXYBy, .scaleToSize:
             state.xScale = node.xScale
             state.yScale = node.yScale
         case .fadeAlphaTo, .fadeAlphaBy:
@@ -337,7 +337,7 @@ internal final class SKActionRunner {
                 )
             }
 
-        case .followPath(let path, let asOffset, _):
+        case .followPath(let path, let asOffset, let orientToPath):
             if let initialPos = initialState.position {
                 // Get point along path at progress
                 let point = pointOnPath(path, at: CGFloat(progress))
@@ -345,6 +345,12 @@ internal final class SKActionRunner {
                     node.position = CGPoint(x: initialPos.x + point.x, y: initialPos.y + point.y)
                 } else {
                     node.position = point
+                }
+
+                // Orient to path: rotate node to match tangent direction
+                if orientToPath {
+                    let tangentAngle = tangentOnPath(path, at: CGFloat(progress))
+                    node.zRotation = tangentAngle
                 }
             }
 
@@ -370,9 +376,20 @@ internal final class SKActionRunner {
         // MARK: Scale Actions
         case .scaleBy(let xScale, let yScale):
             if let initialX = initialState.xScale, let initialY = initialState.yScale {
-                // scaleBy multiplies, so we interpolate the multiplier
+                // scaleBy multiplies: interpolate the multiplier from 1 to target
+                // At progress=0: initialX * 1 = initialX
+                // At progress=1: initialX * xScale
                 node.xScale = initialX * (1 + (xScale - 1) * CGFloat(progress))
                 node.yScale = initialY * (1 + (yScale - 1) * CGFloat(progress))
+            }
+
+        case .scaleXYBy(let dx, let dy):
+            if let initialX = initialState.xScale, let initialY = initialState.yScale {
+                // scaleXYBy adds: simply add the delta scaled by progress
+                // At progress=0: initialX + 0 = initialX
+                // At progress=1: initialX + dx
+                node.xScale = initialX + dx * CGFloat(progress)
+                node.yScale = initialY + dy * CGFloat(progress)
             }
 
         case .scaleTo(let xScale, let yScale):
@@ -1064,6 +1081,25 @@ internal final class SKActionRunner {
         }
 
         return points.last ?? .zero
+    }
+
+    /// Calculates the tangent angle on a path at a given progress.
+    ///
+    /// - Parameters:
+    ///   - path: The path to calculate the tangent on.
+    ///   - progress: Progress along the path (0.0 to 1.0).
+    /// - Returns: The tangent angle in radians.
+    private func tangentOnPath(_ path: CGPath, at progress: CGFloat) -> CGFloat {
+        // Get two points slightly apart to calculate tangent
+        let epsilon: CGFloat = 0.001
+        let p1 = pointOnPath(path, at: max(0, progress - epsilon))
+        let p2 = pointOnPath(path, at: min(1, progress + epsilon))
+
+        let dx = p2.x - p1.x
+        let dy = p2.y - p1.y
+
+        // atan2 returns angle in radians, where 0 = right, π/2 = up
+        return atan2(dy, dx)
     }
 
     // MARK: - Warp Geometry Interpolation

@@ -199,11 +199,12 @@ struct SKActionScaleTests {
     func testScaleXYBy() {
         let action = SKAction.scaleX(by: 1.5, y: 2.0, duration: 1.0)
 
-        if case .scaleBy(let xScale, let yScale) = action.actionType {
-            #expect(xScale == 1.5)
-            #expect(yScale == 2.0)
+        // scaleX(by:y:) is additive (unlike scale(by:) which is multiplicative)
+        if case .scaleXYBy(let dx, let dy) = action.actionType {
+            #expect(dx == 1.5)
+            #expect(dy == 2.0)
         } else {
-            Issue.record("Expected scaleBy action type")
+            Issue.record("Expected scaleXYBy action type")
         }
     }
 
@@ -466,14 +467,29 @@ struct SKActionReverseTests {
         }
     }
 
-    @Test("reversed scaleBy negates scale values")
-    func testReversedScaleBy() {
+    @Test("reversed scaleXYBy negates scale deltas")
+    func testReversedScaleXYBy() {
+        // scaleX(by:y:) is additive, so reverse negates the values
         let original = SKAction.scaleX(by: 2.0, y: -1.0, duration: 1.0)
         let reversed = original.reversed()
 
+        if case .scaleXYBy(let dx, let dy) = reversed.actionType {
+            #expect(dx == -2.0)
+            #expect(dy == 1.0)
+        } else {
+            Issue.record("Expected scaleXYBy action type in reversed action")
+        }
+    }
+
+    @Test("reversed scale(by:) uses reciprocal for multiplicative scale")
+    func testReversedScaleByMultiplicative() {
+        // scale(by:) is multiplicative, so reverse uses 1/x
+        let original = SKAction.scale(by: 2.0, duration: 1.0)
+        let reversed = original.reversed()
+
         if case .scaleBy(let xScale, let yScale) = reversed.actionType {
-            #expect(xScale == -2.0)
-            #expect(yScale == 1.0)
+            #expect(xScale == 0.5)  // 1/2
+            #expect(yScale == 0.5)  // 1/2
         } else {
             Issue.record("Expected scaleBy action type in reversed action")
         }
@@ -546,8 +562,9 @@ struct SKActionReverseTests {
                     foundReversedMove = true
                 }
                 if case .scaleBy(let xScale, let yScale) = action.actionType {
-                    #expect(xScale == -2.0)
-                    #expect(yScale == -2.0)
+                    // scale(by:) is multiplicative, so reverse uses 1/x
+                    #expect(xScale == 0.5)  // 1/2
+                    #expect(yScale == 0.5)  // 1/2
                     foundReversedScale = true
                 }
             }

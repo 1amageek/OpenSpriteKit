@@ -23,6 +23,18 @@ open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
     /// The node whose coordinate system should be used to apply the constraint.
     open weak var referenceNode: SKNode?
 
+    // MARK: - Weak Node Wrapper
+
+    /// A wrapper class to hold a weak reference to an SKNode.
+    /// Used in enum cases where weak references cannot be directly stored.
+    internal class WeakNode {
+        weak var node: SKNode?
+
+        init(_ node: SKNode) {
+            self.node = node
+        }
+    }
+
     // MARK: - Internal Constraint Type
 
     internal enum ConstraintType {
@@ -30,12 +42,12 @@ open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
         case positionY(SKRange)
         case positionXY(xRange: SKRange, yRange: SKRange)
         case zRotation(SKRange)
-        case orientToNode(SKNode, offset: SKRange)
+        case orientToNode(WeakNode, offset: SKRange)
         case orientToPoint(CGPoint, offset: SKRange)
-        case orientToPointInNode(CGPoint, SKNode, offset: SKRange)
-        case distanceToNode(SKRange, SKNode)
+        case orientToPointInNode(CGPoint, WeakNode, offset: SKRange)
+        case distanceToNode(SKRange, WeakNode)
         case distanceToPoint(SKRange, CGPoint)
-        case distanceToPointInNode(SKRange, CGPoint, SKNode)
+        case distanceToPointInNode(SKRange, CGPoint, WeakNode)
     }
 
     internal var constraintType: ConstraintType?
@@ -106,12 +118,15 @@ open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
     /// Creates a constraint that forces a node to rotate to face another node.
     ///
     /// - Parameters:
-    ///   - node: The target node to face.
+    ///   - node: The target node to face. This is stored as a weak reference.
     ///   - offset: The range of allowed rotation offsets from directly facing the target.
     /// - Returns: A new orientation constraint.
+    ///
+    /// - Note: The target node is held weakly. If the node is deallocated, the constraint
+    ///   will have no effect until a new target is set.
     public class func orient(to node: SKNode, offset: SKRange) -> SKConstraint {
         let constraint = SKConstraint()
-        constraint.constraintType = .orientToNode(node, offset: offset)
+        constraint.constraintType = .orientToNode(WeakNode(node), offset: offset)
         return constraint
     }
 
@@ -131,12 +146,12 @@ open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
     ///
     /// - Parameters:
     ///   - point: The target point to face.
-    ///   - node: The node whose coordinate system contains the point.
+    ///   - node: The node whose coordinate system contains the point. Stored as weak reference.
     ///   - offset: The range of allowed rotation offsets from directly facing the target.
     /// - Returns: A new orientation constraint.
     public class func orient(to point: CGPoint, in node: SKNode, offset: SKRange) -> SKConstraint {
         let constraint = SKConstraint()
-        constraint.constraintType = .orientToPointInNode(point, node, offset: offset)
+        constraint.constraintType = .orientToPointInNode(point, WeakNode(node), offset: offset)
         return constraint
     }
 
@@ -156,11 +171,11 @@ open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
     ///
     /// - Parameters:
     ///   - range: The range of allowed distances.
-    ///   - node: The target node.
+    ///   - node: The target node. Stored as weak reference.
     /// - Returns: A new distance constraint.
     public class func distance(_ range: SKRange, to node: SKNode) -> SKConstraint {
         let constraint = SKConstraint()
-        constraint.constraintType = .distanceToNode(range, node)
+        constraint.constraintType = .distanceToNode(range, WeakNode(node))
         return constraint
     }
 
@@ -181,11 +196,11 @@ open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
     /// - Parameters:
     ///   - range: The range of allowed distances.
     ///   - point: The target point.
-    ///   - node: The node whose coordinate system contains the point.
+    ///   - node: The node whose coordinate system contains the point. Stored as weak reference.
     /// - Returns: A new distance constraint.
     public class func distance(_ range: SKRange, to point: CGPoint, in node: SKNode) -> SKConstraint {
         let constraint = SKConstraint()
-        constraint.constraintType = .distanceToPointInNode(range, point, node)
+        constraint.constraintType = .distanceToPointInNode(range, point, WeakNode(node))
         return constraint
     }
 }

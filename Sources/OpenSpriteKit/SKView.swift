@@ -130,6 +130,12 @@ open class SKView: SKViewBase {
         // Reset physics state for the new scene
         if let newScene = scene {
             SKPhysicsEngine.shared.reset(for: newScene)
+
+            // Call sceneDidLoad() once when the scene is first presented
+            if !newScene._didCallSceneDidLoad {
+                newScene._didCallSceneDidLoad = true
+                newScene.sceneDidLoad()
+            }
         }
 
         scene?.didMove(to: self)

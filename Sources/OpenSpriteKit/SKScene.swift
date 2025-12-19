@@ -72,6 +72,11 @@ open class SKScene: SKEffectNode {
     /// A node used to determine the position of the listener for positional audio in the scene.
     open var listener: SKNode?
 
+    // MARK: - Internal State
+
+    /// Tracks whether sceneDidLoad has been called.
+    internal var _didCallSceneDidLoad: Bool = false
+
     // Note: audioEngine is not included as it requires AVFoundation which may not be available on all platforms
 
     // MARK: - Initializers
@@ -302,5 +307,73 @@ open class SKScene: SKEffectNode {
         }
 
         return viewPoint
+    }
+
+    // MARK: - Camera Transform
+
+    /// Calculates the transform matrix to apply for camera rendering.
+    ///
+    /// When a camera is set, the scene should be rendered from the camera's perspective.
+    /// This method returns the inverse transform of the camera.
+    ///
+    /// - Returns: The affine transform to apply for camera-based rendering, or identity if no camera.
+    internal func calculateCameraTransform() -> CGAffineTransform {
+        guard let camera = camera else {
+            return .identity
+        }
+
+        // The camera transform is the inverse of the camera's node transform
+        // 1. First, translate by negative camera position (center view on camera)
+        // 2. Then, rotate by negative camera rotation
+        // 3. Finally, scale by inverse of camera scale (zoom)
+
+        var transform = CGAffineTransform.identity
+
+        // Scale by inverse (camera scale > 1 means zoom in, so content appears smaller from camera's POV)
+        let scaleX = camera.xScale != 0 ? 1.0 / camera.xScale : 1.0
+        let scaleY = camera.yScale != 0 ? 1.0 / camera.yScale : 1.0
+        transform = transform.scaledBy(x: scaleX, y: scaleY)
+
+        // Rotate by negative angle
+        if camera.zRotation != 0 {
+            transform = transform.rotated(by: -camera.zRotation)
+        }
+
+        // Translate by negative position
+        transform = transform.translatedBy(x: -camera.position.x, y: -camera.position.y)
+
+        return transform
+    }
+
+    /// Returns the visible area in scene coordinates when using the current camera.
+    ///
+    /// - Parameter viewSize: The size of the view.
+    /// - Returns: The visible rectangle in scene coordinates.
+    internal func calculateVisibleRectForCamera(viewSize: CGSize) -> CGRect {
+        guard let camera = camera else {
+            // No camera - visible area is based on anchor point and scene size
+            return CGRect(
+                x: -anchorPoint.x * size.width,
+                y: -anchorPoint.y * size.height,
+                width: size.width,
+                height: size.height
+            )
+        }
+
+        guard let view = view else {
+            // Calculate visible rect without view (use provided viewSize)
+            let effectiveScale = CGPoint(x: camera.xScale, y: camera.yScale)
+            let scaledWidth = viewSize.width / (effectiveScale.x != 0 ? effectiveScale.x : 1)
+            let scaledHeight = viewSize.height / (effectiveScale.y != 0 ? effectiveScale.y : 1)
+
+            return CGRect(
+                x: camera.position.x - scaledWidth / 2,
+                y: camera.position.y - scaledHeight / 2,
+                width: scaledWidth,
+                height: scaledHeight
+            )
+        }
+
+        return camera.calculateVisibleRect(in: view)
     }
 }

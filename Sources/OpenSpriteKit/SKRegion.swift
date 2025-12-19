@@ -246,6 +246,9 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
             let mutablePath = CGMutablePath()
             mutablePath.addRect(rect)
             self.path = mutablePath
+        } else if let pathElements = coder.decodeObject(forKey: "pathElements") as? [[String: Any]] {
+            // Reconstruct custom path from serialized elements
+            self.path = SKRegion.deserializePath(from: pathElements)
         }
     }
 
@@ -261,6 +264,109 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
             coder.encode(Double(size.width), forKey: "rectSize.width")
             coder.encode(Double(size.height), forKey: "rectSize.height")
         }
+
+        // For custom paths, serialize path elements
+        if radius == nil && rectSize == nil, let path = self.path {
+            let pathData = serializePath(path)
+            coder.encode(pathData, forKey: "pathElements")
+        }
+    }
+
+    // MARK: - Path Serialization Helpers
+
+    /// Serializes a CGPath to an array of dictionaries representing path elements.
+    private func serializePath(_ path: CGPath) -> [[String: Any]] {
+        var elements: [[String: Any]] = []
+
+        path.applyWithBlock { element in
+            var dict: [String: Any] = [:]
+            let type = element.pointee.type
+
+            switch type {
+            case .moveToPoint:
+                dict["type"] = "move"
+                dict["x"] = Double(element.pointee.points[0].x)
+                dict["y"] = Double(element.pointee.points[0].y)
+
+            case .addLineToPoint:
+                dict["type"] = "line"
+                dict["x"] = Double(element.pointee.points[0].x)
+                dict["y"] = Double(element.pointee.points[0].y)
+
+            case .addQuadCurveToPoint:
+                dict["type"] = "quad"
+                dict["cpx"] = Double(element.pointee.points[0].x)
+                dict["cpy"] = Double(element.pointee.points[0].y)
+                dict["x"] = Double(element.pointee.points[1].x)
+                dict["y"] = Double(element.pointee.points[1].y)
+
+            case .addCurveToPoint:
+                dict["type"] = "curve"
+                dict["cp1x"] = Double(element.pointee.points[0].x)
+                dict["cp1y"] = Double(element.pointee.points[0].y)
+                dict["cp2x"] = Double(element.pointee.points[1].x)
+                dict["cp2y"] = Double(element.pointee.points[1].y)
+                dict["x"] = Double(element.pointee.points[2].x)
+                dict["y"] = Double(element.pointee.points[2].y)
+
+            case .closeSubpath:
+                dict["type"] = "close"
+
+            @unknown default:
+                dict["type"] = "unknown"
+            }
+
+            if !dict.isEmpty && dict["type"] as? String != "unknown" {
+                elements.append(dict)
+            }
+        }
+
+        return elements
+    }
+
+    /// Deserializes an array of dictionaries to a CGPath.
+    private static func deserializePath(from elements: [[String: Any]]) -> CGPath? {
+        let mutablePath = CGMutablePath()
+
+        for element in elements {
+            guard let type = element["type"] as? String else { continue }
+
+            switch type {
+            case "move":
+                if let x = element["x"] as? Double, let y = element["y"] as? Double {
+                    mutablePath.move(to: CGPoint(x: x, y: y))
+                }
+
+            case "line":
+                if let x = element["x"] as? Double, let y = element["y"] as? Double {
+                    mutablePath.addLine(to: CGPoint(x: x, y: y))
+                }
+
+            case "quad":
+                if let cpx = element["cpx"] as? Double, let cpy = element["cpy"] as? Double,
+                   let x = element["x"] as? Double, let y = element["y"] as? Double {
+                    mutablePath.addQuadCurve(to: CGPoint(x: x, y: y),
+                                             control: CGPoint(x: cpx, y: cpy))
+                }
+
+            case "curve":
+                if let cp1x = element["cp1x"] as? Double, let cp1y = element["cp1y"] as? Double,
+                   let cp2x = element["cp2x"] as? Double, let cp2y = element["cp2y"] as? Double,
+                   let x = element["x"] as? Double, let y = element["y"] as? Double {
+                    mutablePath.addCurve(to: CGPoint(x: x, y: y),
+                                         control1: CGPoint(x: cp1x, y: cp1y),
+                                         control2: CGPoint(x: cp2x, y: cp2y))
+                }
+
+            case "close":
+                mutablePath.closeSubpath()
+
+            default:
+                break
+            }
+        }
+
+        return mutablePath.isEmpty ? nil : mutablePath
     }
 }
 

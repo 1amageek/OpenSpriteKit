@@ -99,6 +99,16 @@ open class SKSpriteNode: SKNode, SKWarpable {
     /// A mask that defines which lights are occluded by this sprite.
     open var shadowCastBitMask: UInt32 = 0
 
+    // MARK: - Internal Lighting State (for WASM rendering)
+
+    /// The computed lighting color from all affecting light nodes.
+    /// This is set by SKViewRenderer during the lighting pass.
+    /// Components are (red, green, blue, alpha) in range [0, 1].
+    internal var _computedLightingColor: (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) = (1.0, 1.0, 1.0, 1.0)
+
+    /// Whether lighting has been computed for this frame.
+    internal var _hasComputedLighting: Bool = false
+
     // MARK: - Shader Properties
 
     /// A text file that defines code that does custom per-pixel drawing or colorization.

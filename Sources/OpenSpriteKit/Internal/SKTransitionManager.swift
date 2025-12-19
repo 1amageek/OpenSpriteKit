@@ -65,6 +65,13 @@ internal final class SKTransitionManager {
 
         // Initialize the incoming scene
         toScene._view = view
+
+        // Call sceneDidLoad() once when the scene is first presented
+        if !toScene._didCallSceneDidLoad {
+            toScene._didCallSceneDidLoad = true
+            toScene.sceneDidLoad()
+        }
+
         toScene.didMove(to: view)
 
         // Set initial state for the incoming scene

@@ -48,7 +48,11 @@ open class SKShapeNode: SKNode {
     }
 
     /// The texture used to fill the shape.
-    open var fillTexture: SKTexture?
+    open var fillTexture: SKTexture? {
+        didSet {
+            updateFillWithTexture()
+        }
+    }
 
     /// A custom shader used to determine the color of the filled portion of the shape node.
     open var fillShader: SKShader?
@@ -70,7 +74,11 @@ open class SKShapeNode: SKNode {
     }
 
     /// The texture used to stroke the shape.
-    open var strokeTexture: SKTexture?
+    open var strokeTexture: SKTexture? {
+        didSet {
+            updateStrokeWithTexture()
+        }
+    }
 
     /// A custom shader used to determine the color of the stroked portion of the shape node.
     open var strokeShader: SKShader?
@@ -617,6 +625,268 @@ open class SKShapeNode: SKNode {
     open func value(forAttributeNamed name: String) -> SKAttributeValue? {
         return attributeValues[name]
     }
+
+    // MARK: - Texture Pattern Support
+
+    /// Content layer for fill texture (WASM-compatible approach)
+    private var _fillTextureLayer: CALayer?
+
+    /// Content layer for stroke texture (WASM-compatible approach)
+    private var _strokeTextureLayer: CALayer?
+
+    /// Updates the fill color with a pattern from the fill texture.
+    private func updateFillWithTexture() {
+        guard let texture = fillTexture, let cgImage = texture.cgImage else {
+            // If no texture, revert to solid color and remove texture layer
+            shapeLayer.fillColor = fillColor.cgColor
+            removeFillTextureLayer()
+            return
+        }
+
+        #if canImport(UIKit) || canImport(AppKit)
+        // Native platform: Use CGPattern (callback-based)
+        if let patternColor = createPatternColor(from: cgImage) {
+            shapeLayer.fillColor = patternColor
+        }
+        #else
+        // WASM: Use layer-based texture tiling (no callbacks)
+        applyFillTextureViaLayer(cgImage)
+        #endif
+    }
+
+    /// Updates the stroke color with a pattern from the stroke texture.
+    private func updateStrokeWithTexture() {
+        guard let texture = strokeTexture, let cgImage = texture.cgImage else {
+            // If no texture, revert to solid color and remove texture layer
+            shapeLayer.strokeColor = strokeColor.cgColor
+            removeStrokeTextureLayer()
+            return
+        }
+
+        #if canImport(UIKit) || canImport(AppKit)
+        // Native platform: Use CGPattern (callback-based)
+        if let patternColor = createPatternColor(from: cgImage) {
+            shapeLayer.strokeColor = patternColor
+        }
+        #else
+        // WASM: Use layer-based texture tiling (no callbacks)
+        applyStrokeTextureViaLayer(cgImage)
+        #endif
+    }
+
+    #if canImport(UIKit) || canImport(AppKit)
+    /// Creates a CGColor with a pattern from the given image (native platforms only).
+    private func createPatternColor(from image: CGImage) -> CGColor? {
+        let width = image.width
+        let height = image.height
+
+        // Create pattern callbacks
+        // Note: CGContext is non-optional in native CoreGraphics but optional in OpenCoreGraphics
+        var callbacks = CGPatternCallbacks(
+            version: 0,
+            drawPattern: { info, context in
+                guard let info = info else { return }
+                let image = Unmanaged<CGImage>.fromOpaque(info).takeUnretainedValue()
+                let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+                context.draw(image, in: rect)
+            },
+            releaseInfo: { info in
+                guard let info = info else { return }
+                Unmanaged<CGImage>.fromOpaque(info).release()
+            }
+        )
+
+        // Retain the image for the pattern
+        let imageInfo = Unmanaged.passRetained(image).toOpaque()
+
+        // Create the pattern
+        guard let pattern = CGPattern(
+            info: imageInfo,
+            bounds: CGRect(x: 0, y: 0, width: width, height: height),
+            matrix: .identity,
+            xStep: CGFloat(width),
+            yStep: CGFloat(height),
+            tiling: .constantSpacing,
+            isColored: true,
+            callbacks: &callbacks
+        ) else {
+            Unmanaged<CGImage>.fromOpaque(imageInfo).release()
+            return nil
+        }
+
+        // Create the pattern color space
+        guard let patternSpace = CGColorSpace(patternBaseSpace: nil) else {
+            return nil
+        }
+
+        // Create the pattern color (alpha component for colored patterns)
+        var alpha: CGFloat = 1.0
+        return CGColor(patternSpace: patternSpace, pattern: pattern, components: &alpha)
+    }
+    #endif
+
+    // MARK: - WASM Texture Layer Methods
+
+    #if !canImport(UIKit) && !canImport(AppKit)
+    /// Applies fill texture using a tiled layer (WASM-compatible).
+    private func applyFillTextureViaLayer(_ image: CGImage) {
+        guard let path = path else {
+            removeFillTextureLayer()
+            return
+        }
+
+        // Clear the fill color on the shape layer
+        shapeLayer.fillColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0)
+
+        // Get the path bounds
+        let pathBounds = path.boundingBox
+
+        // Create or update the texture layer
+        let textureLayer: CALayer
+        if let existing = _fillTextureLayer {
+            textureLayer = existing
+        } else {
+            textureLayer = CALayer()
+            _fillTextureLayer = textureLayer
+            // Insert below the shape layer's stroke
+            layer.insertSublayer(textureLayer, at: 0)
+        }
+
+        // Create tiled texture image
+        if let tiledImage = createTiledImage(from: image, for: pathBounds) {
+            textureLayer.contents = tiledImage
+            textureLayer.frame = pathBounds
+        }
+
+        // Create a mask from the path
+        let maskLayer = CAShapeLayer()
+        maskLayer.path = path
+        maskLayer.fillColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+        maskLayer.strokeColor = nil
+        maskLayer.frame = pathBounds
+        // Offset the path to account for the mask's coordinate space
+        let offsetPath = CGMutablePath()
+        var transform = CGAffineTransform(translationX: -pathBounds.origin.x, y: -pathBounds.origin.y)
+        if let transformedPath = path.copy(using: &transform) {
+            offsetPath.addPath(transformedPath)
+        }
+        maskLayer.path = offsetPath
+
+        textureLayer.mask = maskLayer
+    }
+
+    /// Applies stroke texture using a layer (WASM-compatible).
+    private func applyStrokeTextureViaLayer(_ image: CGImage) {
+        guard let path = path else {
+            removeStrokeTextureLayer()
+            return
+        }
+
+        // Clear the stroke color on the shape layer
+        shapeLayer.strokeColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0)
+
+        // Get the stroked path bounds (account for line width)
+        let strokeBounds = path.boundingBox.insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
+
+        // Create or update the texture layer
+        let textureLayer: CALayer
+        if let existing = _strokeTextureLayer {
+            textureLayer = existing
+        } else {
+            textureLayer = CALayer()
+            _strokeTextureLayer = textureLayer
+            layer.addSublayer(textureLayer)
+        }
+
+        // Create tiled texture image
+        if let tiledImage = createTiledImage(from: image, for: strokeBounds) {
+            textureLayer.contents = tiledImage
+            textureLayer.frame = strokeBounds
+        }
+
+        // Create a stroke mask from the path
+        let maskLayer = CAShapeLayer()
+        maskLayer.fillColor = nil
+        maskLayer.strokeColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+        maskLayer.lineWidth = lineWidth
+        maskLayer.lineCap = CAShapeLayerLineCap(from: lineCap)
+        maskLayer.lineJoin = CAShapeLayerLineJoin(from: lineJoin)
+        maskLayer.frame = strokeBounds
+
+        // Offset the path for mask coordinate space
+        let offsetPath = CGMutablePath()
+        var transform = CGAffineTransform(translationX: -strokeBounds.origin.x, y: -strokeBounds.origin.y)
+        if let transformedPath = path.copy(using: &transform) {
+            offsetPath.addPath(transformedPath)
+        }
+        maskLayer.path = offsetPath
+
+        textureLayer.mask = maskLayer
+    }
+
+    /// Creates a tiled image that covers the given bounds.
+    private func createTiledImage(from image: CGImage, for bounds: CGRect) -> CGImage? {
+        let tileWidth = image.width
+        let tileHeight = image.height
+        guard tileWidth > 0 && tileHeight > 0 else { return nil }
+
+        let boundsWidth = Int(ceil(bounds.width))
+        let boundsHeight = Int(ceil(bounds.height))
+        guard boundsWidth > 0 && boundsHeight > 0 else { return nil }
+
+        // Create a bitmap context for the tiled result
+        let bytesPerPixel = 4
+        let bytesPerRow = boundsWidth * bytesPerPixel
+        var pixelData = [UInt8](repeating: 0, count: bytesPerRow * boundsHeight)
+
+        guard let colorSpace = CGColorSpaceCreateDeviceRGB() as CGColorSpace?,
+              let context = CGContext(
+                  data: &pixelData,
+                  width: boundsWidth,
+                  height: boundsHeight,
+                  bitsPerComponent: 8,
+                  bytesPerRow: bytesPerRow,
+                  space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else {
+            return nil
+        }
+
+        // Tile the image across the context
+        let tilesX = (boundsWidth + tileWidth - 1) / tileWidth
+        let tilesY = (boundsHeight + tileHeight - 1) / tileHeight
+
+        for ty in 0..<tilesY {
+            for tx in 0..<tilesX {
+                let rect = CGRect(
+                    x: CGFloat(tx * tileWidth),
+                    y: CGFloat(ty * tileHeight),
+                    width: CGFloat(tileWidth),
+                    height: CGFloat(tileHeight)
+                )
+                context.draw(image, in: rect)
+            }
+        }
+
+        return context.makeImage()
+    }
+
+    /// Removes the fill texture layer.
+    private func removeFillTextureLayer() {
+        _fillTextureLayer?.removeFromSuperlayer()
+        _fillTextureLayer = nil
+    }
+
+    /// Removes the stroke texture layer.
+    private func removeStrokeTextureLayer() {
+        _strokeTextureLayer?.removeFromSuperlayer()
+        _strokeTextureLayer = nil
+    }
+    #else
+    // Native platform stubs
+    private func removeFillTextureLayer() {}
+    private func removeStrokeTextureLayer() {}
+    #endif
 }
 
 // MARK: - CAShapeLayer Type Conversions

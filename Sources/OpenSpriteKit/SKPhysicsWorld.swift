@@ -38,6 +38,9 @@ open class SKPhysicsWorld: NSObject, NSSecureCoding {
     /// The joints in this physics world.
     private var joints: [SKPhysicsJoint] = []
 
+    /// Internal accessor for physics engine.
+    internal var allJoints: [SKPhysicsJoint] { joints }
+
     // MARK: - Contact Tracking State (per-scene)
 
     /// A unique identifier for a contact pair.

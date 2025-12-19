@@ -4,6 +4,61 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+// MARK: - SKTextureCache
+
+/// Internal texture cache to avoid loading duplicate textures.
+/// Thread-safe through NSLock synchronization.
+internal final class SKTextureCache: @unchecked Sendable {
+    /// Shared instance of the texture cache.
+    static let shared = SKTextureCache()
+
+    /// Cache of loaded textures keyed by image name.
+    private var cache: [String: SKTexture] = [:]
+
+    /// Lock for thread-safe access.
+    private let lock = NSLock()
+
+    private init() {}
+
+    /// Returns a cached texture for the given name, or creates and caches a new one.
+    func texture(forName name: String, create: () -> SKTexture?) -> SKTexture? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let cached = cache[name] {
+            return cached
+        }
+
+        if let texture = create() {
+            cache[name] = texture
+            return texture
+        }
+
+        return nil
+    }
+
+    /// Removes a texture from the cache.
+    func removeTexture(forName name: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        cache.removeValue(forKey: name)
+    }
+
+    /// Clears all cached textures.
+    func clearCache() {
+        lock.lock()
+        defer { lock.unlock() }
+        cache.removeAll()
+    }
+
+    /// Returns whether a texture is cached.
+    func isCached(name: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache[name] != nil
+    }
+}
+
 /// An object that manages the data for a texture used in SpriteKit rendering.
 ///
 /// An `SKTexture` object is a container for texture data. Textures hold image data
@@ -44,20 +99,40 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
         super.init()
     }
 
+    /// The name of the image used to create this texture (for caching purposes).
+    internal var imageName: String?
+
     /// Creates a texture from an image file.
     ///
     /// - Parameter name: The name of the image file in the app bundle.
+    ///
+    /// This method uses a texture cache to avoid loading the same image multiple times.
+    /// Subsequent calls with the same name return the cached texture.
     ///
     /// On WASM platforms, the image must be pre-registered with `SKResourceLoader`:
     /// ```swift
     /// SKResourceLoader.shared.registerImage(data: pngData, forName: "player")
     /// let texture = SKTexture(imageNamed: "player")
     /// ```
-    public init(imageNamed name: String) {
-        super.init()
-        if let image = SKResourceLoader.shared.image(forName: name) {
-            self.cgImage = image
-            self._size = CGSize(width: image.width, height: image.height)
+    public convenience init(imageNamed name: String) {
+        // Check cache first
+        if let cached = SKTextureCache.shared.texture(forName: name, create: {
+            // Create new texture if not cached
+            guard let image = SKResourceLoader.shared.image(forName: name) else {
+                return nil
+            }
+            let texture = SKTexture(cgImage: image)
+            texture.imageName = name
+            return texture
+        }) {
+            // Return cached texture's data by copying
+            self.init()
+            self.cgImage = cached.cgImage
+            self._size = cached._size
+            self.imageName = name
+        } else {
+            self.init()
+            self.imageName = name
         }
     }
 
@@ -409,19 +484,66 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
 
     // MARK: - Texture Operations
 
+    /// Whether the texture has been preloaded (decoded into memory).
+    internal var isPreloaded: Bool = false
+
+    /// Cached decoded pixel data for fast GPU upload.
+    internal var decodedData: Data?
+
     /// Preloads texture data into memory.
     ///
-    /// This ensures the texture's CGImage is decoded and ready for rendering.
+    /// This decodes the texture's CGImage into raw pixel data, making it ready
+    /// for fast GPU upload during rendering. This is useful for textures that
+    /// will be used immediately after loading.
     ///
     /// - Parameter completionHandler: A block called when preloading is complete.
-    open func preload(completionHandler: @escaping () -> Void) {
-        // Force decode the CGImage if present
-        if let cgImage = self.cgImage {
-            // Access pixel data to force decoding
-            _ = cgImage.width
-            _ = cgImage.height
+    open func preload(completionHandler: @escaping @Sendable () -> Void) {
+        // If already preloaded, call completion immediately
+        guard !isPreloaded else {
+            completionHandler()
+            return
         }
-        completionHandler()
+
+        // Capture cgImage before async block
+        guard let cgImage = self.cgImage else {
+            completionHandler()
+            return
+        }
+
+        // Decode the CGImage into raw pixel data on a background queue
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        let totalBytes = height * bytesPerRow
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var pixelData = Data(count: totalBytes)
+
+            pixelData.withUnsafeMutableBytes { buffer in
+                guard let context = CGContext(
+                    data: buffer.baseAddress,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ) else {
+                    return
+                }
+
+                // Draw the image into the context, forcing decoding
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                // Store decoded data and mark as preloaded
+                self?.decodedData = pixelData
+                self?.isPreloaded = true
+                completionHandler()
+            }
+        }
     }
 
     /// Preloads multiple textures into memory.
@@ -429,8 +551,13 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     /// - Parameters:
     ///   - textures: The textures to preload.
     ///   - completionHandler: A block called when preloading is complete.
-    public class func preload(_ textures: [SKTexture], withCompletionHandler completionHandler: @escaping () -> Void) {
-        // Preload all textures
+    public class func preload(_ textures: [SKTexture], withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+        guard !textures.isEmpty else {
+            completionHandler()
+            return
+        }
+
+        // Preload all textures concurrently
         let group = DispatchGroup()
         for texture in textures {
             group.enter()
@@ -441,6 +568,27 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
         group.notify(queue: .main) {
             completionHandler()
         }
+    }
+
+    /// Removes the cached decoded data to free memory.
+    ///
+    /// The texture can still be used after this call; it will just need to be
+    /// decoded again when rendered.
+    open func releaseDecodedData() {
+        decodedData = nil
+        isPreloaded = false
+    }
+
+    /// Removes a texture from the shared cache.
+    ///
+    /// - Parameter name: The name of the texture to remove from cache.
+    public class func removeFromCache(imageNamed name: String) {
+        SKTextureCache.shared.removeTexture(forName: name)
+    }
+
+    /// Clears all textures from the shared cache.
+    public class func clearCache() {
+        SKTextureCache.shared.clearCache()
     }
 
     /// Returns a new texture by applying a Core Image filter.
@@ -502,7 +650,7 @@ public enum SKTextureFilteringMode: Int, Sendable, Hashable {
 ///
 /// An `SKTextureAtlas` object lets you store multiple textures together as a single
 /// resource. Using a texture atlas can improve rendering performance.
-open class SKTextureAtlas: NSObject, NSSecureCoding {
+open class SKTextureAtlas: NSObject, NSSecureCoding, @unchecked Sendable {
 
     // MARK: - NSSecureCoding
 
@@ -610,7 +758,7 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
     /// Preloads the texture atlas into memory.
     ///
     /// - Parameter completionHandler: A block called when preloading is complete.
-    open func preload(completionHandler: @escaping () -> Void) {
+    open func preload(completionHandler: @escaping @Sendable () -> Void) {
         // Preload all textures in the atlas
         let allTextures = textures.values.map { $0 }
         SKTexture.preload(allTextures, withCompletionHandler: completionHandler)
@@ -621,7 +769,7 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
     /// - Parameters:
     ///   - atlases: The atlases to preload.
     ///   - completionHandler: A block called when preloading is complete.
-    public class func preloadTextureAtlases(_ atlases: [SKTextureAtlas], withCompletionHandler completionHandler: @escaping () -> Void) {
+    public class func preloadTextureAtlases(_ atlases: [SKTextureAtlas], withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let group = DispatchGroup()
         for atlas in atlases {
             group.enter()
@@ -639,7 +787,7 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
     /// - Parameters:
     ///   - atlasNames: The names of the atlases to preload.
     ///   - completionHandler: A block called with the loaded atlases.
-    public class func preloadTextureAtlasesNamed(_ atlasNames: [String], withCompletionHandler completionHandler: @escaping (Error?, [SKTextureAtlas]) -> Void) {
+    public class func preloadTextureAtlasesNamed(_ atlasNames: [String], withCompletionHandler completionHandler: @escaping @Sendable (Error?, [SKTextureAtlas]) -> Void) {
         var atlases: [SKTextureAtlas] = []
         var loadError: Error? = nil
 
@@ -651,9 +799,13 @@ open class SKTextureAtlas: NSObject, NSSecureCoding {
             atlases.append(atlas)
         }
 
+        // Create immutable copies for @Sendable closure
+        let finalAtlases = atlases
+        let finalError = loadError
+
         // Preload all atlases
-        preloadTextureAtlases(atlases) {
-            completionHandler(loadError, atlases)
+        preloadTextureAtlases(finalAtlases) {
+            completionHandler(finalError, finalAtlases)
         }
     }
 }

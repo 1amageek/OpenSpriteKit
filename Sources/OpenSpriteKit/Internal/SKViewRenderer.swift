@@ -4,19 +4,25 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-// We always need OpenCoreAnimation for CADisplayLinkDelegate and rendering
-import OpenCoreAnimation
-
 #if canImport(QuartzCore)
 import QuartzCore
+import OpenCoreAnimation  // For CADisplayLinkDelegate protocol
+#else
+import OpenCoreAnimation
 #endif
 
 #if arch(wasm32)
 import JavaScriptKit
 #endif
 
-// Type alias to disambiguate from QuartzCore.CADisplayLink
+// Type aliases to resolve ambiguity between QuartzCore and OpenCoreAnimation
+#if canImport(QuartzCore)
 internal typealias OCADisplayLink = OpenCoreAnimation.CADisplayLink
+internal typealias SKTransform3D = QuartzCore.CATransform3D
+#else
+internal typealias OCADisplayLink = CADisplayLink
+internal typealias SKTransform3D = CATransform3D
+#endif
 
 /// Manages the render loop and frame cycle for SKView.
 ///
@@ -201,7 +207,13 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         // 8. Post-constraints callback
         scene.didApplyConstraints()
 
-        // 9. Final callback
+        // 9. Process effect nodes (apply CIFilters)
+        processEffectNodes(for: scene)
+
+        // 10. Apply lighting
+        applyLighting(for: scene)
+
+        // 11. Final callback
         scene.didFinishUpdate()
     }
 
@@ -227,6 +239,10 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         if let emitter = node as? SKEmitterNode {
             emitter.updateParticles(deltaTime: deltaTime)
         }
+        // Update tile map animations
+        if let tileMap = node as? SKTileMapNode {
+            tileMap.updateAnimatedTiles(deltaTime: deltaTime)
+        }
         for child in node.children {
             updateEmittersRecursively(node: child, deltaTime: deltaTime)
         }
@@ -238,9 +254,272 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         SKConstraintSolver.shared.applyConstraints(for: scene)
     }
 
+    // MARK: - Lighting
+
+    private func applyLighting(for scene: SKScene) {
+        // Collect all light nodes in the scene
+        var lights: [SKLightNode] = []
+        collectLightNodes(from: scene, into: &lights)
+
+        // If no lights, reset any lighting adjustments
+        guard !lights.isEmpty else {
+            resetLighting(for: scene)
+            return
+        }
+
+        // Apply lighting to lit nodes
+        applyLightingRecursively(node: scene, lights: lights)
+    }
+
+    private func collectLightNodes(from node: SKNode, into lights: inout [SKLightNode]) {
+        if let light = node as? SKLightNode, light.isEnabled {
+            lights.append(light)
+        }
+        for child in node.children {
+            collectLightNodes(from: child, into: &lights)
+        }
+    }
+
+    private func resetLighting(for scene: SKScene) {
+        resetLightingRecursively(node: scene)
+    }
+
+    private func resetLightingRecursively(node: SKNode) {
+        if let sprite = node as? SKSpriteNode, sprite.lightingBitMask != 0 {
+            // Reset to default lighting (full brightness, no tint)
+            sprite._computedLightingColor = (red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+            sprite._hasComputedLighting = false
+            sprite.layer.opacity = Float(sprite.alpha)
+        }
+        for child in node.children {
+            resetLightingRecursively(node: child)
+        }
+    }
+
+    private func applyLightingRecursively(node: SKNode, lights: [SKLightNode]) {
+        if let sprite = node as? SKSpriteNode, sprite.lightingBitMask != 0 {
+            applyLightingToSprite(sprite, lights: lights)
+        }
+        for child in node.children {
+            applyLightingRecursively(node: child, lights: lights)
+        }
+    }
+
+    private func applyLightingToSprite(_ sprite: SKSpriteNode, lights: [SKLightNode]) {
+        // Calculate total light contribution
+        var totalRed: CGFloat = 0
+        var totalGreen: CGFloat = 0
+        var totalBlue: CGFloat = 0
+
+        // Get sprite world position
+        let spriteWorldPos = sprite.scene?.convert(sprite.position, from: sprite.parent ?? sprite.scene!) ?? sprite.position
+
+        for light in lights {
+            // Check if this light affects this sprite
+            guard (light.categoryBitMask & sprite.lightingBitMask) != 0 else {
+                continue
+            }
+
+            // Get light world position
+            let lightWorldPos = light.scene?.convert(light.position, from: light.parent ?? light.scene!) ?? light.position
+
+            // Calculate distance
+            let dx = spriteWorldPos.x - lightWorldPos.x
+            let dy = spriteWorldPos.y - lightWorldPos.y
+            let distance = sqrt(dx * dx + dy * dy)
+
+            // Calculate attenuation based on falloff
+            let attenuation: CGFloat
+            if light.falloff <= 0 {
+                attenuation = 1.0  // No falloff
+            } else {
+                // Inverse distance falloff
+                attenuation = 1.0 / pow(max(1.0, distance / 100.0), light.falloff)
+            }
+
+            // Add ambient light contribution
+            let ambient = light.ambientColor
+            totalRed += extractRed(from: ambient)
+            totalGreen += extractGreen(from: ambient)
+            totalBlue += extractBlue(from: ambient)
+
+            // Add diffuse light contribution with attenuation
+            let diffuse = light.lightColor
+            totalRed += extractRed(from: diffuse) * attenuation
+            totalGreen += extractGreen(from: diffuse) * attenuation
+            totalBlue += extractBlue(from: diffuse) * attenuation
+        }
+
+        // Clamp values to [0, 1]
+        totalRed = min(1.0, max(0.0, totalRed))
+        totalGreen = min(1.0, max(0.0, totalGreen))
+        totalBlue = min(1.0, max(0.0, totalBlue))
+
+        // Store the computed lighting color for WASM/WebGPU rendering
+        sprite._computedLightingColor = (red: totalRed, green: totalGreen, blue: totalBlue, alpha: 1.0)
+        sprite._hasComputedLighting = true
+
+        // Apply lighting via layer for both native and WASM platforms
+        // Use a combination of opacity for brightness and filters for color
+        applyLightingColorToLayer(sprite, red: totalRed, green: totalGreen, blue: totalBlue)
+    }
+
+    /// Applies the computed lighting color to the sprite's layer.
+    /// This method uses platform-appropriate techniques for color application.
+    private func applyLightingColorToLayer(_ sprite: SKSpriteNode, red: CGFloat, green: CGFloat, blue: CGFloat) {
+        // Calculate overall brightness
+        let brightness = (red + green + blue) / 3.0
+
+        // Apply brightness via opacity
+        sprite.layer.opacity = Float(sprite.alpha * max(0.1, brightness))
+
+        #if !canImport(UIKit) && !canImport(AppKit)
+        // WASM-specific: Apply color tint via layer filters or compositing
+        // The WebGPU renderer will read _computedLightingColor and apply it in the shader
+
+        // For CALayer-based rendering, we can use a color overlay sublayer
+        // or set compositingFilter if supported
+        if red != 1.0 || green != 1.0 || blue != 1.0 {
+            // Create or update a color filter on the layer
+            // The actual color multiplication will be done by the GPU renderer
+            // using the _computedLightingColor property
+            applyColorMultiplyFilter(to: sprite.layer, red: red, green: green, blue: blue)
+        } else {
+            // Remove any color filter
+            removeColorMultiplyFilter(from: sprite.layer)
+        }
+        #endif
+    }
+
+    #if !canImport(UIKit) && !canImport(AppKit)
+    /// Applies a color multiply filter to the layer for WASM rendering.
+    private func applyColorMultiplyFilter(to layer: CALayer, red: CGFloat, green: CGFloat, blue: CGFloat) {
+        // Create a CIFilter for color multiplication if OpenCoreImage supports it
+        // Otherwise, we rely on the WebGPU renderer reading _computedLightingColor
+
+        // For now, store the color in a way that the WebGPU renderer can access
+        // The renderer should check _hasComputedLighting and apply the color
+
+        // Alternative approach: Create a sublayer with the lighting color
+        // and use multiply blend mode
+        let existingOverlay = layer.sublayers?.first { ($0 as? CALayer)?.name == "_lightingOverlay" }
+
+        if let overlay = existingOverlay {
+            overlay.backgroundColor = CGColor(red: red, green: green, blue: blue, alpha: 1.0)
+        } else {
+            let overlay = CALayer()
+            overlay.name = "_lightingOverlay"
+            overlay.frame = layer.bounds
+            overlay.backgroundColor = CGColor(red: red, green: green, blue: blue, alpha: 1.0)
+            // Note: Multiply blend mode would be applied by the renderer
+            // The overlay layer serves as a marker for the WebGPU renderer
+            layer.insertSublayer(overlay, at: 0)
+        }
+    }
+
+    /// Removes the color multiply filter from the layer.
+    private func removeColorMultiplyFilter(from layer: CALayer) {
+        if let overlay = layer.sublayers?.first(where: { ($0 as? CALayer)?.name == "_lightingOverlay" }) {
+            overlay.removeFromSuperlayer()
+        }
+    }
+    #endif
+
+    // Helper functions to extract color components
+    private func extractRed(from color: SKColor) -> CGFloat {
+        #if canImport(UIKit) || canImport(AppKit)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return red
+        #else
+        return color.red
+        #endif
+    }
+
+    private func extractGreen(from color: SKColor) -> CGFloat {
+        #if canImport(UIKit) || canImport(AppKit)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return green
+        #else
+        return color.green
+        #endif
+    }
+
+    private func extractBlue(from color: SKColor) -> CGFloat {
+        #if canImport(UIKit) || canImport(AppKit)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return blue
+        #else
+        return color.blue
+        #endif
+    }
+
+    // MARK: - Effect Node Processing
+
+    private func processEffectNodes(for scene: SKScene) {
+        processEffectNodesRecursively(node: scene)
+    }
+
+    private func processEffectNodesRecursively(node: SKNode) {
+        // Process effect nodes
+        if let effectNode = node as? SKEffectNode {
+            processEffectNode(effectNode)
+        }
+
+        // Recurse to children
+        for child in node.children {
+            processEffectNodesRecursively(node: child)
+        }
+    }
+
+    private func processEffectNode(_ effectNode: SKEffectNode) {
+        guard effectNode.shouldEnableEffects, effectNode.filter != nil else {
+            // No filter to apply, clear any cached image
+            effectNode._cachedFilteredImage = nil
+            return
+        }
+
+        // If rasterized and cache is valid, skip processing
+        if effectNode.shouldRasterize && !effectNode._needsFilterUpdate {
+            if effectNode._cachedFilteredImage != nil {
+                return
+            }
+        }
+
+        // Calculate the size for rendering
+        let frame = effectNode.calculateAccumulatedFrame()
+        guard !frame.isEmpty else { return }
+
+        // Render children to an offscreen image
+        guard let childImage = effectNode.renderChildrenToImage(size: frame.size) else {
+            return
+        }
+
+        // Apply the filter
+        if let filteredImage = effectNode.applyFilter(to: childImage) {
+            // Update the effect node's layer contents with the filtered image
+            effectNode.layer.contents = filteredImage
+            effectNode.layer.bounds = CGRect(origin: .zero, size: frame.size)
+        }
+    }
+
     // MARK: - Rendering
 
     private func renderScene(_ scene: SKScene) {
+        // Apply camera transform if a camera is set
+        applyCameraTransform(to: scene)
+
         #if arch(wasm32)
         // Render the scene's layer tree via WebGPU
         renderer?.render(layer: scene.layer)
@@ -249,6 +528,87 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         // through the view system, so we just need to mark for redisplay if needed
         scene.layer.setNeedsDisplay()
         #endif
+    }
+
+    /// Applies the camera transform to the scene's layer for rendering.
+    ///
+    /// When a camera is set, the scene content should be transformed to show
+    /// the view from the camera's perspective. Camera children (HUD elements)
+    /// are not affected by this transform.
+    private func applyCameraTransform(to scene: SKScene) {
+        guard let camera = scene.camera else {
+            // No camera - reset any previous transform
+            #if canImport(QuartzCore)
+            scene.layer.transform = QuartzCore.CATransform3DIdentity
+            #else
+            scene.layer.transform = CATransform3DIdentity
+            #endif
+            return
+        }
+
+        guard let view = view else { return }
+
+        // Calculate the center of the view (where the camera should be positioned)
+        let viewSize = view.viewSize
+        let viewCenterX = viewSize.width / 2
+        let viewCenterY = viewSize.height / 2
+
+        // Build the 3D transform for the layer
+        // 1. Move to view center
+        // 2. Apply camera transform (inverse of camera's position/rotation/scale)
+        // 3. Move back from view center
+
+        #if canImport(QuartzCore)
+        var transform = QuartzCore.CATransform3DIdentity
+        transform = QuartzCore.CATransform3DTranslate(transform, viewCenterX, viewCenterY, 0)
+        let scaleX = camera.xScale != 0 ? 1.0 / camera.xScale : 1.0
+        let scaleY = camera.yScale != 0 ? 1.0 / camera.yScale : 1.0
+        transform = QuartzCore.CATransform3DScale(transform, scaleX, scaleY, 1.0)
+        if camera.zRotation != 0 {
+            transform = QuartzCore.CATransform3DRotate(transform, Double(-camera.zRotation), 0, 0, 1)
+        }
+        transform = QuartzCore.CATransform3DTranslate(transform, -camera.position.x, -camera.position.y, 0)
+        let anchorOffsetX = scene.anchorPoint.x * scene.size.width
+        let anchorOffsetY = scene.anchorPoint.y * scene.size.height
+        transform = QuartzCore.CATransform3DTranslate(transform, anchorOffsetX, anchorOffsetY, 0)
+        transform = QuartzCore.CATransform3DTranslate(transform, -viewCenterX, -viewCenterY, 0)
+        #else
+        var transform = CATransform3DIdentity
+        transform = CATransform3DTranslate(transform, viewCenterX, viewCenterY, 0)
+        let scaleX = camera.xScale != 0 ? 1.0 / camera.xScale : 1.0
+        let scaleY = camera.yScale != 0 ? 1.0 / camera.yScale : 1.0
+        transform = CATransform3DScale(transform, scaleX, scaleY, 1.0)
+        if camera.zRotation != 0 {
+            transform = CATransform3DRotate(transform, Double(-camera.zRotation), 0, 0, 1)
+        }
+        transform = CATransform3DTranslate(transform, -camera.position.x, -camera.position.y, 0)
+        let anchorOffsetX = scene.anchorPoint.x * scene.size.width
+        let anchorOffsetY = scene.anchorPoint.y * scene.size.height
+        transform = CATransform3DTranslate(transform, anchorOffsetX, anchorOffsetY, 0)
+        transform = CATransform3DTranslate(transform, -viewCenterX, -viewCenterY, 0)
+        #endif
+
+        scene.layer.transform = transform
+
+        // Reset transform for camera's children (HUD elements stay fixed)
+        // Camera children should render with an inverse transform to stay in place
+        updateCameraChildrenTransform(camera: camera, sceneTransform: transform)
+    }
+
+    /// Updates transforms for camera children so they appear fixed on screen (HUD elements).
+    private func updateCameraChildrenTransform(camera: SKCameraNode, sceneTransform: SKTransform3D) {
+        // Camera children should not be affected by the camera transform
+        // They need an inverse transform to stay in place
+        #if canImport(QuartzCore)
+        let inverseTransform = QuartzCore.CATransform3DInvert(sceneTransform)
+        #else
+        let inverseTransform = CATransform3DInvert(sceneTransform)
+        #endif
+
+        for child in camera.children {
+            // Apply inverse transform to counteract the scene transform
+            child.layer.transform = inverseTransform
+        }
     }
 
     // MARK: - Resize

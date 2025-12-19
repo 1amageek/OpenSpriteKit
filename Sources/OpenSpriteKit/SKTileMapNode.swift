@@ -406,6 +406,15 @@ open class SKTileMapNode: SKNode {
     /// Cached map size to avoid repeated calculation
     private var _cachedMapSize: CGSize?
 
+    /// Sprite nodes used to render tiles
+    private var tileSprites: [SKSpriteNode?] = []
+
+    /// Flag to track if tile sprites need updating
+    private var _needsTileUpdate: Bool = true
+
+    /// Animation time accumulator for animated tiles
+    private var _animationTime: TimeInterval = 0
+
     // MARK: - Computed Properties
 
     /// The size of the tile map in points.
@@ -444,6 +453,7 @@ open class SKTileMapNode: SKNode {
         self.tileSize = tileSize
         self.tiles = [SKTileGroup?](repeating: nil, count: columns * rows)
         super.init()
+        initializeTileSprites()
     }
 
     public init(tileSet: SKTileSet, columns: Int, rows: Int, tileSize: CGSize, fillWith tileGroup: SKTileGroup?) {
@@ -453,6 +463,7 @@ open class SKTileMapNode: SKNode {
         self.tileSize = tileSize
         self.tiles = [SKTileGroup?](repeating: tileGroup, count: columns * rows)
         super.init()
+        initializeTileSprites()
     }
 
     public init(tileSet: SKTileSet, columns: Int, rows: Int, tileSize: CGSize, tileGroupLayout: [SKTileGroup?]) {
@@ -472,6 +483,7 @@ open class SKTileMapNode: SKNode {
             self.tiles = tiles
         }
         super.init()
+        initializeTileSprites()
     }
 
     public required init?(coder: NSCoder) {
@@ -498,7 +510,9 @@ open class SKTileMapNode: SKNode {
         guard isValidCoordinate(column: column, row: row) else {
             return
         }
-        tiles[tileIndex(column: column, row: row)] = tileGroup
+        let index = tileIndex(column: column, row: row)
+        tiles[index] = tileGroup
+        updateTileSprite(at: index, column: column, row: row)
     }
 
     /// Sets the tile group using automapping at the specified position.
@@ -506,7 +520,9 @@ open class SKTileMapNode: SKNode {
         guard isValidCoordinate(column: column, row: row) else {
             return
         }
-        tiles[tileIndex(column: column, row: row)] = tileGroup
+        let index = tileIndex(column: column, row: row)
+        tiles[index] = tileGroup
+        updateTileSprite(at: index, column: column, row: row, definition: tileDefinition)
     }
 
     /// Returns the tile definition at the specified column and row.
@@ -555,6 +571,7 @@ open class SKTileMapNode: SKNode {
                 buffer[i] = tileGroup
             }
         }
+        rebuildAllTileSprites()
     }
 
     // MARK: - Shader Attributes
@@ -567,5 +584,128 @@ open class SKTileMapNode: SKNode {
     /// Gets a shader attribute value.
     open func value(forAttributeNamed name: String) -> SKAttributeValue? {
         return attributeValues[name]
+    }
+
+    // MARK: - Tile Sprite Management
+
+    /// Initializes the tile sprites array and creates initial sprites.
+    private func initializeTileSprites() {
+        let totalTiles = numberOfColumns * numberOfRows
+        tileSprites = [SKSpriteNode?](repeating: nil, count: totalTiles)
+        rebuildAllTileSprites()
+    }
+
+    /// Rebuilds all tile sprites from scratch.
+    private func rebuildAllTileSprites() {
+        // Remove all existing tile sprites
+        for sprite in tileSprites {
+            sprite?.removeFromParent()
+        }
+
+        let totalTiles = numberOfColumns * numberOfRows
+        tileSprites = [SKSpriteNode?](repeating: nil, count: totalTiles)
+
+        // Create sprites for all tiles
+        for row in 0..<numberOfRows {
+            for column in 0..<numberOfColumns {
+                let index = tileIndex(column: column, row: row)
+                updateTileSprite(at: index, column: column, row: row)
+            }
+        }
+    }
+
+    /// Updates a single tile sprite at the specified index.
+    private func updateTileSprite(at index: Int, column: Int, row: Int, definition: SKTileDefinition? = nil) {
+        // Get or create the tile definition
+        let tileDef: SKTileDefinition?
+        if let def = definition {
+            tileDef = def
+        } else if let group = tiles[index],
+                  let rule = group.rules.first,
+                  let def = rule.tileDefinitions.first {
+            tileDef = def
+        } else {
+            tileDef = nil
+        }
+
+        // Remove existing sprite if tile is now empty
+        if tileDef == nil {
+            if let existing = tileSprites[index] {
+                existing.removeFromParent()
+                tileSprites[index] = nil
+            }
+            return
+        }
+
+        guard let def = tileDef else { return }
+
+        // Get or create sprite for this tile
+        let sprite: SKSpriteNode
+        if let existing = tileSprites[index] {
+            sprite = existing
+        } else {
+            sprite = SKSpriteNode()
+            sprite.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            tileSprites[index] = sprite
+            addChild(sprite)
+        }
+
+        // Update sprite properties
+        sprite.size = def.size != .zero ? def.size : tileSize
+        sprite.position = centerOfTile(atColumn: column, row: row)
+
+        // Set texture from definition
+        if let texture = def.textures.first {
+            sprite.texture = texture
+        }
+
+        // Apply rotation
+        switch def.rotation {
+        case .rotation0:
+            sprite.zRotation = 0
+        case .rotation90:
+            sprite.zRotation = .pi / 2
+        case .rotation180:
+            sprite.zRotation = .pi
+        case .rotation270:
+            sprite.zRotation = .pi * 3 / 2
+        }
+
+        // Apply flipping via scale
+        sprite.xScale = def.flipHorizontally ? -1 : 1
+        sprite.yScale = def.flipVertically ? -1 : 1
+
+        // Apply color blending
+        sprite.color = color
+        sprite.colorBlendFactor = colorBlendFactor
+        sprite.blendMode = blendMode
+    }
+
+    /// Updates animated tiles for the current frame.
+    ///
+    /// Call this method from the frame cycle to animate tiles with multiple textures.
+    internal func updateAnimatedTiles(deltaTime: TimeInterval) {
+        _animationTime += deltaTime
+
+        for row in 0..<numberOfRows {
+            for column in 0..<numberOfColumns {
+                let index = tileIndex(column: column, row: row)
+                guard let sprite = tileSprites[index],
+                      let group = tiles[index],
+                      let rule = group.rules.first,
+                      let def = rule.tileDefinitions.first,
+                      def.textures.count > 1 else {
+                    continue
+                }
+
+                // Calculate current frame based on time
+                let frameCount = def.textures.count
+                let totalDuration = def.timePerFrame * CGFloat(frameCount)
+                let cycleTime = _animationTime.truncatingRemainder(dividingBy: Double(totalDuration))
+                let frameIndex = Int(cycleTime / Double(def.timePerFrame)) % frameCount
+
+                sprite.texture = def.textures[frameIndex]
+            }
+        }
     }
 }
