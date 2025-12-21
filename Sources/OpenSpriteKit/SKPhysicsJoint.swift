@@ -9,11 +9,7 @@
 /// An `SKPhysicsJoint` object connects two physics bodies so that they are simulated together
 /// by the physics world. You never create instances of `SKPhysicsJoint` directly; instead,
 /// you create one of the subclasses.
-open class SKPhysicsJoint: NSObject, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKPhysicsJoint: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -37,18 +33,7 @@ open class SKPhysicsJoint: NSObject, NSSecureCoding {
 
     // MARK: - Initializers
 
-    public override init() {
-        super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        // Base class encoding - bodies are not encoded (weak references)
+    public init() {
     }
 
     // MARK: - Internal
@@ -65,7 +50,7 @@ open class SKPhysicsJoint: NSObject, NSSecureCoding {
 /// A joint that pins two bodies together at a single point, allowing them to rotate around that point.
 ///
 /// A pin joint allows the two bodies to rotate independently around the anchor point.
-open class SKPhysicsJointPin: SKPhysicsJoint {
+open class SKPhysicsJointPin: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -90,29 +75,6 @@ open class SKPhysicsJointPin: SKPhysicsJoint {
     // MARK: - Initializers
 
     public override init() {
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public required init?(coder: NSCoder) {
-        anchor = coder.decodeCGPoint(forKey: "anchor")
-        rotationSpeed = CGFloat(coder.decodeDouble(forKey: "rotationSpeed"))
-        shouldEnableLimits = coder.decodeBool(forKey: "shouldEnableLimits")
-        lowerAngleLimit = CGFloat(coder.decodeDouble(forKey: "lowerAngleLimit"))
-        upperAngleLimit = CGFloat(coder.decodeDouble(forKey: "upperAngleLimit"))
-        frictionTorque = CGFloat(coder.decodeDouble(forKey: "frictionTorque"))
-        super.init(coder: coder)
-    }
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(anchor, forKey: "anchor")
-        coder.encode(Double(rotationSpeed), forKey: "rotationSpeed")
-        coder.encode(shouldEnableLimits, forKey: "shouldEnableLimits")
-        coder.encode(Double(lowerAngleLimit), forKey: "lowerAngleLimit")
-        coder.encode(Double(upperAngleLimit), forKey: "upperAngleLimit")
-        coder.encode(Double(frictionTorque), forKey: "frictionTorque")
     }
 
     // MARK: - Factory Methods
@@ -138,7 +100,7 @@ open class SKPhysicsJointPin: SKPhysicsJoint {
 /// A joint that simulates a spring connecting two physics bodies.
 ///
 /// A spring joint simulates a spring that connects two physics bodies.
-open class SKPhysicsJointSpring: SKPhysicsJoint {
+open class SKPhysicsJointSpring: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -160,27 +122,6 @@ open class SKPhysicsJointSpring: SKPhysicsJoint {
     // MARK: - Initializers
 
     public override init() {
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public required init?(coder: NSCoder) {
-        anchorA = coder.decodeCGPoint(forKey: "anchorA")
-        anchorB = coder.decodeCGPoint(forKey: "anchorB")
-        restLength = CGFloat(coder.decodeDouble(forKey: "restLength"))
-        damping = CGFloat(coder.decodeDouble(forKey: "damping"))
-        frequency = CGFloat(coder.decodeDouble(forKey: "frequency"))
-        super.init(coder: coder)
-    }
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(anchorA, forKey: "anchorA")
-        coder.encode(anchorB, forKey: "anchorB")
-        coder.encode(Double(restLength), forKey: "restLength")
-        coder.encode(Double(damping), forKey: "damping")
-        coder.encode(Double(frequency), forKey: "frequency")
     }
 
     // MARK: - Factory Methods
@@ -212,7 +153,7 @@ open class SKPhysicsJointSpring: SKPhysicsJoint {
 /// A joint that fuses two physics bodies together at a reference point.
 ///
 /// A fixed joint connects two physics bodies so that they cannot move relative to each other.
-open class SKPhysicsJointFixed: SKPhysicsJoint {
+open class SKPhysicsJointFixed: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -228,23 +169,6 @@ open class SKPhysicsJointFixed: SKPhysicsJoint {
     // MARK: - Initializers
 
     public override init() {
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public required init?(coder: NSCoder) {
-        anchor = coder.decodeCGPoint(forKey: "anchor")
-        relativeOffset = coder.decodeCGVector(forKey: "relativeOffset")
-        relativeRotation = CGFloat(coder.decodeDouble(forKey: "relativeRotation"))
-        super.init(coder: coder)
-    }
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(anchor, forKey: "anchor")
-        coder.encode(relativeOffset, forKey: "relativeOffset")
-        coder.encode(Double(relativeRotation), forKey: "relativeRotation")
     }
 
     // MARK: - Factory Methods
@@ -280,7 +204,7 @@ open class SKPhysicsJointFixed: SKPhysicsJoint {
 /// A joint that allows two physics bodies to slide along an axis.
 ///
 /// A sliding joint allows two physics bodies to slide along a common axis.
-open class SKPhysicsJointSliding: SKPhysicsJoint {
+open class SKPhysicsJointSliding: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -302,27 +226,6 @@ open class SKPhysicsJointSliding: SKPhysicsJoint {
     // MARK: - Initializers
 
     public override init() {
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public required init?(coder: NSCoder) {
-        anchor = coder.decodeCGPoint(forKey: "anchor")
-        axis = coder.decodeCGVector(forKey: "axis")
-        shouldEnableLimits = coder.decodeBool(forKey: "shouldEnableLimits")
-        lowerDistanceLimit = CGFloat(coder.decodeDouble(forKey: "lowerDistanceLimit"))
-        upperDistanceLimit = CGFloat(coder.decodeDouble(forKey: "upperDistanceLimit"))
-        super.init(coder: coder)
-    }
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(anchor, forKey: "anchor")
-        coder.encode(axis, forKey: "axis")
-        coder.encode(shouldEnableLimits, forKey: "shouldEnableLimits")
-        coder.encode(Double(lowerDistanceLimit), forKey: "lowerDistanceLimit")
-        coder.encode(Double(upperDistanceLimit), forKey: "upperDistanceLimit")
     }
 
     // MARK: - Factory Methods
@@ -354,7 +257,7 @@ open class SKPhysicsJointSliding: SKPhysicsJoint {
 /// A joint that limits the distance between two physics bodies.
 ///
 /// A limit joint connects two physics bodies with a maximum allowed distance.
-open class SKPhysicsJointLimit: SKPhysicsJoint {
+open class SKPhysicsJointLimit: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -370,23 +273,6 @@ open class SKPhysicsJointLimit: SKPhysicsJoint {
     // MARK: - Initializers
 
     public override init() {
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public required init?(coder: NSCoder) {
-        anchorA = coder.decodeCGPoint(forKey: "anchorA")
-        anchorB = coder.decodeCGPoint(forKey: "anchorB")
-        maxLength = CGFloat(coder.decodeDouble(forKey: "maxLength"))
-        super.init(coder: coder)
-    }
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(anchorA, forKey: "anchorA")
-        coder.encode(anchorB, forKey: "anchorB")
-        coder.encode(Double(maxLength), forKey: "maxLength")
     }
 
     // MARK: - Factory Methods

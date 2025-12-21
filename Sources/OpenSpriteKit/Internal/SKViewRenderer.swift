@@ -4,24 +4,10 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(QuartzCore)
-import QuartzCore
-import OpenCoreAnimation  // For CADisplayLinkDelegate protocol
-#else
 import OpenCoreAnimation
-#endif
 
 #if arch(wasm32)
 import JavaScriptKit
-#endif
-
-// Type aliases to resolve ambiguity between QuartzCore and OpenCoreAnimation
-#if canImport(QuartzCore)
-internal typealias OCADisplayLink = OpenCoreAnimation.CADisplayLink
-internal typealias SKTransform3D = QuartzCore.CATransform3D
-#else
-internal typealias OCADisplayLink = CADisplayLink
-internal typealias SKTransform3D = CATransform3D
 #endif
 
 /// Manages the render loop and frame cycle for SKView.
@@ -29,24 +15,26 @@ internal typealias SKTransform3D = CATransform3D
 /// This class integrates with OpenCoreAnimation's rendering infrastructure to:
 /// - Run the SpriteKit frame cycle (update, actions, physics, etc.)
 /// - Coordinate with CADisplayLink for frame timing
-/// - Render the scene's layer tree via CAWebGPURenderer (on WASM)
+/// - Render the scene's layer tree via the scene renderer delegate
 @MainActor
-internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
+internal final class SKViewRenderer: CADisplayLinkDelegate {
 
     // MARK: - Properties
 
-    private var displayLink: OCADisplayLink?
+    private var displayLink: CADisplayLink?
     private weak var view: SKView?
     private var lastUpdateTime: TimeInterval = 0
     private var isRunning: Bool = false
 
-    #if arch(wasm32)
-    private var renderer: CAWebGPURenderer?
-    #endif
+    /// The internal scene renderer delegate.
+    /// Starts with null renderer and is replaced with the appropriate implementation in start().
+    private var rendererDelegate: SKSceneRendererDelegate
 
     // MARK: - Initialization
 
-    init() {}
+    init() {
+        self.rendererDelegate = SKNullSceneRenderer()
+    }
 
     deinit {
         // Directly clean up resources without calling MainActor-isolated methods
@@ -58,7 +46,7 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     // MARK: - Lifecycle
 
     #if arch(wasm32)
-    /// Initializes the renderer and starts the render loop (WASM version).
+    /// Initializes the renderer and starts the render loop.
     ///
     /// - Parameters:
     ///   - canvas: The JavaScript canvas element to render to.
@@ -66,21 +54,20 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     func start(canvas: JSObject, view: SKView) async throws {
         self.view = view
 
-        // Initialize WebGPU renderer
-        let webGPURenderer = CAWebGPURenderer(canvas: canvas)
+        // Initialize WebGPU scene renderer delegate
+        let webGPURenderer = SKWebGPUSceneRenderer(canvas: canvas)
         try await webGPURenderer.initialize()
-        self.renderer = webGPURenderer
+        self.rendererDelegate = webGPURenderer
 
         // Create and start display link
         startDisplayLink()
     }
     #endif
 
-    /// Starts the render loop (native/test version).
-    ///
-    /// - Parameter view: The SKView to render.
+    /// Starts the render loop (for testing/native builds).
     func start(view: SKView) {
         self.view = view
+        // Keep the null renderer for non-WASM builds
         startDisplayLink()
     }
 
@@ -89,11 +76,7 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         isRunning = false
         displayLink?.invalidate()
         displayLink = nil
-
-        #if arch(wasm32)
-        renderer?.invalidate()
-        renderer = nil
-        #endif
+        rendererDelegate.invalidate()
     }
 
     // MARK: - Display Link
@@ -104,18 +87,15 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         lastUpdateTime = 0
 
         // Create display link with self as delegate
-        // OpenCoreAnimation.CADisplayLink uses CADisplayLinkDelegate protocol;
-        // the selector parameter is stored but not used (ignored on both platforms)
-        displayLink = OCADisplayLink(target: self, selector: Selector(("displayLinkDidFire:")))
+        displayLink = CADisplayLink(target: self, selector: Selector(("displayLinkDidFire:")))
         displayLink?.preferredFramesPerSecond = view?.preferredFramesPerSecond ?? 60
-        // The runloop and mode parameters are ignored on both native (Timer-based) and WASM platforms
-        displayLink?.add(to: self as AnyObject, forMode: self as AnyObject)
+        displayLink?.add(to: .main, forMode: .default)
     }
 
     // MARK: - CADisplayLinkDelegate
 
     /// Called by CADisplayLink on each frame.
-    nonisolated public func displayLinkDidFire(_ displayLink: OCADisplayLink) {
+    nonisolated public func displayLinkDidFire(_ displayLink: CADisplayLink) {
         MainActor.assumeIsolated {
             guard isRunning else { return }
             guard let view = view else { return }
@@ -147,25 +127,13 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
 
     /// Renders both scenes during a transition.
     private func renderTransition(currentTime: TimeInterval) {
-        #if arch(wasm32)
-        // For WASM, the transition rendering needs to composite both scenes
-        // This is handled by the SKTransitionManager modifying scene alpha/position
-        // The actual rendering is done through the layer system
+        // Render both scenes during transition via the delegate
         if let transitionFromScene = SKTransitionManager.shared.fromScene {
-            renderer?.render(layer: transitionFromScene.layer)
+            rendererDelegate.render(layer: transitionFromScene.layer)
         }
         if let transitionToScene = SKTransitionManager.shared.toScene {
-            renderer?.render(layer: transitionToScene.layer)
+            rendererDelegate.render(layer: transitionToScene.layer)
         }
-        #else
-        // On native platforms, CALayer handles compositing automatically
-        if let transitionFromScene = SKTransitionManager.shared.fromScene {
-            transitionFromScene.layer.setNeedsDisplay()
-        }
-        if let transitionToScene = SKTransitionManager.shared.toScene {
-            transitionToScene.layer.setNeedsDisplay()
-        }
-        #endif
     }
 
     // MARK: - Frame Cycle
@@ -365,7 +333,6 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     }
 
     /// Applies the computed lighting color to the sprite's layer.
-    /// This method uses platform-appropriate techniques for color application.
     private func applyLightingColorToLayer(_ sprite: SKSpriteNode, red: CGFloat, green: CGFloat, blue: CGFloat) {
         // Calculate overall brightness
         let brightness = (red + green + blue) / 3.0
@@ -373,36 +340,18 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         // Apply brightness via opacity
         sprite.layer.opacity = Float(sprite.alpha * max(0.1, brightness))
 
-        #if !canImport(UIKit) && !canImport(AppKit)
-        // WASM-specific: Apply color tint via layer filters or compositing
+        // Apply color tint via layer filters or compositing
         // The WebGPU renderer will read _computedLightingColor and apply it in the shader
-
-        // For CALayer-based rendering, we can use a color overlay sublayer
-        // or set compositingFilter if supported
         if red != 1.0 || green != 1.0 || blue != 1.0 {
-            // Create or update a color filter on the layer
-            // The actual color multiplication will be done by the GPU renderer
-            // using the _computedLightingColor property
             applyColorMultiplyFilter(to: sprite.layer, red: red, green: green, blue: blue)
         } else {
-            // Remove any color filter
             removeColorMultiplyFilter(from: sprite.layer)
         }
-        #endif
     }
 
-    #if !canImport(UIKit) && !canImport(AppKit)
-    /// Applies a color multiply filter to the layer for WASM rendering.
+    /// Applies a color multiply filter to the layer for rendering.
     private func applyColorMultiplyFilter(to layer: CALayer, red: CGFloat, green: CGFloat, blue: CGFloat) {
-        // Create a CIFilter for color multiplication if OpenCoreImage supports it
-        // Otherwise, we rely on the WebGPU renderer reading _computedLightingColor
-
-        // For now, store the color in a way that the WebGPU renderer can access
-        // The renderer should check _hasComputedLighting and apply the color
-
-        // Alternative approach: Create a sublayer with the lighting color
-        // and use multiply blend mode
-        let existingOverlay = layer.sublayers?.first { ($0 as? CALayer)?.name == "_lightingOverlay" }
+        let existingOverlay = layer.sublayers?.first { $0.name == "_lightingOverlay" }
 
         if let overlay = existingOverlay {
             overlay.backgroundColor = CGColor(red: red, green: green, blue: blue, alpha: 1.0)
@@ -411,58 +360,28 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
             overlay.name = "_lightingOverlay"
             overlay.frame = layer.bounds
             overlay.backgroundColor = CGColor(red: red, green: green, blue: blue, alpha: 1.0)
-            // Note: Multiply blend mode would be applied by the renderer
-            // The overlay layer serves as a marker for the WebGPU renderer
             layer.insertSublayer(overlay, at: 0)
         }
     }
 
     /// Removes the color multiply filter from the layer.
     private func removeColorMultiplyFilter(from layer: CALayer) {
-        if let overlay = layer.sublayers?.first(where: { ($0 as? CALayer)?.name == "_lightingOverlay" }) {
+        if let overlay = layer.sublayers?.first(where: { $0.name == "_lightingOverlay" }) {
             overlay.removeFromSuperlayer()
         }
     }
-    #endif
 
     // Helper functions to extract color components
     private func extractRed(from color: SKColor) -> CGFloat {
-        #if canImport(UIKit) || canImport(AppKit)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return red
-        #else
         return color.red
-        #endif
     }
 
     private func extractGreen(from color: SKColor) -> CGFloat {
-        #if canImport(UIKit) || canImport(AppKit)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return green
-        #else
         return color.green
-        #endif
     }
 
     private func extractBlue(from color: SKColor) -> CGFloat {
-        #if canImport(UIKit) || canImport(AppKit)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return blue
-        #else
         return color.blue
-        #endif
     }
 
     // MARK: - Effect Node Processing
@@ -520,14 +439,8 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         // Apply camera transform if a camera is set
         applyCameraTransform(to: scene)
 
-        #if arch(wasm32)
-        // Render the scene's layer tree via WebGPU
-        renderer?.render(layer: scene.layer)
-        #else
-        // On native platforms, CALayer handles rendering automatically
-        // through the view system, so we just need to mark for redisplay if needed
-        scene.layer.setNeedsDisplay()
-        #endif
+        // Render the scene's layer tree via the delegate
+        rendererDelegate.render(layer: scene.layer)
     }
 
     /// Applies the camera transform to the scene's layer for rendering.
@@ -538,11 +451,7 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     private func applyCameraTransform(to scene: SKScene) {
         guard let camera = scene.camera else {
             // No camera - reset any previous transform
-            #if canImport(QuartzCore)
-            scene.layer.transform = QuartzCore.CATransform3DIdentity
-            #else
             scene.layer.transform = CATransform3DIdentity
-            #endif
             return
         }
 
@@ -554,25 +463,6 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         let viewCenterY = viewSize.height / 2
 
         // Build the 3D transform for the layer
-        // 1. Move to view center
-        // 2. Apply camera transform (inverse of camera's position/rotation/scale)
-        // 3. Move back from view center
-
-        #if canImport(QuartzCore)
-        var transform = QuartzCore.CATransform3DIdentity
-        transform = QuartzCore.CATransform3DTranslate(transform, viewCenterX, viewCenterY, 0)
-        let scaleX = camera.xScale != 0 ? 1.0 / camera.xScale : 1.0
-        let scaleY = camera.yScale != 0 ? 1.0 / camera.yScale : 1.0
-        transform = QuartzCore.CATransform3DScale(transform, scaleX, scaleY, 1.0)
-        if camera.zRotation != 0 {
-            transform = QuartzCore.CATransform3DRotate(transform, Double(-camera.zRotation), 0, 0, 1)
-        }
-        transform = QuartzCore.CATransform3DTranslate(transform, -camera.position.x, -camera.position.y, 0)
-        let anchorOffsetX = scene.anchorPoint.x * scene.size.width
-        let anchorOffsetY = scene.anchorPoint.y * scene.size.height
-        transform = QuartzCore.CATransform3DTranslate(transform, anchorOffsetX, anchorOffsetY, 0)
-        transform = QuartzCore.CATransform3DTranslate(transform, -viewCenterX, -viewCenterY, 0)
-        #else
         var transform = CATransform3DIdentity
         transform = CATransform3DTranslate(transform, viewCenterX, viewCenterY, 0)
         let scaleX = camera.xScale != 0 ? 1.0 / camera.xScale : 1.0
@@ -586,27 +476,18 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
         let anchorOffsetY = scene.anchorPoint.y * scene.size.height
         transform = CATransform3DTranslate(transform, anchorOffsetX, anchorOffsetY, 0)
         transform = CATransform3DTranslate(transform, -viewCenterX, -viewCenterY, 0)
-        #endif
 
         scene.layer.transform = transform
 
         // Reset transform for camera's children (HUD elements stay fixed)
-        // Camera children should render with an inverse transform to stay in place
         updateCameraChildrenTransform(camera: camera, sceneTransform: transform)
     }
 
     /// Updates transforms for camera children so they appear fixed on screen (HUD elements).
-    private func updateCameraChildrenTransform(camera: SKCameraNode, sceneTransform: SKTransform3D) {
-        // Camera children should not be affected by the camera transform
-        // They need an inverse transform to stay in place
-        #if canImport(QuartzCore)
-        let inverseTransform = QuartzCore.CATransform3DInvert(sceneTransform)
-        #else
+    private func updateCameraChildrenTransform(camera: SKCameraNode, sceneTransform: CATransform3D) {
         let inverseTransform = CATransform3DInvert(sceneTransform)
-        #endif
 
         for child in camera.children {
-            // Apply inverse transform to counteract the scene transform
             child.layer.transform = inverseTransform
         }
     }
@@ -619,8 +500,6 @@ internal final class SKViewRenderer: OpenCoreAnimation.CADisplayLinkDelegate {
     ///   - width: The new width in pixels.
     ///   - height: The new height in pixels.
     func resize(width: Int, height: Int) {
-        #if arch(wasm32)
-        renderer?.resize(width: width, height: height)
-        #endif
+        rendererDelegate.resize(width: width, height: height)
     }
 }

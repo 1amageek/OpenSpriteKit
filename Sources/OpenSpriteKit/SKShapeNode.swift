@@ -4,18 +4,14 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(QuartzCore)
-import QuartzCore
-#else
 import OpenCoreAnimation
-#endif
 
 /// A mathematical shape that can be stroked or filled.
 ///
 /// `SKShapeNode` allows you to create onscreen graphical elements from mathematical points, lines, and curves.
 /// The advantage this has over rasterized graphics, such as those displayed by textures, is that shapes are
 /// rasterized dynamically at runtime to produce crisp detail and smoother edges.
-open class SKShapeNode: SKNode {
+open class SKShapeNode: SKNode, @unchecked Sendable {
 
     // MARK: - Layer Class Override
 
@@ -583,30 +579,6 @@ open class SKShapeNode: SKNode {
         )
     }
 
-    public required init?(coder: NSCoder) {
-        lineWidth = CGFloat(coder.decodeDouble(forKey: "lineWidth"))
-        glowWidth = CGFloat(coder.decodeDouble(forKey: "glowWidth"))
-        lineCap = CGLineCap(rawValue: Int32(coder.decodeInteger(forKey: "lineCap"))) ?? .butt
-        lineJoin = CGLineJoin(rawValue: Int32(coder.decodeInteger(forKey: "lineJoin"))) ?? .miter
-        miterLimit = CGFloat(coder.decodeDouble(forKey: "miterLimit"))
-        isAntialiased = coder.decodeBool(forKey: "isAntialiased")
-        blendMode = SKBlendMode(rawValue: coder.decodeInteger(forKey: "blendMode")) ?? .alpha
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(Double(lineWidth), forKey: "lineWidth")
-        coder.encode(Double(glowWidth), forKey: "glowWidth")
-        coder.encode(Int(lineCap.rawValue), forKey: "lineCap")
-        coder.encode(Int(lineJoin.rawValue), forKey: "lineJoin")
-        coder.encode(Double(miterLimit), forKey: "miterLimit")
-        coder.encode(isAntialiased, forKey: "isAntialiased")
-        coder.encode(blendMode.rawValue, forKey: "blendMode")
-    }
-
     // MARK: - Shader Attribute Methods
 
     /// Sets an attribute value for an attached shader.
@@ -643,15 +615,8 @@ open class SKShapeNode: SKNode {
             return
         }
 
-        #if canImport(UIKit) || canImport(AppKit)
-        // Native platform: Use CGPattern (callback-based)
-        if let patternColor = createPatternColor(from: cgImage) {
-            shapeLayer.fillColor = patternColor
-        }
-        #else
-        // WASM: Use layer-based texture tiling (no callbacks)
+        // Use layer-based texture tiling
         applyFillTextureViaLayer(cgImage)
-        #endif
     }
 
     /// Updates the stroke color with a pattern from the stroke texture.
@@ -663,71 +628,12 @@ open class SKShapeNode: SKNode {
             return
         }
 
-        #if canImport(UIKit) || canImport(AppKit)
-        // Native platform: Use CGPattern (callback-based)
-        if let patternColor = createPatternColor(from: cgImage) {
-            shapeLayer.strokeColor = patternColor
-        }
-        #else
-        // WASM: Use layer-based texture tiling (no callbacks)
+        // Use layer-based texture tiling
         applyStrokeTextureViaLayer(cgImage)
-        #endif
     }
 
-    #if canImport(UIKit) || canImport(AppKit)
-    /// Creates a CGColor with a pattern from the given image (native platforms only).
-    private func createPatternColor(from image: CGImage) -> CGColor? {
-        let width = image.width
-        let height = image.height
+    // MARK: - Texture Layer Methods
 
-        // Create pattern callbacks
-        // Note: CGContext is non-optional in native CoreGraphics but optional in OpenCoreGraphics
-        var callbacks = CGPatternCallbacks(
-            version: 0,
-            drawPattern: { info, context in
-                guard let info = info else { return }
-                let image = Unmanaged<CGImage>.fromOpaque(info).takeUnretainedValue()
-                let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-                context.draw(image, in: rect)
-            },
-            releaseInfo: { info in
-                guard let info = info else { return }
-                Unmanaged<CGImage>.fromOpaque(info).release()
-            }
-        )
-
-        // Retain the image for the pattern
-        let imageInfo = Unmanaged.passRetained(image).toOpaque()
-
-        // Create the pattern
-        guard let pattern = CGPattern(
-            info: imageInfo,
-            bounds: CGRect(x: 0, y: 0, width: width, height: height),
-            matrix: .identity,
-            xStep: CGFloat(width),
-            yStep: CGFloat(height),
-            tiling: .constantSpacing,
-            isColored: true,
-            callbacks: &callbacks
-        ) else {
-            Unmanaged<CGImage>.fromOpaque(imageInfo).release()
-            return nil
-        }
-
-        // Create the pattern color space
-        guard let patternSpace = CGColorSpace(patternBaseSpace: nil) else {
-            return nil
-        }
-
-        // Create the pattern color (alpha component for colored patterns)
-        var alpha: CGFloat = 1.0
-        return CGColor(patternSpace: patternSpace, pattern: pattern, components: &alpha)
-    }
-    #endif
-
-    // MARK: - WASM Texture Layer Methods
-
-    #if !canImport(UIKit) && !canImport(AppKit)
     /// Applies fill texture using a tiled layer (WASM-compatible).
     private func applyFillTextureViaLayer(_ image: CGImage) {
         guard let path = path else {
@@ -882,11 +788,6 @@ open class SKShapeNode: SKNode {
         _strokeTextureLayer?.removeFromSuperlayer()
         _strokeTextureLayer = nil
     }
-    #else
-    // Native platform stubs
-    private func removeFillTextureLayer() {}
-    private func removeStrokeTextureLayer() {}
-    #endif
 }
 
 // MARK: - CAShapeLayer Type Conversions
@@ -921,13 +822,11 @@ extension CAShapeLayerLineJoin {
     }
 }
 
-// MARK: - SKColor CGColor Extension (for WASM)
+// MARK: - SKColor CGColor Extension
 
-#if !canImport(UIKit) && !canImport(AppKit)
 extension SKColor {
     /// Returns a CGColor representation of this color.
     public var cgColor: CGColor {
         return CGColor(red: red, green: green, blue: blue, alpha: alpha)
     }
 }
-#endif

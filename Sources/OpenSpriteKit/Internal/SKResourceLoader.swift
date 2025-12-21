@@ -6,9 +6,9 @@
 
 import Foundation
 
-#if canImport(ImageIO)
-import ImageIO
-#endif
+// ImageIO is re-exported from OpenSpriteKit.swift
+// On native platforms: ImageIO (system framework)
+// On WASM: OpenImageIO (supports PNG, JPEG, GIF, BMP, TIFF, WebP)
 
 #if arch(wasm32)
 import JavaScriptKit
@@ -53,6 +53,15 @@ public final class SKResourceLoader {
 
     /// Registered scene data keyed by name.
     private var sceneRegistry: [String: Data] = [:]
+
+    /// Registered shader source code keyed by name.
+    private var shaderRegistry: [String: String] = [:]
+
+    /// Registered tile set data keyed by name.
+    private var tileSetRegistry: [String: Data] = [:]
+
+    /// Registered emitter data keyed by name.
+    private var emitterRegistry: [String: Data] = [:]
 
     /// Atlas data structure.
     public struct AtlasData {
@@ -116,17 +125,17 @@ public final class SKResourceLoader {
     }
 
     /// Decodes image data to CGImage.
+    ///
+    /// Supports PNG, JPEG, GIF, BMP, TIFF, and WebP formats via ImageIO/OpenImageIO.
     private func decodeImage(from data: Data) -> CGImage? {
-        #if canImport(ImageIO)
+        // CGImageSourceCreateWithData is available on:
+        // - Native platforms: via ImageIO framework
+        // - WASM: via OpenImageIO (supports PNG, JPEG, GIF, BMP, TIFF, WebP)
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             return nil
         }
         return image
-        #else
-        // For WASM, use a simpler decoder or rely on pre-decoded images
-        return CGImage(pngData: data) ?? CGImage(jpegData: data)
-        #endif
     }
 
     // MARK: - Texture Atlas Registration
@@ -193,6 +202,74 @@ public final class SKResourceLoader {
         return sceneRegistry[name] ?? sceneRegistry["\(name).sks"]
     }
 
+    // MARK: - Shader Registration
+
+    /// Registers shader source code for a given name.
+    ///
+    /// - Parameters:
+    ///   - source: The shader source code.
+    ///   - name: The name to associate with the shader.
+    public func registerShader(source: String, forName name: String) {
+        shaderRegistry[name] = source
+    }
+
+    /// Retrieves shader source code for a given name.
+    ///
+    /// - Parameter name: The name of the registered shader.
+    /// - Returns: The shader source code, or nil if not found.
+    public func shaderSource(forName name: String) -> String? {
+        // Try exact name
+        if let source = shaderRegistry[name] {
+            return source
+        }
+        // Try with common extensions
+        for ext in ["fsh", "frag", "glsl", "metal"] {
+            let nameWithExt = "\(name).\(ext)"
+            if let source = shaderRegistry[nameWithExt] {
+                return source
+            }
+        }
+        return nil
+    }
+
+    // MARK: - TileSet Registration
+
+    /// Registers tile set data for a given name.
+    ///
+    /// - Parameters:
+    ///   - data: The tile set file data (.sks format).
+    ///   - name: The name to associate with the tile set.
+    public func registerTileSet(data: Data, forName name: String) {
+        tileSetRegistry[name] = data
+    }
+
+    /// Retrieves tile set data for a given name.
+    ///
+    /// - Parameter name: The name of the registered tile set.
+    /// - Returns: The tile set data, or nil if not found.
+    public func tileSetData(forName name: String) -> Data? {
+        return tileSetRegistry[name] ?? tileSetRegistry["\(name).sks"]
+    }
+
+    // MARK: - Emitter Registration
+
+    /// Registers emitter data for a given name.
+    ///
+    /// - Parameters:
+    ///   - data: The emitter file data (.sks format).
+    ///   - name: The name to associate with the emitter.
+    public func registerEmitter(data: Data, forName name: String) {
+        emitterRegistry[name] = data
+    }
+
+    /// Retrieves emitter data for a given name.
+    ///
+    /// - Parameter name: The name of the registered emitter.
+    /// - Returns: The emitter data, or nil if not found.
+    public func emitterData(forName name: String) -> Data? {
+        return emitterRegistry[name] ?? emitterRegistry["\(name).sks"]
+    }
+
     // MARK: - Cache Management
 
     /// Clears all registered resources.
@@ -202,6 +279,9 @@ public final class SKResourceLoader {
         atlasRegistry.removeAll()
         actionRegistry.removeAll()
         sceneRegistry.removeAll()
+        shaderRegistry.removeAll()
+        tileSetRegistry.removeAll()
+        emitterRegistry.removeAll()
     }
 
     /// Clears only image resources.

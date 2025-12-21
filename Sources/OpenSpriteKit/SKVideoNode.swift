@@ -12,7 +12,7 @@ import AVFoundation
 /// A graphical element that plays video content.
 ///
 /// This class renders a video at a given size and location in your scene with no exposed player controls.
-open class SKVideoNode: SKNode {
+open class SKVideoNode: SKNode, @unchecked Sendable {
 
     // MARK: - Visual Properties
 
@@ -86,39 +86,6 @@ open class SKVideoNode: SKNode {
     @available(*, deprecated, message: "Use init(url:) instead")
     public convenience init(videoURL url: URL) {
         self.init(url: url)
-    }
-
-    public required init?(coder: NSCoder) {
-        anchorPoint = CGPoint(
-            x: CGFloat(coder.decodeDouble(forKey: "anchorPoint.x")),
-            y: CGFloat(coder.decodeDouble(forKey: "anchorPoint.y"))
-        )
-        size = CGSize(
-            width: CGFloat(coder.decodeDouble(forKey: "size.width")),
-            height: CGFloat(coder.decodeDouble(forKey: "size.height"))
-        )
-        videoURL = coder.decodeObject(forKey: "videoURL") as? URL
-        videoFileName = coder.decodeObject(forKey: "videoFileName") as? String
-        super.init(coder: coder)
-
-        // Reload video after decoding
-        if let url = videoURL {
-            loadVideo(from: url)
-        } else if let filename = videoFileName {
-            loadVideo(named: filename)
-        }
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(Double(anchorPoint.x), forKey: "anchorPoint.x")
-        coder.encode(Double(anchorPoint.y), forKey: "anchorPoint.y")
-        coder.encode(Double(size.width), forKey: "size.width")
-        coder.encode(Double(size.height), forKey: "size.height")
-        coder.encode(videoURL, forKey: "videoURL")
-        coder.encode(videoFileName, forKey: "videoFileName")
     }
 
     // MARK: - Playback Control

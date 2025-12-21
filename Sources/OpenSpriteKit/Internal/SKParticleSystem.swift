@@ -331,8 +331,10 @@ internal final class SKParticleSystem {
                let sampledValue = sequence.sample(atTime: normalizedAge) {
                 if let scaleValue = sampledValue as? CGFloat {
                     particle.scale = scaleValue
-                } else if let scaleNumber = sampledValue as? NSNumber {
-                    particle.scale = CGFloat(scaleNumber.doubleValue)
+                } else if let scaleDouble = sampledValue as? Double {
+                    particle.scale = CGFloat(scaleDouble)
+                } else if let scaleFloat = sampledValue as? Float {
+                    particle.scale = CGFloat(scaleFloat)
                 }
             } else {
                 particle.scale += particle.scaleSpeed * deltaTime
@@ -346,8 +348,10 @@ internal final class SKParticleSystem {
                let sampledValue = sequence.sample(atTime: normalizedAge) {
                 if let alphaValue = sampledValue as? CGFloat {
                     particle.alpha = clamp(alphaValue, 0, 1)
-                } else if let alphaNumber = sampledValue as? NSNumber {
-                    particle.alpha = clamp(CGFloat(alphaNumber.doubleValue), 0, 1)
+                } else if let alphaDouble = sampledValue as? Double {
+                    particle.alpha = clamp(CGFloat(alphaDouble), 0, 1)
+                } else if let alphaFloat = sampledValue as? Float {
+                    particle.alpha = clamp(CGFloat(alphaFloat), 0, 1)
                 }
             } else {
                 particle.alpha += particle.alphaSpeed * deltaTime
@@ -373,8 +377,10 @@ internal final class SKParticleSystem {
                let sampledValue = sequence.sample(atTime: normalizedAge) {
                 if let blendValue = sampledValue as? CGFloat {
                     particle.colorBlendFactor = clamp(blendValue, 0, 1)
-                } else if let blendNumber = sampledValue as? NSNumber {
-                    particle.colorBlendFactor = clamp(CGFloat(blendNumber.doubleValue), 0, 1)
+                } else if let blendDouble = sampledValue as? Double {
+                    particle.colorBlendFactor = clamp(CGFloat(blendDouble), 0, 1)
+                } else if let blendFloat = sampledValue as? Float {
+                    particle.colorBlendFactor = clamp(CGFloat(blendFloat), 0, 1)
                 }
             } else {
                 particle.colorBlendFactor += particle.colorBlendFactorSpeed * deltaTime
@@ -404,24 +410,10 @@ internal final class SKParticleSystem {
 extension SKColor {
     /// Gets the RGBA components of the color.
     func getRed(_ red: inout CGFloat, green: inout CGFloat, blue: inout CGFloat, alpha: inout CGFloat) {
-        #if canImport(UIKit)
-        self.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        #elseif canImport(AppKit)
-        if let rgbColor = self.usingColorSpace(.deviceRGB) {
-            rgbColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        } else {
-            red = 1; green = 1; blue = 1; alpha = 1
-        }
-        #else
-        // WASM fallback - extract from cgColor
-        if let components = self.cgColor.components {
-            red = components.count > 0 ? components[0] : 1
-            green = components.count > 1 ? components[1] : 1
-            blue = components.count > 2 ? components[2] : 1
-            alpha = components.count > 3 ? components[3] : 1
-        } else {
-            red = 1; green = 1; blue = 1; alpha = 1
-        }
-        #endif
+        // SKColor is a simple struct with direct properties
+        red = self.red
+        green = self.green
+        blue = self.blue
+        alpha = self.alpha
     }
 }

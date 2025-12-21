@@ -22,6 +22,7 @@ let package = Package(
         .package(path: "../OpenCoreGraphics"),
         .package(path: "../OpenCoreImage"),
         .package(path: "../OpenCoreAnimation"),
+        .package(path: "../OpenImageIO"),
     ],
     targets: [
         .target(
@@ -35,6 +36,7 @@ let package = Package(
                 "OpenCoreGraphics",
                 "OpenCoreImage",
                 "OpenCoreAnimation",
+                "OpenImageIO",
             ]
         ),
         .testTarget(

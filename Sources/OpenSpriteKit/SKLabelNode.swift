@@ -4,11 +4,8 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(UIKit)
-import UIKit
-#elseif canImport(AppKit)
-import AppKit
-#else
+import OpenCoreAnimation
+
 /// Line break modes for text rendering.
 public enum NSLineBreakMode: Int, Sendable, Hashable {
     case byWordWrapping = 0
@@ -18,19 +15,12 @@ public enum NSLineBreakMode: Int, Sendable, Hashable {
     case byTruncatingTail = 4
     case byTruncatingMiddle = 5
 }
-#endif
-
-#if canImport(QuartzCore)
-import QuartzCore
-#else
-import OpenCoreAnimation
-#endif
 
 /// A graphical element that draws text.
 ///
 /// `SKLabelNode` allows you to render text in your scene. You can define a custom style using properties
 /// such as `fontName` and `fontColor`, or configure the look of your text with an `NSAttributedString`.
-open class SKLabelNode: SKNode {
+open class SKLabelNode: SKNode, @unchecked Sendable {
 
     // MARK: - Layer Class Override
 
@@ -187,41 +177,6 @@ open class SKLabelNode: SKNode {
         self.attributedText = attributedText
     }
 
-    public required init?(coder: NSCoder) {
-        text = coder.decodeObject(forKey: "text") as? String
-        attributedText = coder.decodeObject(forKey: "attributedText") as? NSAttributedString
-        fontName = coder.decodeObject(forKey: "fontName") as? String
-        fontSize = CGFloat(coder.decodeDouble(forKey: "fontSize"))
-        verticalAlignmentMode = SKLabelVerticalAlignmentMode(rawValue: coder.decodeInteger(forKey: "verticalAlignmentMode")) ?? .baseline
-        horizontalAlignmentMode = SKLabelHorizontalAlignmentMode(rawValue: coder.decodeInteger(forKey: "horizontalAlignmentMode")) ?? .center
-        preferredMaxLayoutWidth = CGFloat(coder.decodeDouble(forKey: "preferredMaxLayoutWidth"))
-        #if canImport(UIKit) || canImport(AppKit)
-        lineBreakMode = NSLineBreakMode(rawValue: UInt(coder.decodeInteger(forKey: "lineBreakMode"))) ?? .byTruncatingTail
-        #else
-        lineBreakMode = NSLineBreakMode(rawValue: coder.decodeInteger(forKey: "lineBreakMode")) ?? .byTruncatingTail
-        #endif
-        numberOfLines = coder.decodeInteger(forKey: "numberOfLines")
-        colorBlendFactor = CGFloat(coder.decodeDouble(forKey: "colorBlendFactor"))
-        blendMode = SKBlendMode(rawValue: coder.decodeInteger(forKey: "blendMode")) ?? .alpha
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(text, forKey: "text")
-        coder.encode(attributedText, forKey: "attributedText")
-        coder.encode(fontName, forKey: "fontName")
-        coder.encode(Double(fontSize), forKey: "fontSize")
-        coder.encode(verticalAlignmentMode.rawValue, forKey: "verticalAlignmentMode")
-        coder.encode(horizontalAlignmentMode.rawValue, forKey: "horizontalAlignmentMode")
-        coder.encode(Double(preferredMaxLayoutWidth), forKey: "preferredMaxLayoutWidth")
-        coder.encode(Int(lineBreakMode.rawValue), forKey: "lineBreakMode")
-        coder.encode(numberOfLines, forKey: "numberOfLines")
-        coder.encode(Double(colorBlendFactor), forKey: "colorBlendFactor")
-        coder.encode(blendMode.rawValue, forKey: "blendMode")
-    }
 }
 
 // MARK: - SKLabelVerticalAlignmentMode

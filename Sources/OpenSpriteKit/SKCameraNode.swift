@@ -11,16 +11,12 @@
 ///
 /// The camera's position in the scene's coordinate system determines which portion of the scene is visible.
 /// You can also rotate and scale the camera to change the view.
-open class SKCameraNode: SKNode {
+open class SKCameraNode: SKNode, @unchecked Sendable {
 
     // MARK: - Initializers
 
     public override init() {
         super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        super.init(coder: coder)
     }
 
     // MARK: - Visibility Methods
@@ -52,11 +48,11 @@ open class SKCameraNode: SKNode {
     /// Returns all nodes that are visible when viewed from this camera.
     ///
     /// - Parameter view: The view in which the scene is rendered.
-    /// - Returns: A set of all visible nodes.
-    open func containedNodeSet(in view: SKView) -> Set<SKNode> {
+    /// - Returns: An array of all visible nodes.
+    open func containedNodeSet(in view: SKView) -> [SKNode] {
         guard let scene = self.scene else { return [] }
 
-        var visibleNodes = Set<SKNode>()
+        var visibleNodes: [SKNode] = []
         let visibleRect = calculateVisibleRect(in: view)
 
         // Recursively check all nodes
@@ -125,14 +121,14 @@ open class SKCameraNode: SKNode {
     }
 
     /// Recursively collects visible nodes.
-    private func collectVisibleNodes(from node: SKNode, visibleRect: CGRect, into result: inout Set<SKNode>) {
+    private func collectVisibleNodes(from node: SKNode, visibleRect: CGRect, into result: inout [SKNode]) {
         // Skip hidden nodes and their children
         guard !node.isHidden && node.alpha > 0 else { return }
 
         // Check if this node is visible
         let nodeFrame = node.calculateAccumulatedFrame()
         if visibleRect.intersects(nodeFrame) {
-            result.insert(node)
+            result.append(node)
         }
 
         // Check children

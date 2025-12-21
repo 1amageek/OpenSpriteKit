@@ -8,7 +8,31 @@
 ///
 /// An `SKMutableTexture` object is a texture that can be dynamically updated. You create a mutable
 /// texture object, then use its `modifyPixelData` method to update the texture's contents.
-open class SKMutableTexture: SKTexture {
+///
+/// ## Example
+/// ```swift
+/// let texture = SKMutableTexture(size: CGSize(width: 256, height: 256))
+///
+/// // Update the texture with a gradient
+/// texture.modifyPixelData { data, bytesPerRow in
+///     guard let pixels = data?.assumingMemoryBound(to: UInt8.self) else { return }
+///     let width = 256
+///     let height = 256
+///
+///     for y in 0..<height {
+///         for x in 0..<width {
+///             let offset = y * bytesPerRow + x * 4
+///             pixels[offset] = UInt8(x)       // Red
+///             pixels[offset + 1] = UInt8(y)   // Green
+///             pixels[offset + 2] = 128        // Blue
+///             pixels[offset + 3] = 255        // Alpha
+///         }
+///     }
+/// }
+///
+/// let sprite = SKSpriteNode(texture: texture)
+/// ```
+open class SKMutableTexture: SKTexture, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -20,6 +44,9 @@ open class SKMutableTexture: SKTexture {
 
     /// Bytes per row for the pixel data.
     private var bytesPerRow: Int = 0
+
+    /// Flag indicating whether the texture needs to be uploaded to the GPU.
+    private var needsGPUUpdate: Bool = false
 
     // MARK: - Initializers
 
@@ -44,22 +71,6 @@ open class SKMutableTexture: SKTexture {
         setupPixelData()
     }
 
-    public required init?(coder: NSCoder) {
-        pixelFormat = coder.decodeInt32(forKey: "pixelFormat")
-        pixelData = coder.decodeObject(forKey: "pixelData") as? Data
-        bytesPerRow = coder.decodeInteger(forKey: "bytesPerRow")
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(pixelFormat, forKey: "pixelFormat")
-        coder.encode(pixelData, forKey: "pixelData")
-        coder.encode(bytesPerRow, forKey: "bytesPerRow")
-    }
-
     // MARK: - Private Setup
 
     private func setupPixelData() {
@@ -69,6 +80,9 @@ open class SKMutableTexture: SKTexture {
         bytesPerRow = width * bytesPerPixel
         let dataSize = bytesPerRow * height
         pixelData = Data(count: dataSize)
+
+        // Create initial CGImage
+        updateCGImage()
     }
 
     // MARK: - Pixel Modification
@@ -79,7 +93,11 @@ open class SKMutableTexture: SKTexture {
     /// texture's pixel data and the number of bytes per row. You can modify the pixel data
     /// directly through this pointer.
     ///
+    /// After the block executes, the texture is automatically updated to reflect the changes.
+    /// This includes updating the internal CGImage used for rendering.
+    ///
     /// - Parameter block: A block that receives a pointer to the pixel data and the row length.
+    ///   The pixel data is in RGBA format with 8 bits per component.
     open func modifyPixelData(_ block: (UnsafeMutableRawPointer?, Int) -> Void) {
         guard var data = pixelData else {
             block(nil, 0)
@@ -93,6 +111,120 @@ open class SKMutableTexture: SKTexture {
         // Store the modified data back
         pixelData = data
 
-        // TODO: Upload modified pixel data to GPU texture
+        // Update the CGImage to reflect changes
+        updateCGImage()
+
+        // Mark as needing GPU update
+        needsGPUUpdate = true
+    }
+
+    /// Updates the internal CGImage from the pixel data.
+    private func updateCGImage() {
+        guard let data = pixelData else { return }
+
+        let width = Int(size.width)
+        let height = Int(size.height)
+        guard width > 0 && height > 0 else { return }
+
+        // Create a CGImage from the pixel data
+        guard let colorSpace = CGColorSpaceCreateDeviceRGB() as CGColorSpace? else { return }
+
+        let dataProvider = CGDataProvider(data: data as CFData)
+        guard let provider = dataProvider else { return }
+
+        let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+
+        // Update the base class cgImage property
+        self.cgImage = image
+    }
+
+    /// Returns the current CGImage, updating it first if necessary.
+    public override func getCGImage() -> CGImage? {
+        if cgImage == nil || needsGPUUpdate {
+            updateCGImage()
+            needsGPUUpdate = false
+        }
+        return cgImage
+    }
+
+    // MARK: - Convenience Methods
+
+    /// Fills the texture with a solid color.
+    ///
+    /// - Parameter color: The color to fill the texture with.
+    open func fill(with color: SKColor) {
+        modifyPixelData { data, bytesPerRow in
+            guard let pixels = data?.assumingMemoryBound(to: UInt8.self) else { return }
+
+            let width = Int(self.size.width)
+            let height = Int(self.size.height)
+
+            // Extract color components
+            let (r, g, b, a) = extractColorComponents(from: color)
+
+            for y in 0..<height {
+                for x in 0..<width {
+                    let offset = y * bytesPerRow + x * 4
+                    pixels[offset] = r
+                    pixels[offset + 1] = g
+                    pixels[offset + 2] = b
+                    pixels[offset + 3] = a
+                }
+            }
+        }
+    }
+
+    /// Sets a pixel at the specified location.
+    ///
+    /// - Parameters:
+    ///   - x: The x coordinate of the pixel.
+    ///   - y: The y coordinate of the pixel.
+    ///   - color: The color to set.
+    open func setPixel(at x: Int, y: Int, color: SKColor) {
+        guard x >= 0 && x < Int(size.width) && y >= 0 && y < Int(size.height) else { return }
+
+        modifyPixelData { data, bytesPerRow in
+            guard let pixels = data?.assumingMemoryBound(to: UInt8.self) else { return }
+
+            let offset = y * bytesPerRow + x * 4
+            let (r, g, b, a) = extractColorComponents(from: color)
+
+            pixels[offset] = r
+            pixels[offset + 1] = g
+            pixels[offset + 2] = b
+            pixels[offset + 3] = a
+        }
+    }
+
+    /// Clears the texture to transparent black.
+    open func clear() {
+        modifyPixelData { data, bytesPerRow in
+            guard let pixels = data else { return }
+            let totalBytes = bytesPerRow * Int(self.size.height)
+            memset(pixels, 0, totalBytes)
+        }
+    }
+
+    // MARK: - Private Helpers
+
+    private func extractColorComponents(from color: SKColor) -> (UInt8, UInt8, UInt8, UInt8) {
+        return (
+            UInt8(min(255, max(0, color.red * 255))),
+            UInt8(min(255, max(0, color.green * 255))),
+            UInt8(min(255, max(0, color.blue * 255))),
+            UInt8(min(255, max(0, color.alpha * 255)))
+        )
     }
 }

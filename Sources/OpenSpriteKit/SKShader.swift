@@ -12,11 +12,7 @@ import simd
 ///
 /// An `SKShader` object holds a custom OpenGL ES fragment shader. Shader objects are
 /// used to customize the drawing behavior of a node.
-open class SKShader: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKShader: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -32,8 +28,7 @@ open class SKShader: NSObject, NSCopying, NSSecureCoding {
     // MARK: - Initializers
 
     /// Creates a new shader object.
-    public override init() {
-        super.init()
+    public init() {
     }
 
     /// Creates a shader object using the specified source code.
@@ -41,7 +36,6 @@ open class SKShader: NSObject, NSCopying, NSSecureCoding {
     /// - Parameter source: A string containing the source code for the fragment shader.
     public init(source: String) {
         self.source = source
-        super.init()
     }
 
     /// Creates a shader object using the specified source code and uniforms.
@@ -52,40 +46,67 @@ open class SKShader: NSObject, NSCopying, NSSecureCoding {
     public init(source: String, uniforms: [SKUniform]) {
         self.source = source
         self.uniforms = uniforms
-        super.init()
     }
 
     /// Creates a shader object by loading source code from a file.
     ///
+    /// On WASM platforms, you must first register the shader source with `SKResourceLoader`:
+    /// ```swift
+    /// SKResourceLoader.shared.registerShader(source: shaderCode, forName: "MyShader")
+    /// let shader = SKShader(fileNamed: "MyShader")
+    /// ```
+    ///
     /// - Parameter name: The name of the file containing the shader source code.
     public convenience init(fileNamed name: String) {
         self.init()
-        // TODO: Load shader from file
+
+        // Try to load from registered shader source (WASM)
+        if let source = SKResourceLoader.shared.shaderSource(forName: name) {
+            self.source = source
+            return
+        }
+
+        // Try to load from bundle (native platforms)
+        let nameWithoutExtension: String
+        let ext: String
+
+        if name.contains(".") {
+            let components = name.split(separator: ".", maxSplits: 1)
+            nameWithoutExtension = String(components[0])
+            ext = components.count > 1 ? String(components[1]) : "fsh"
+        } else {
+            nameWithoutExtension = name
+            ext = "fsh"
+        }
+
+        // Try with specified or default extension
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: ext),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            self.source = source
+            return
+        }
+
+        // Try common shader extensions
+        for shaderExt in ["fsh", "frag", "glsl", "metal"] where shaderExt != ext {
+            if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: shaderExt),
+               let source = try? String(contentsOf: url, encoding: .utf8) {
+                self.source = source
+                return
+            }
+        }
     }
 
-    public required init?(coder: NSCoder) {
-        source = coder.decodeObject(forKey: "source") as? String
-        uniforms = coder.decodeObject(forKey: "uniforms") as? [SKUniform] ?? []
-        attributes = coder.decodeObject(forKey: "attributes") as? [SKAttribute] ?? []
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(source, forKey: "source")
-        coder.encode(uniforms, forKey: "uniforms")
-        coder.encode(attributes, forKey: "attributes")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKShader()
-        copy.source = source
-        copy.uniforms = uniforms.map { $0.copy() as! SKUniform }
-        copy.attributes = attributes.map { $0.copy() as! SKAttribute }
-        return copy
+    /// Creates a copy of this shader.
+    ///
+    /// - Returns: A new shader with the same properties.
+    open func copy() -> SKShader {
+        let shaderCopy = SKShader()
+        shaderCopy.source = source
+        shaderCopy.uniforms = uniforms.map { $0.copy() }
+        shaderCopy.attributes = attributes.map { $0.copy() }
+        return shaderCopy
     }
 
     // MARK: - Uniform Management
@@ -118,11 +139,7 @@ open class SKShader: NSObject, NSCopying, NSSecureCoding {
 /// A container for uniform shader data.
 ///
 /// An `SKUniform` object contains a value and a name for passing data into a shader.
-open class SKUniform: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKUniform: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -163,7 +180,6 @@ open class SKUniform: NSObject, NSCopying, NSSecureCoding {
     /// - Parameter name: The name of the uniform variable.
     public init(name: String) {
         self.name = name
-        super.init()
     }
 
     /// Creates a uniform with a float value.
@@ -175,7 +191,6 @@ open class SKUniform: NSObject, NSCopying, NSSecureCoding {
         self.name = name
         self.floatValue = value
         self.uniformType = .float
-        super.init()
     }
 
     /// Creates a uniform with a texture value.
@@ -187,7 +202,6 @@ open class SKUniform: NSObject, NSCopying, NSSecureCoding {
         self.name = name
         self.textureValue = texture
         self.uniformType = .texture
-        super.init()
     }
 
     /// Creates a uniform with a 2-component vector value.
@@ -199,7 +213,6 @@ open class SKUniform: NSObject, NSCopying, NSSecureCoding {
         self.name = name
         self.vectorFloat2Value = value
         self.uniformType = .vectorFloat2
-        super.init()
     }
 
     /// Creates a uniform with a 3-component vector value.
@@ -211,7 +224,6 @@ open class SKUniform: NSObject, NSCopying, NSSecureCoding {
         self.name = name
         self.vectorFloat3Value = value
         self.uniformType = .vectorFloat3
-        super.init()
     }
 
     /// Creates a uniform with a 4-component vector value.
@@ -223,38 +235,25 @@ open class SKUniform: NSObject, NSCopying, NSSecureCoding {
         self.name = name
         self.vectorFloat4Value = value
         self.uniformType = .vectorFloat4
-        super.init()
     }
 
-    public required init?(coder: NSCoder) {
-        name = coder.decodeObject(forKey: "name") as? String ?? ""
-        uniformType = SKUniformType(rawValue: coder.decodeInteger(forKey: "uniformType")) ?? .none
-        floatValue = coder.decodeFloat(forKey: "floatValue")
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(name, forKey: "name")
-        coder.encode(uniformType.rawValue, forKey: "uniformType")
-        coder.encode(floatValue, forKey: "floatValue")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKUniform(name: name)
-        copy.uniformType = uniformType
-        copy.floatValue = floatValue
-        copy.vectorFloat2Value = vectorFloat2Value
-        copy.vectorFloat3Value = vectorFloat3Value
-        copy.vectorFloat4Value = vectorFloat4Value
-        copy.matrixFloat2x2Value = matrixFloat2x2Value
-        copy.matrixFloat3x3Value = matrixFloat3x3Value
-        copy.matrixFloat4x4Value = matrixFloat4x4Value
-        copy.textureValue = textureValue
-        return copy
+    /// Creates a copy of this uniform.
+    ///
+    /// - Returns: A new uniform with the same properties.
+    open func copy() -> SKUniform {
+        let uniformCopy = SKUniform(name: name)
+        uniformCopy.uniformType = uniformType
+        uniformCopy.floatValue = floatValue
+        uniformCopy.vectorFloat2Value = vectorFloat2Value
+        uniformCopy.vectorFloat3Value = vectorFloat3Value
+        uniformCopy.vectorFloat4Value = vectorFloat4Value
+        uniformCopy.matrixFloat2x2Value = matrixFloat2x2Value
+        uniformCopy.matrixFloat3x3Value = matrixFloat3x3Value
+        uniformCopy.matrixFloat4x4Value = matrixFloat4x4Value
+        uniformCopy.textureValue = textureValue
+        return uniformCopy
     }
 }
 
@@ -279,11 +278,7 @@ public enum SKUniformType: Int, Sendable, Hashable {
 ///
 /// An `SKAttribute` describes a single attribute in a custom shader. The attribute
 /// defines per-node data that you can pass into the shader.
-open class SKAttribute: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKAttribute: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -303,25 +298,14 @@ open class SKAttribute: NSObject, NSCopying, NSSecureCoding {
     public init(name: String, type: SKAttributeType) {
         self.name = name
         self.type = type
-        super.init()
     }
 
-    public required init?(coder: NSCoder) {
-        name = coder.decodeObject(forKey: "name") as? String ?? ""
-        type = SKAttributeType(rawValue: coder.decodeInteger(forKey: "type")) ?? .none
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(name, forKey: "name")
-        coder.encode(type.rawValue, forKey: "type")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
+    /// Creates a copy of this attribute.
+    ///
+    /// - Returns: A new attribute with the same properties.
+    open func copy() -> SKAttribute {
         return SKAttribute(name: name, type: type)
     }
 }

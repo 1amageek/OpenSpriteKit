@@ -12,31 +12,19 @@ import simd
 ///
 /// `SKWarpGeometry` is the abstract base class for warp transformation definitions.
 /// Use the `SKWarpGeometryGrid` subclass to create grid-based warping effects.
-open class SKWarpGeometry: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKWarpGeometry: @unchecked Sendable {
 
     // MARK: - Initializers
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
-    public required init?(coder: NSCoder) {
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        // Base class encoding
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
+    /// Creates a copy of this warp geometry.
+    ///
+    /// - Returns: A new warp geometry with the same properties.
+    open func copy() -> SKWarpGeometry {
         return SKWarpGeometry()
     }
 }
@@ -48,7 +36,7 @@ open class SKWarpGeometry: NSObject, NSCopying, NSSecureCoding {
 /// An `SKWarpGeometryGrid` object defines a warp transformation using a grid of control points.
 /// Each control point has a source position and a destination position. During rendering,
 /// the source positions are mapped to the destination positions, creating a warping effect.
-open class SKWarpGeometryGrid: SKWarpGeometry {
+open class SKWarpGeometryGrid: SKWarpGeometry, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -114,50 +102,12 @@ open class SKWarpGeometryGrid: SKWarpGeometry {
         self.init(columns: columns, rows: rows, sourcePositions: sources, destinationPositions: destinations)
     }
 
-    public required init?(coder: NSCoder) {
-        numberOfColumns = coder.decodeInteger(forKey: "numberOfColumns")
-        numberOfRows = coder.decodeInteger(forKey: "numberOfRows")
+    // MARK: - Copying
 
-        // Decode source positions
-        if let sourceData = coder.decodeObject(forKey: "sourcePositions") as? Data {
-            sourcePositions = sourceData.withUnsafeBytes { buffer in
-                Array(buffer.bindMemory(to: SIMD2<Float>.self))
-            }
-        } else {
-            sourcePositions = []
-        }
-
-        // Decode destination positions
-        if let destData = coder.decodeObject(forKey: "destinationPositions") as? Data {
-            destinationPositions = destData.withUnsafeBytes { buffer in
-                Array(buffer.bindMemory(to: SIMD2<Float>.self))
-            }
-        } else {
-            destinationPositions = []
-        }
-
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(numberOfColumns, forKey: "numberOfColumns")
-        coder.encode(numberOfRows, forKey: "numberOfRows")
-
-        // Encode source positions
-        let sourceData = sourcePositions.withUnsafeBytes { Data($0) }
-        coder.encode(sourceData, forKey: "sourcePositions")
-
-        // Encode destination positions
-        let destData = destinationPositions.withUnsafeBytes { Data($0) }
-        coder.encode(destData, forKey: "destinationPositions")
-    }
-
-    // MARK: - NSCopying
-
-    public override func copy(with zone: NSZone? = nil) -> Any {
+    /// Creates a copy of this warp geometry grid.
+    ///
+    /// - Returns: A new warp geometry grid with the same properties.
+    open override func copy() -> SKWarpGeometry {
         return SKWarpGeometryGrid(
             columns: numberOfColumns,
             rows: numberOfRows,

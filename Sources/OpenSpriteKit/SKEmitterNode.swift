@@ -4,18 +4,14 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(QuartzCore)
-import QuartzCore
-#else
 import OpenCoreAnimation
-#endif
 
 /// A source of various particle effects.
 ///
 /// A `SKEmitterNode` object is a node that automatically creates and renders small particle sprites.
 /// Particles are privately owned by SpriteKit—your game cannot access the generated sprites.
 /// Emitter nodes are often used to create smoke, fire, sparks, and other particle effects.
-open class SKEmitterNode: SKNode {
+open class SKEmitterNode: SKNode, @unchecked Sendable {
 
     // MARK: - Layer Class Override
 
@@ -269,170 +265,178 @@ open class SKEmitterNode: SKNode {
 
     /// Creates an emitter node from an archived file.
     ///
+    /// On WASM platforms, you must first register the emitter data with `SKResourceLoader`:
+    /// ```swift
+    /// SKResourceLoader.shared.registerEmitter(data: emitterData, forName: "Spark")
+    /// let emitter = SKEmitterNode.emitter(fileNamed: "Spark")
+    /// ```
+    ///
     /// - Parameter fileNamed: The name of the emitter file (without extension).
     /// - Returns: A new emitter node, or nil if the file could not be loaded.
     public class func emitter(fileNamed name: String) -> SKEmitterNode? {
-        // TODO: Load from file
+        // Try to load from registered emitter data (WASM)
+        if let data = SKResourceLoader.shared.emitterData(forName: name) {
+            return parseEmitter(from: data)
+        }
+
+        // Try to load from bundle (native platforms)
+        let nameWithoutExtension = name.hasSuffix(".sks") ? String(name.dropLast(4)) : name
+
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
+           let data = try? Data(contentsOf: url) {
+            return parseEmitter(from: data)
+        }
+
         return nil
     }
 
-    public required init?(coder: NSCoder) {
-        // Creation properties
-        particleBirthRate = CGFloat(coder.decodeDouble(forKey: "particleBirthRate"))
-        numParticlesToEmit = coder.decodeInteger(forKey: "numParticlesToEmit")
-        particleRenderOrder = SKParticleRenderOrder(rawValue: coder.decodeInteger(forKey: "particleRenderOrder")) ?? .oldestFirst
+    /// Parses an emitter from property list data.
+    private class func parseEmitter(from data: Data) -> SKEmitterNode? {
+        // Use SKSParser to parse the .sks file
+        // The parser will return an SKScene, but for emitter files,
+        // the root node or its first child should be the emitter
+        guard let scene = SKSParser.scene(from: data) else { return nil }
 
-        // Lifetime
-        particleLifetime = CGFloat(coder.decodeDouble(forKey: "particleLifetime"))
-        particleLifetimeRange = CGFloat(coder.decodeDouble(forKey: "particleLifetimeRange"))
-
-        // Position
-        particlePosition = coder.decodeCGPoint(forKey: "particlePosition")
-        particlePositionRange = coder.decodeCGVector(forKey: "particlePositionRange")
-        particleZPosition = CGFloat(coder.decodeDouble(forKey: "particleZPosition"))
-        particleZPositionRange = CGFloat(coder.decodeDouble(forKey: "particleZPositionRange"))
-        particleZPositionSpeed = CGFloat(coder.decodeDouble(forKey: "particleZPositionSpeed"))
-
-        // Velocity
-        particleSpeed = CGFloat(coder.decodeDouble(forKey: "particleSpeed"))
-        particleSpeedRange = CGFloat(coder.decodeDouble(forKey: "particleSpeedRange"))
-        emissionAngle = CGFloat(coder.decodeDouble(forKey: "emissionAngle"))
-        emissionAngleRange = CGFloat(coder.decodeDouble(forKey: "emissionAngleRange"))
-        xAcceleration = CGFloat(coder.decodeDouble(forKey: "xAcceleration"))
-        yAcceleration = CGFloat(coder.decodeDouble(forKey: "yAcceleration"))
-
-        // Rotation
-        particleRotation = CGFloat(coder.decodeDouble(forKey: "particleRotation"))
-        particleRotationRange = CGFloat(coder.decodeDouble(forKey: "particleRotationRange"))
-        particleRotationSpeed = CGFloat(coder.decodeDouble(forKey: "particleRotationSpeed"))
-
-        // Scale
-        particleScale = CGFloat(coder.decodeDouble(forKey: "particleScale"))
-        particleScaleRange = CGFloat(coder.decodeDouble(forKey: "particleScaleRange"))
-        particleScaleSpeed = CGFloat(coder.decodeDouble(forKey: "particleScaleSpeed"))
-        particleScaleSequence = coder.decodeObject(of: SKKeyframeSequence.self, forKey: "particleScaleSequence")
-
-        // Texture and size
-        particleTexture = coder.decodeObject(of: SKTexture.self, forKey: "particleTexture")
-        particleSize = coder.decodeCGSize(forKey: "particleSize")
-
-        // Color
-        if let colorData = coder.decodeObject(of: NSData.self, forKey: "particleColor") as Data?,
-           let unarchivedColor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: SKColor.self, from: colorData) {
-            particleColor = unarchivedColor
+        // Check if the scene itself has emitter properties applied
+        // (This happens when .sks contains a single emitter)
+        if scene.children.count == 1, let emitter = scene.children.first as? SKEmitterNode {
+            emitter.removeFromParent()
+            return emitter
         }
-        particleColorAlphaRange = CGFloat(coder.decodeDouble(forKey: "particleColorAlphaRange"))
-        particleColorBlueRange = CGFloat(coder.decodeDouble(forKey: "particleColorBlueRange"))
-        particleColorGreenRange = CGFloat(coder.decodeDouble(forKey: "particleColorGreenRange"))
-        particleColorRedRange = CGFloat(coder.decodeDouble(forKey: "particleColorRedRange"))
-        particleColorAlphaSpeed = CGFloat(coder.decodeDouble(forKey: "particleColorAlphaSpeed"))
-        particleColorBlueSpeed = CGFloat(coder.decodeDouble(forKey: "particleColorBlueSpeed"))
-        particleColorGreenSpeed = CGFloat(coder.decodeDouble(forKey: "particleColorGreenSpeed"))
-        particleColorRedSpeed = CGFloat(coder.decodeDouble(forKey: "particleColorRedSpeed"))
-        particleColorSequence = coder.decodeObject(of: SKKeyframeSequence.self, forKey: "particleColorSequence")
 
-        // Color blend
-        particleColorBlendFactor = CGFloat(coder.decodeDouble(forKey: "particleColorBlendFactor"))
-        particleColorBlendFactorRange = CGFloat(coder.decodeDouble(forKey: "particleColorBlendFactorRange"))
-        particleColorBlendFactorSpeed = CGFloat(coder.decodeDouble(forKey: "particleColorBlendFactorSpeed"))
-        particleColorBlendFactorSequence = coder.decodeObject(of: SKKeyframeSequence.self, forKey: "particleColorBlendFactorSequence")
+        // Try to find an emitter among all children
+        for child in scene.children {
+            if let emitter = child as? SKEmitterNode {
+                emitter.removeFromParent()
+                return emitter
+            }
+        }
 
-        // Alpha
-        particleAlpha = CGFloat(coder.decodeDouble(forKey: "particleAlpha"))
-        particleAlphaRange = CGFloat(coder.decodeDouble(forKey: "particleAlphaRange"))
-        particleAlphaSpeed = CGFloat(coder.decodeDouble(forKey: "particleAlphaSpeed"))
-        particleAlphaSequence = coder.decodeObject(of: SKKeyframeSequence.self, forKey: "particleAlphaSequence")
+        // Fallback: try to parse directly as a property list
+        if let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+            return parseEmitterFromPlist(plist)
+        }
 
-        // Blending
-        particleBlendMode = SKBlendMode(rawValue: coder.decodeInteger(forKey: "particleBlendMode")) ?? .alpha
-
-        // Physics
-        fieldBitMask = UInt32(coder.decodeInt32(forKey: "fieldBitMask"))
-
-        // Shader
-        shader = coder.decodeObject(of: SKShader.self, forKey: "shader")
-
-        super.init(coder: coder)
+        return nil
     }
 
-    // MARK: - NSCoding
+    /// Parses an emitter from a property list dictionary.
+    private class func parseEmitterFromPlist(_ plist: [String: Any]) -> SKEmitterNode? {
+        let emitter = SKEmitterNode()
 
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-
-        // Creation properties
-        coder.encode(Double(particleBirthRate), forKey: "particleBirthRate")
-        coder.encode(numParticlesToEmit, forKey: "numParticlesToEmit")
-        coder.encode(particleRenderOrder.rawValue, forKey: "particleRenderOrder")
+        // Particle count
+        if let birthRate = plist["particleBirthRate"] as? CGFloat {
+            emitter.particleBirthRate = birthRate
+        }
+        if let numParticlesToEmit = plist["numParticlesToEmit"] as? Int {
+            emitter.numParticlesToEmit = numParticlesToEmit
+        }
 
         // Lifetime
-        coder.encode(Double(particleLifetime), forKey: "particleLifetime")
-        coder.encode(Double(particleLifetimeRange), forKey: "particleLifetimeRange")
+        if let lifetime = plist["particleLifetime"] as? CGFloat {
+            emitter.particleLifetime = lifetime
+        }
+        if let lifetimeRange = plist["particleLifetimeRange"] as? CGFloat {
+            emitter.particleLifetimeRange = lifetimeRange
+        }
 
         // Position
-        coder.encode(particlePosition, forKey: "particlePosition")
-        coder.encode(particlePositionRange, forKey: "particlePositionRange")
-        coder.encode(Double(particleZPosition), forKey: "particleZPosition")
-        coder.encode(Double(particleZPositionRange), forKey: "particleZPositionRange")
-        coder.encode(Double(particleZPositionSpeed), forKey: "particleZPositionSpeed")
+        if let xRange = plist["particlePositionRange.x"] as? CGFloat ?? plist["particlePositionRangeX"] as? CGFloat {
+            emitter.particlePositionRange = CGVector(dx: xRange, dy: emitter.particlePositionRange.dy)
+        }
+        if let yRange = plist["particlePositionRange.y"] as? CGFloat ?? plist["particlePositionRangeY"] as? CGFloat {
+            emitter.particlePositionRange = CGVector(dx: emitter.particlePositionRange.dx, dy: yRange)
+        }
 
-        // Velocity
-        coder.encode(Double(particleSpeed), forKey: "particleSpeed")
-        coder.encode(Double(particleSpeedRange), forKey: "particleSpeedRange")
-        coder.encode(Double(emissionAngle), forKey: "emissionAngle")
-        coder.encode(Double(emissionAngleRange), forKey: "emissionAngleRange")
-        coder.encode(Double(xAcceleration), forKey: "xAcceleration")
-        coder.encode(Double(yAcceleration), forKey: "yAcceleration")
+        // Speed
+        if let speed = plist["particleSpeed"] as? CGFloat {
+            emitter.particleSpeed = speed
+        }
+        if let speedRange = plist["particleSpeedRange"] as? CGFloat {
+            emitter.particleSpeedRange = speedRange
+        }
 
-        // Rotation
-        coder.encode(Double(particleRotation), forKey: "particleRotation")
-        coder.encode(Double(particleRotationRange), forKey: "particleRotationRange")
-        coder.encode(Double(particleRotationSpeed), forKey: "particleRotationSpeed")
+        // Emission angle
+        if let angle = plist["emissionAngle"] as? CGFloat {
+            emitter.emissionAngle = angle
+        }
+        if let angleRange = plist["emissionAngleRange"] as? CGFloat {
+            emitter.emissionAngleRange = angleRange
+        }
+
+        // Acceleration
+        if let ax = plist["xAcceleration"] as? CGFloat {
+            emitter.xAcceleration = ax
+        }
+        if let ay = plist["yAcceleration"] as? CGFloat {
+            emitter.yAcceleration = ay
+        }
 
         // Scale
-        coder.encode(Double(particleScale), forKey: "particleScale")
-        coder.encode(Double(particleScaleRange), forKey: "particleScaleRange")
-        coder.encode(Double(particleScaleSpeed), forKey: "particleScaleSpeed")
-        coder.encode(particleScaleSequence, forKey: "particleScaleSequence")
-
-        // Texture and size
-        coder.encode(particleTexture, forKey: "particleTexture")
-        coder.encode(particleSize, forKey: "particleSize")
-
-        // Color
-        if let colorData = try? NSKeyedArchiver.archivedData(withRootObject: particleColor, requiringSecureCoding: true) {
-            coder.encode(colorData, forKey: "particleColor")
+        if let scale = plist["particleScale"] as? CGFloat {
+            emitter.particleScale = scale
         }
-        coder.encode(Double(particleColorAlphaRange), forKey: "particleColorAlphaRange")
-        coder.encode(Double(particleColorBlueRange), forKey: "particleColorBlueRange")
-        coder.encode(Double(particleColorGreenRange), forKey: "particleColorGreenRange")
-        coder.encode(Double(particleColorRedRange), forKey: "particleColorRedRange")
-        coder.encode(Double(particleColorAlphaSpeed), forKey: "particleColorAlphaSpeed")
-        coder.encode(Double(particleColorBlueSpeed), forKey: "particleColorBlueSpeed")
-        coder.encode(Double(particleColorGreenSpeed), forKey: "particleColorGreenSpeed")
-        coder.encode(Double(particleColorRedSpeed), forKey: "particleColorRedSpeed")
-        coder.encode(particleColorSequence, forKey: "particleColorSequence")
-
-        // Color blend
-        coder.encode(Double(particleColorBlendFactor), forKey: "particleColorBlendFactor")
-        coder.encode(Double(particleColorBlendFactorRange), forKey: "particleColorBlendFactorRange")
-        coder.encode(Double(particleColorBlendFactorSpeed), forKey: "particleColorBlendFactorSpeed")
-        coder.encode(particleColorBlendFactorSequence, forKey: "particleColorBlendFactorSequence")
+        if let scaleRange = plist["particleScaleRange"] as? CGFloat {
+            emitter.particleScaleRange = scaleRange
+        }
+        if let scaleSpeed = plist["particleScaleSpeed"] as? CGFloat {
+            emitter.particleScaleSpeed = scaleSpeed
+        }
 
         // Alpha
-        coder.encode(Double(particleAlpha), forKey: "particleAlpha")
-        coder.encode(Double(particleAlphaRange), forKey: "particleAlphaRange")
-        coder.encode(Double(particleAlphaSpeed), forKey: "particleAlphaSpeed")
-        coder.encode(particleAlphaSequence, forKey: "particleAlphaSequence")
+        if let alpha = plist["particleAlpha"] as? CGFloat {
+            emitter.particleAlpha = alpha
+        }
+        if let alphaRange = plist["particleAlphaRange"] as? CGFloat {
+            emitter.particleAlphaRange = alphaRange
+        }
+        if let alphaSpeed = plist["particleAlphaSpeed"] as? CGFloat {
+            emitter.particleAlphaSpeed = alphaSpeed
+        }
 
-        // Blending
-        coder.encode(particleBlendMode.rawValue, forKey: "particleBlendMode")
+        // Rotation
+        if let rotation = plist["particleRotation"] as? CGFloat {
+            emitter.particleRotation = rotation
+        }
+        if let rotationRange = plist["particleRotationRange"] as? CGFloat {
+            emitter.particleRotationRange = rotationRange
+        }
+        if let rotationSpeed = plist["particleRotationSpeed"] as? CGFloat {
+            emitter.particleRotationSpeed = rotationSpeed
+        }
 
-        // Physics
-        coder.encode(Int32(fieldBitMask), forKey: "fieldBitMask")
+        // Color
+        if let colorDict = plist["particleColor"] as? [String: Any],
+           let red = colorDict["red"] as? CGFloat,
+           let green = colorDict["green"] as? CGFloat,
+           let blue = colorDict["blue"] as? CGFloat,
+           let alpha = colorDict["alpha"] as? CGFloat {
+            emitter.particleColor = SKColor(red: red, green: green, blue: blue, alpha: alpha)
+        }
 
-        // Shader
-        coder.encode(shader, forKey: "shader")
+        // Color blend
+        if let colorBlendFactor = plist["particleColorBlendFactor"] as? CGFloat {
+            emitter.particleColorBlendFactor = colorBlendFactor
+        }
+        if let colorBlendFactorRange = plist["particleColorBlendFactorRange"] as? CGFloat {
+            emitter.particleColorBlendFactorRange = colorBlendFactorRange
+        }
+        if let colorBlendFactorSpeed = plist["particleColorBlendFactorSpeed"] as? CGFloat {
+            emitter.particleColorBlendFactorSpeed = colorBlendFactorSpeed
+        }
+
+        // Texture
+        if let textureName = plist["particleTextureName"] as? String ?? plist["particleTexture"] as? String {
+            emitter.particleTexture = SKTexture(imageNamed: textureName)
+        }
+
+        // Blend mode
+        if let blendModeRaw = plist["particleBlendMode"] as? Int,
+           let blendMode = SKBlendMode(rawValue: blendModeRaw) {
+            emitter.particleBlendMode = blendMode
+        }
+
+        return emitter
     }
 
     // MARK: - Simulation Methods
@@ -606,11 +610,7 @@ public enum SKParticleRenderOrder: Int, Sendable, Hashable {
 ///
 /// An `SKKeyframeSequence` defines a series of keyframe values and times that can
 /// be used to animate particle properties.
-open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKKeyframeSequence: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -618,7 +618,7 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
     private var keyframeValues: [Any] = []
 
     /// The keyframe times (normalized from 0.0 to 1.0).
-    private var keyframeTimes: [NSNumber] = []
+    private var keyframeTimes: [CGFloat] = []
 
     /// The interpolation mode for the sequence.
     open var interpolationMode: SKInterpolationMode = .linear
@@ -629,8 +629,7 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
     // MARK: - Initializers
 
     /// Creates an empty keyframe sequence.
-    public override init() {
-        super.init()
+    public init() {
     }
 
     /// Creates a keyframe sequence with the specified values and times.
@@ -638,10 +637,9 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
     /// - Parameters:
     ///   - values: The keyframe values.
     ///   - times: The keyframe times (must be sorted and in range 0.0 to 1.0).
-    public init(keyframeValues values: [Any], times: [NSNumber]) {
+    public init(keyframeValues values: [Any], times: [CGFloat]) {
         self.keyframeValues = values
         self.keyframeTimes = times
-        super.init()
     }
 
     /// Creates a keyframe sequence with a single keyframe.
@@ -651,30 +649,16 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
         self.init()
     }
 
-    public required init?(coder: NSCoder) {
-        keyframeValues = coder.decodeObject(forKey: "keyframeValues") as? [Any] ?? []
-        keyframeTimes = coder.decodeObject(forKey: "keyframeTimes") as? [NSNumber] ?? []
-        interpolationMode = SKInterpolationMode(rawValue: coder.decodeInteger(forKey: "interpolationMode")) ?? .linear
-        repeatMode = SKRepeatMode(rawValue: coder.decodeInteger(forKey: "repeatMode")) ?? .clamp
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(keyframeValues, forKey: "keyframeValues")
-        coder.encode(keyframeTimes, forKey: "keyframeTimes")
-        coder.encode(interpolationMode.rawValue, forKey: "interpolationMode")
-        coder.encode(repeatMode.rawValue, forKey: "repeatMode")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKKeyframeSequence(keyframeValues: keyframeValues, times: keyframeTimes)
-        copy.interpolationMode = interpolationMode
-        copy.repeatMode = repeatMode
-        return copy
+    /// Creates a copy of this keyframe sequence.
+    ///
+    /// - Returns: A new keyframe sequence with the same properties.
+    open func copy() -> SKKeyframeSequence {
+        let sequenceCopy = SKKeyframeSequence(keyframeValues: keyframeValues, times: keyframeTimes)
+        sequenceCopy.interpolationMode = interpolationMode
+        sequenceCopy.repeatMode = repeatMode
+        return sequenceCopy
     }
 
     // MARK: - Keyframe Management
@@ -691,7 +675,7 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
     ///   - time: The keyframe time.
     open func addKeyframeValue(_ value: Any, time: CGFloat) {
         keyframeValues.append(value)
-        keyframeTimes.append(NSNumber(value: Float(time)))
+        keyframeTimes.append(time)
     }
 
     /// Removes the last keyframe from the sequence.
@@ -728,7 +712,7 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
     ///   - index: The index of the keyframe.
     open func setKeyframeTime(_ time: CGFloat, for index: Int) {
         guard index < keyframeTimes.count else { return }
-        keyframeTimes[index] = NSNumber(value: Float(time))
+        keyframeTimes[index] = time
     }
 
     /// Sets the keyframe value and time at the specified index.
@@ -757,7 +741,7 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
     /// - Returns: The keyframe time.
     open func getKeyframeTime(for index: Int) -> CGFloat {
         guard index < keyframeTimes.count else { return 0 }
-        return CGFloat(keyframeTimes[index].floatValue)
+        return keyframeTimes[index]
     }
 
     /// Samples the sequence at the specified time.
@@ -782,7 +766,7 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
         var upperIndex = keyframeTimes.count - 1
 
         for i in 0..<keyframeTimes.count {
-            let keyTime = CGFloat(keyframeTimes[i].floatValue)
+            let keyTime = keyframeTimes[i]
             if keyTime <= normalizedTime {
                 lowerIndex = i
             }
@@ -797,8 +781,8 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
             return keyframeValues[lowerIndex]
         }
 
-        let lowerTime = CGFloat(keyframeTimes[lowerIndex].floatValue)
-        let upperTime = CGFloat(keyframeTimes[upperIndex].floatValue)
+        let lowerTime = keyframeTimes[lowerIndex]
+        let upperTime = keyframeTimes[upperIndex]
         let lowerValue = keyframeValues[lowerIndex]
         let upperValue = keyframeValues[upperIndex]
 
@@ -817,13 +801,6 @@ open class SKKeyframeSequence: NSObject, NSCopying, NSSecureCoding {
         // Handle CGFloat
         if let fromFloat = from as? CGFloat, let toFloat = to as? CGFloat {
             return interpolateFloat(fromFloat, toFloat, t: t)
-        }
-
-        // Handle NSNumber
-        if let fromNumber = from as? NSNumber, let toNumber = to as? NSNumber {
-            let fromFloat = CGFloat(fromNumber.doubleValue)
-            let toFloat = CGFloat(toNumber.doubleValue)
-            return NSNumber(value: Double(interpolateFloat(fromFloat, toFloat, t: t)))
         }
 
         // Handle Double

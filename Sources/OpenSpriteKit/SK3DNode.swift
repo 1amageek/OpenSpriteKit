@@ -15,7 +15,7 @@
 ///
 /// - Note: In WASM environments, SceneKit is not available. This class provides
 ///   API compatibility but does not render 3D content.
-open class SK3DNode: SKNode {
+open class SK3DNode: SKNode, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -64,28 +64,6 @@ open class SK3DNode: SKNode {
     /// Creates a new 3D node.
     public override init() {
         super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        viewportSize = CGSize(
-            width: CGFloat(coder.decodeDouble(forKey: "viewportSize.width")),
-            height: CGFloat(coder.decodeDouble(forKey: "viewportSize.height"))
-        )
-        isPlaying = coder.decodeBool(forKey: "isPlaying")
-        loops = coder.decodeBool(forKey: "loops")
-        autoenablesDefaultLighting = coder.decodeBool(forKey: "autoenablesDefaultLighting")
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(Double(viewportSize.width), forKey: "viewportSize.width")
-        coder.encode(Double(viewportSize.height), forKey: "viewportSize.height")
-        coder.encode(isPlaying, forKey: "isPlaying")
-        coder.encode(loops, forKey: "loops")
-        coder.encode(autoenablesDefaultLighting, forKey: "autoenablesDefaultLighting")
     }
 
     // MARK: - Hit Testing

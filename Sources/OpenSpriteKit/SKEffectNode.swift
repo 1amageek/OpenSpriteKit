@@ -11,7 +11,7 @@
 /// apply distortions to nodes that don't implement the protocol, such as shape and video nodes.
 /// Use effect nodes to incorporate sophisticated special effects into a scene or to cache the
 /// contents of a static subtree for faster rendering performance.
-open class SKEffectNode: SKNode, SKWarpable {
+open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
 
     // MARK: - Filter Properties
 
@@ -62,26 +62,6 @@ open class SKEffectNode: SKNode, SKWarpable {
 
     public override init() {
         super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        shouldEnableEffects = coder.decodeBool(forKey: "shouldEnableEffects")
-        shouldCenterFilter = coder.decodeBool(forKey: "shouldCenterFilter")
-        shouldRasterize = coder.decodeBool(forKey: "shouldRasterize")
-        blendMode = SKBlendMode(rawValue: coder.decodeInteger(forKey: "blendMode")) ?? .alpha
-        subdivisionLevels = coder.decodeInteger(forKey: "subdivisionLevels")
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(shouldEnableEffects, forKey: "shouldEnableEffects")
-        coder.encode(shouldCenterFilter, forKey: "shouldCenterFilter")
-        coder.encode(shouldRasterize, forKey: "shouldRasterize")
-        coder.encode(blendMode.rawValue, forKey: "blendMode")
-        coder.encode(subdivisionLevels, forKey: "subdivisionLevels")
     }
 
     // MARK: - Attribute Management
@@ -175,119 +155,6 @@ open class SKEffectNode: SKNode, SKWarpable {
         let height = Int(size.height)
         guard width > 0 && height > 0 else { return nil }
 
-        #if canImport(UIKit) || canImport(AppKit)
-        // Native platforms: Use CGContext with hardware acceleration
-        return renderChildrenToImageNative(width: width, height: height)
-        #else
-        // WASM: Use software compositing
-        return renderChildrenToImageWASM(width: width, height: height)
-        #endif
-    }
-
-    #if canImport(UIKit) || canImport(AppKit)
-    /// Native platform implementation using CGContext.
-    private func renderChildrenToImageNative(width: Int, height: Int) -> CGImage? {
-        let bytesPerPixel = 4
-        let bytesPerRow = width * bytesPerPixel
-        var pixelData = [UInt8](repeating: 0, count: bytesPerRow * height)
-
-        guard let colorSpace = CGColorSpaceCreateDeviceRGB() as CGColorSpace?,
-              let context = CGContext(
-                  data: &pixelData,
-                  width: width,
-                  height: height,
-                  bitsPerComponent: 8,
-                  bytesPerRow: bytesPerRow,
-                  space: colorSpace,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ) else {
-            return nil
-        }
-
-        // Clear context
-        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
-
-        // Render each child
-        for child in children {
-            renderNodeToContext(child, context: context)
-        }
-
-        return context.makeImage()
-    }
-
-    /// Recursively renders a node to the given context.
-    private func renderNodeToContext(_ node: SKNode, context: CGContext) {
-        guard !node.isHidden && node.alpha > 0 else { return }
-
-        context.saveGState()
-
-        // Apply node transform
-        context.translateBy(x: node.position.x, y: node.position.y)
-        context.rotate(by: node.zRotation)
-        context.scaleBy(x: node.xScale, y: node.yScale)
-        context.setAlpha(node.alpha)
-
-        // Render based on node type
-        if let sprite = node as? SKSpriteNode {
-            renderSpriteNode(sprite, to: context)
-        } else if let shape = node as? SKShapeNode {
-            renderShapeNode(shape, to: context)
-        }
-
-        // Render children
-        let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
-        for child in sortedChildren {
-            renderNodeToContext(child, context: context)
-        }
-
-        context.restoreGState()
-    }
-
-    /// Renders a sprite node to the context.
-    private func renderSpriteNode(_ sprite: SKSpriteNode, to context: CGContext) {
-        guard let cgImage = sprite.texture?.cgImage else { return }
-
-        let size = sprite.size
-        let anchorPoint = sprite.anchorPoint
-
-        let rect = CGRect(
-            x: -size.width * anchorPoint.x,
-            y: -size.height * anchorPoint.y,
-            width: size.width,
-            height: size.height
-        )
-
-        context.draw(cgImage, in: rect)
-    }
-
-    /// Renders a shape node to the context.
-    private func renderShapeNode(_ shape: SKShapeNode, to context: CGContext) {
-        guard let path = shape.path else { return }
-
-        context.addPath(path)
-
-        if shape.fillColor != .clear {
-            context.setFillColor(shape.fillColor.cgColor)
-            context.fillPath()
-            context.addPath(path)
-        }
-
-        if shape.strokeColor != .clear && shape.lineWidth > 0 {
-            context.setStrokeColor(shape.strokeColor.cgColor)
-            context.setLineWidth(shape.lineWidth)
-            context.strokePath()
-        }
-    }
-    #endif
-
-    // MARK: - WASM Software Compositing
-
-    #if !canImport(UIKit) && !canImport(AppKit)
-    /// WASM implementation using software compositing.
-    ///
-    /// This method directly composites child node images without relying on
-    /// CGContext.draw() which requires a renderer delegate in OpenCoreGraphics.
-    private func renderChildrenToImageWASM(width: Int, height: Int) -> CGImage? {
         let bytesPerPixel = 4
         let bytesPerRow = width * bytesPerPixel
         var pixelData = [UInt8](repeating: 0, count: bytesPerRow * height)
@@ -295,7 +162,7 @@ open class SKEffectNode: SKNode, SKWarpable {
         // Collect and composite all child nodes
         let sortedChildren = children.sorted { $0.zPosition < $1.zPosition }
         for child in sortedChildren {
-            compositeNodeWASM(child, into: &pixelData, width: width, height: height, bytesPerRow: bytesPerRow)
+            compositeNode(child, into: &pixelData, width: width, height: height, bytesPerRow: bytesPerRow)
         }
 
         // Create CGImage from pixel data
@@ -322,10 +189,10 @@ open class SKEffectNode: SKNode, SKWarpable {
     }
 
     /// Composites a node and its children into the pixel buffer.
-    private func compositeNodeWASM(_ node: SKNode, into pixelData: inout [UInt8],
-                                    width: Int, height: Int, bytesPerRow: Int,
-                                    parentTransform: CGAffineTransform = .identity,
-                                    parentAlpha: CGFloat = 1.0) {
+    private func compositeNode(_ node: SKNode, into pixelData: inout [UInt8],
+                               width: Int, height: Int, bytesPerRow: Int,
+                               parentTransform: CGAffineTransform = .identity,
+                               parentAlpha: CGFloat = 1.0) {
         guard !node.isHidden && node.alpha > 0 else { return }
 
         // Calculate accumulated transform
@@ -338,23 +205,23 @@ open class SKEffectNode: SKNode, SKWarpable {
 
         // Composite based on node type
         if let sprite = node as? SKSpriteNode {
-            compositeSpriteWASM(sprite, into: &pixelData, width: width, height: height,
-                               bytesPerRow: bytesPerRow, transform: transform, alpha: alpha)
+            compositeSprite(sprite, into: &pixelData, width: width, height: height,
+                           bytesPerRow: bytesPerRow, transform: transform, alpha: alpha)
         }
         // Shape nodes would require path rasterization - skip for now
 
         // Composite children
         let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
         for child in sortedChildren {
-            compositeNodeWASM(child, into: &pixelData, width: width, height: height,
-                             bytesPerRow: bytesPerRow, parentTransform: transform, parentAlpha: alpha)
+            compositeNode(child, into: &pixelData, width: width, height: height,
+                         bytesPerRow: bytesPerRow, parentTransform: transform, parentAlpha: alpha)
         }
     }
 
     /// Composites a sprite node into the pixel buffer using software rendering.
-    private func compositeSpriteWASM(_ sprite: SKSpriteNode, into pixelData: inout [UInt8],
-                                      width: Int, height: Int, bytesPerRow: Int,
-                                      transform: CGAffineTransform, alpha: CGFloat) {
+    private func compositeSprite(_ sprite: SKSpriteNode, into pixelData: inout [UInt8],
+                                 width: Int, height: Int, bytesPerRow: Int,
+                                 transform: CGAffineTransform, alpha: CGFloat) {
         guard let cgImage = sprite.texture?.cgImage else { return }
 
         // Get source image data
@@ -437,5 +304,156 @@ open class SKEffectNode: SKNode, SKWarpable {
             }
         }
     }
-    #endif
+
+    // MARK: - Convenience Filter Methods
+
+    /// Applies a Gaussian blur effect to the node's children.
+    ///
+    /// - Parameter radius: The blur radius in points. Higher values produce more blur.
+    ///
+    /// ## Example
+    /// ```swift
+    /// let effectNode = SKEffectNode()
+    /// effectNode.applyGaussianBlur(radius: 10)
+    /// effectNode.addChild(spriteNode)
+    /// scene.addChild(effectNode)
+    /// ```
+    open func applyGaussianBlur(radius: CGFloat) {
+        guard let blurFilter = CIFilter(name: "CIGaussianBlur") else { return }
+        blurFilter.setValue(radius, forKey: kCIInputRadiusKey)
+        self.filter = blurFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a color adjustment effect to the node's children.
+    ///
+    /// - Parameters:
+    ///   - saturation: The saturation adjustment (1.0 = original, 0.0 = grayscale, > 1.0 = oversaturated).
+    ///   - brightness: The brightness adjustment (-1.0 to 1.0, 0.0 = original).
+    ///   - contrast: The contrast adjustment (1.0 = original, < 1.0 = less contrast, > 1.0 = more contrast).
+    open func applyColorControls(saturation: CGFloat = 1.0, brightness: CGFloat = 0.0, contrast: CGFloat = 1.0) {
+        guard let colorFilter = CIFilter(name: "CIColorControls") else { return }
+        colorFilter.setValue(saturation, forKey: kCIInputSaturationKey)
+        colorFilter.setValue(brightness, forKey: kCIInputBrightnessKey)
+        colorFilter.setValue(contrast, forKey: kCIInputContrastKey)
+        self.filter = colorFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a sepia tone effect to the node's children.
+    ///
+    /// - Parameter intensity: The intensity of the sepia effect (0.0 to 1.0).
+    open func applySepiaTone(intensity: CGFloat = 1.0) {
+        guard let sepiaFilter = CIFilter(name: "CISepiaTone") else { return }
+        sepiaFilter.setValue(intensity, forKey: kCIInputIntensityKey)
+        self.filter = sepiaFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a vignette effect to the node's children.
+    ///
+    /// - Parameters:
+    ///   - radius: The radius of the vignette (larger = smaller dark area).
+    ///   - intensity: The intensity of the darkening effect.
+    open func applyVignette(radius: CGFloat = 1.0, intensity: CGFloat = 0.5) {
+        guard let vignetteFilter = CIFilter(name: "CIVignette") else { return }
+        vignetteFilter.setValue(radius, forKey: kCIInputRadiusKey)
+        vignetteFilter.setValue(intensity, forKey: kCIInputIntensityKey)
+        self.filter = vignetteFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a pixellate effect to the node's children.
+    ///
+    /// - Parameter scale: The size of the pixels in the output image.
+    open func applyPixellate(scale: CGFloat = 8.0) {
+        guard let pixelFilter = CIFilter(name: "CIPixellate") else { return }
+        pixelFilter.setValue(scale, forKey: kCIInputScaleKey)
+        self.filter = pixelFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies an exposure adjustment to the node's children.
+    ///
+    /// - Parameter ev: The exposure value adjustment in EV units.
+    open func applyExposureAdjust(ev: CGFloat = 0.5) {
+        guard let exposureFilter = CIFilter(name: "CIExposureAdjust") else { return }
+        exposureFilter.setValue(ev, forKey: kCIInputEVKey)
+        self.filter = exposureFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a hue adjustment to the node's children.
+    ///
+    /// - Parameter angle: The hue rotation angle in radians.
+    open func applyHueAdjust(angle: CGFloat) {
+        guard let hueFilter = CIFilter(name: "CIHueAdjust") else { return }
+        hueFilter.setValue(angle, forKey: kCIInputAngleKey)
+        self.filter = hueFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a color inversion effect to the node's children.
+    open func applyColorInvert() {
+        guard let invertFilter = CIFilter(name: "CIColorInvert") else { return }
+        self.filter = invertFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a bloom (glow) effect to the node's children.
+    ///
+    /// - Parameters:
+    ///   - radius: The radius of the bloom effect.
+    ///   - intensity: The intensity of the bloom.
+    open func applyBloom(radius: CGFloat = 10.0, intensity: CGFloat = 0.5) {
+        guard let bloomFilter = CIFilter(name: "CIBloom") else { return }
+        bloomFilter.setValue(radius, forKey: kCIInputRadiusKey)
+        bloomFilter.setValue(intensity, forKey: kCIInputIntensityKey)
+        self.filter = bloomFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a crystallize effect to the node's children.
+    ///
+    /// - Parameter radius: The size of the crystals.
+    open func applyCrystallize(radius: CGFloat = 20.0) {
+        guard let crystalFilter = CIFilter(name: "CICrystallize") else { return }
+        crystalFilter.setValue(radius, forKey: kCIInputRadiusKey)
+        self.filter = crystalFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a comic effect to the node's children.
+    open func applyComicEffect() {
+        guard let comicFilter = CIFilter(name: "CIComicEffect") else { return }
+        self.filter = comicFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies an edge detection effect to the node's children.
+    ///
+    /// - Parameter intensity: The intensity of the edge detection.
+    open func applyEdges(intensity: CGFloat = 1.0) {
+        guard let edgeFilter = CIFilter(name: "CIEdges") else { return }
+        edgeFilter.setValue(intensity, forKey: kCIInputIntensityKey)
+        self.filter = edgeFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Applies a sharpen effect to the node's children.
+    ///
+    /// - Parameter sharpness: The amount of sharpening.
+    open func applySharpenLuminance(sharpness: CGFloat = 0.4) {
+        guard let sharpenFilter = CIFilter(name: "CISharpenLuminance") else { return }
+        sharpenFilter.setValue(sharpness, forKey: kCIInputSharpnessKey)
+        self.filter = sharpenFilter
+        self.shouldEnableEffects = true
+    }
+
+    /// Removes any applied filter effect.
+    open func removeFilter() {
+        self.filter = nil
+        self.shouldEnableEffects = false
+        invalidateFilterCache()
+    }
 }

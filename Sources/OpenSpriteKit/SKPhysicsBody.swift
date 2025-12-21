@@ -42,11 +42,7 @@ public enum SKPhysicsBodyShape {
 /// An `SKPhysicsBody` object defines the shape and simulation parameters for a physics body
 /// in the physics simulation. When a scene processes a new frame, it performs physics calculations
 /// on physics bodies attached to nodes in the scene.
-open class SKPhysicsBody: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKPhysicsBody: @unchecked Sendable {
 
     // MARK: - Shape
 
@@ -160,168 +156,38 @@ open class SKPhysicsBody: NSObject, NSCopying, NSSecureCoding {
 
     // MARK: - Initializers
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
-    public required init?(coder: NSCoder) {
-        // Decode shape
-        let shapeType = coder.decodeInteger(forKey: "shapeType")
-        area = CGFloat(coder.decodeDouble(forKey: "area"))
+    // MARK: - Copying
 
-        switch shapeType {
-        case 0: // circle
-            let radius = CGFloat(coder.decodeDouble(forKey: "radius"))
-            shape = .circle(radius: radius)
-        case 1: // circleWithCenter
-            let radius = CGFloat(coder.decodeDouble(forKey: "radius"))
-            let centerX = CGFloat(coder.decodeDouble(forKey: "centerX"))
-            let centerY = CGFloat(coder.decodeDouble(forKey: "centerY"))
-            shape = .circleWithCenter(radius: radius, center: CGPoint(x: centerX, y: centerY))
-        case 2: // rectangle
-            let width = CGFloat(coder.decodeDouble(forKey: "sizeWidth"))
-            let height = CGFloat(coder.decodeDouble(forKey: "sizeHeight"))
-            shape = .rectangle(size: CGSize(width: width, height: height))
-        case 3: // rectangleWithCenter
-            let width = CGFloat(coder.decodeDouble(forKey: "sizeWidth"))
-            let height = CGFloat(coder.decodeDouble(forKey: "sizeHeight"))
-            let centerX = CGFloat(coder.decodeDouble(forKey: "centerX"))
-            let centerY = CGFloat(coder.decodeDouble(forKey: "centerY"))
-            shape = .rectangleWithCenter(size: CGSize(width: width, height: height),
-                                          center: CGPoint(x: centerX, y: centerY))
-        case 4: // edgeLoopRect
-            let x = CGFloat(coder.decodeDouble(forKey: "rectX"))
-            let y = CGFloat(coder.decodeDouble(forKey: "rectY"))
-            let width = CGFloat(coder.decodeDouble(forKey: "rectWidth"))
-            let height = CGFloat(coder.decodeDouble(forKey: "rectHeight"))
-            shape = .edgeLoopRect(rect: CGRect(x: x, y: y, width: width, height: height))
-        case 5: // edge
-            let fromX = CGFloat(coder.decodeDouble(forKey: "fromX"))
-            let fromY = CGFloat(coder.decodeDouble(forKey: "fromY"))
-            let toX = CGFloat(coder.decodeDouble(forKey: "toX"))
-            let toY = CGFloat(coder.decodeDouble(forKey: "toY"))
-            shape = .edge(from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY))
-        default:
-            shape = .rectangle(size: .zero)
-        }
-
-        affectedByGravity = coder.decodeBool(forKey: "affectedByGravity")
-        allowsRotation = coder.decodeBool(forKey: "allowsRotation")
-        isDynamic = coder.decodeBool(forKey: "isDynamic")
-        mass = CGFloat(coder.decodeDouble(forKey: "mass"))
-        density = CGFloat(coder.decodeDouble(forKey: "density"))
-        friction = CGFloat(coder.decodeDouble(forKey: "friction"))
-        restitution = CGFloat(coder.decodeDouble(forKey: "restitution"))
-        linearDamping = CGFloat(coder.decodeDouble(forKey: "linearDamping"))
-        angularDamping = CGFloat(coder.decodeDouble(forKey: "angularDamping"))
-        categoryBitMask = UInt32(coder.decodeInt32(forKey: "categoryBitMask"))
-        collisionBitMask = UInt32(coder.decodeInt32(forKey: "collisionBitMask"))
-        contactTestBitMask = UInt32(coder.decodeInt32(forKey: "contactTestBitMask"))
-        fieldBitMask = UInt32(coder.decodeInt32(forKey: "fieldBitMask"))
-        usesPreciseCollisionDetection = coder.decodeBool(forKey: "usesPreciseCollisionDetection")
-        pinned = coder.decodeBool(forKey: "pinned")
-        charge = CGFloat(coder.decodeDouble(forKey: "charge"))
-
-        // Decode velocity and angular velocity
-        let velocityDx = CGFloat(coder.decodeDouble(forKey: "velocity.dx"))
-        let velocityDy = CGFloat(coder.decodeDouble(forKey: "velocity.dy"))
-        velocity = CGVector(dx: velocityDx, dy: velocityDy)
-        angularVelocity = CGFloat(coder.decodeDouble(forKey: "angularVelocity"))
-        isResting = coder.decodeBool(forKey: "isResting")
-
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        // Encode shape
-        coder.encode(Double(area), forKey: "area")
-        switch shape {
-        case .circle(let radius):
-            coder.encode(0, forKey: "shapeType")
-            coder.encode(Double(radius), forKey: "radius")
-        case .circleWithCenter(let radius, let center):
-            coder.encode(1, forKey: "shapeType")
-            coder.encode(Double(radius), forKey: "radius")
-            coder.encode(Double(center.x), forKey: "centerX")
-            coder.encode(Double(center.y), forKey: "centerY")
-        case .rectangle(let size):
-            coder.encode(2, forKey: "shapeType")
-            coder.encode(Double(size.width), forKey: "sizeWidth")
-            coder.encode(Double(size.height), forKey: "sizeHeight")
-        case .rectangleWithCenter(let size, let center):
-            coder.encode(3, forKey: "shapeType")
-            coder.encode(Double(size.width), forKey: "sizeWidth")
-            coder.encode(Double(size.height), forKey: "sizeHeight")
-            coder.encode(Double(center.x), forKey: "centerX")
-            coder.encode(Double(center.y), forKey: "centerY")
-        case .edgeLoopRect(let rect):
-            coder.encode(4, forKey: "shapeType")
-            coder.encode(Double(rect.origin.x), forKey: "rectX")
-            coder.encode(Double(rect.origin.y), forKey: "rectY")
-            coder.encode(Double(rect.width), forKey: "rectWidth")
-            coder.encode(Double(rect.height), forKey: "rectHeight")
-        case .edge(let from, let to):
-            coder.encode(5, forKey: "shapeType")
-            coder.encode(Double(from.x), forKey: "fromX")
-            coder.encode(Double(from.y), forKey: "fromY")
-            coder.encode(Double(to.x), forKey: "toX")
-            coder.encode(Double(to.y), forKey: "toY")
-        default:
-            coder.encode(-1, forKey: "shapeType")
-        }
-
-        coder.encode(affectedByGravity, forKey: "affectedByGravity")
-        coder.encode(allowsRotation, forKey: "allowsRotation")
-        coder.encode(isDynamic, forKey: "isDynamic")
-        coder.encode(Double(mass), forKey: "mass")
-        coder.encode(Double(density), forKey: "density")
-        coder.encode(Double(friction), forKey: "friction")
-        coder.encode(Double(restitution), forKey: "restitution")
-        coder.encode(Double(linearDamping), forKey: "linearDamping")
-        coder.encode(Double(angularDamping), forKey: "angularDamping")
-        coder.encode(Int32(categoryBitMask), forKey: "categoryBitMask")
-        coder.encode(Int32(collisionBitMask), forKey: "collisionBitMask")
-        coder.encode(Int32(contactTestBitMask), forKey: "contactTestBitMask")
-        coder.encode(Int32(fieldBitMask), forKey: "fieldBitMask")
-        coder.encode(usesPreciseCollisionDetection, forKey: "usesPreciseCollisionDetection")
-        coder.encode(pinned, forKey: "pinned")
-        coder.encode(Double(charge), forKey: "charge")
-
-        // Encode velocity and angular velocity
-        coder.encode(Double(velocity.dx), forKey: "velocity.dx")
-        coder.encode(Double(velocity.dy), forKey: "velocity.dy")
-        coder.encode(Double(angularVelocity), forKey: "angularVelocity")
-        coder.encode(isResting, forKey: "isResting")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKPhysicsBody()
-        copy.shape = shape
-        copy.area = area
-        copy.affectedByGravity = affectedByGravity
-        copy.allowsRotation = allowsRotation
-        copy.isDynamic = isDynamic
-        copy.mass = mass
-        copy.density = density
-        copy.friction = friction
-        copy.restitution = restitution
-        copy.linearDamping = linearDamping
-        copy.angularDamping = angularDamping
-        copy.categoryBitMask = categoryBitMask
-        copy.collisionBitMask = collisionBitMask
-        copy.contactTestBitMask = contactTestBitMask
-        copy.fieldBitMask = fieldBitMask
-        copy.usesPreciseCollisionDetection = usesPreciseCollisionDetection
-        copy.pinned = pinned
-        copy.charge = charge
-        copy.velocity = velocity
-        copy.angularVelocity = angularVelocity
-        copy.isResting = isResting
-        return copy
+    /// Creates a copy of this physics body.
+    ///
+    /// - Returns: A new physics body with the same properties.
+    open func copy() -> SKPhysicsBody {
+        let bodyCopy = SKPhysicsBody()
+        bodyCopy.shape = shape
+        bodyCopy.area = area
+        bodyCopy.affectedByGravity = affectedByGravity
+        bodyCopy.allowsRotation = allowsRotation
+        bodyCopy.isDynamic = isDynamic
+        bodyCopy.mass = mass
+        bodyCopy.density = density
+        bodyCopy.friction = friction
+        bodyCopy.restitution = restitution
+        bodyCopy.linearDamping = linearDamping
+        bodyCopy.angularDamping = angularDamping
+        bodyCopy.categoryBitMask = categoryBitMask
+        bodyCopy.collisionBitMask = collisionBitMask
+        bodyCopy.contactTestBitMask = contactTestBitMask
+        bodyCopy.fieldBitMask = fieldBitMask
+        bodyCopy.usesPreciseCollisionDetection = usesPreciseCollisionDetection
+        bodyCopy.pinned = pinned
+        bodyCopy.charge = charge
+        bodyCopy.velocity = velocity
+        bodyCopy.angularVelocity = angularVelocity
+        bodyCopy.isResting = isResting
+        return bodyCopy
     }
 
     // MARK: - Factory Methods
@@ -381,8 +247,76 @@ open class SKPhysicsBody: NSObject, NSCopying, NSSecureCoding {
     public class func polygonFrom(path: CGPath) -> SKPhysicsBody {
         let body = SKPhysicsBody()
         body.shape = .polygon(path: path)
-        // TODO: Calculate area from path
+        body.area = calculatePathArea(path)
         return body
+    }
+
+    /// Calculates the area of a path using the Shoelace formula.
+    ///
+    /// This works for simple polygons (non-self-intersecting).
+    /// For complex paths with curves, it approximates by sampling.
+    private class func calculatePathArea(_ path: CGPath) -> CGFloat {
+        var points: [CGPoint] = []
+        var currentPoint: CGPoint = .zero
+
+        // Extract points from path
+        path.applyWithBlock { element in
+            switch element.pointee.type {
+            case .moveToPoint:
+                currentPoint = element.pointee.points[0]
+                points.append(currentPoint)
+            case .addLineToPoint:
+                currentPoint = element.pointee.points[0]
+                points.append(currentPoint)
+            case .addQuadCurveToPoint:
+                // Sample the quadratic curve
+                let control = element.pointee.points[0]
+                let end = element.pointee.points[1]
+                for t in stride(from: 0.25, through: 1.0, by: 0.25) {
+                    let t2 = CGFloat(t)
+                    let oneMinusT = 1.0 - t2
+                    let x = oneMinusT * oneMinusT * currentPoint.x + 2 * oneMinusT * t2 * control.x + t2 * t2 * end.x
+                    let y = oneMinusT * oneMinusT * currentPoint.y + 2 * oneMinusT * t2 * control.y + t2 * t2 * end.y
+                    points.append(CGPoint(x: x, y: y))
+                }
+                currentPoint = end
+            case .addCurveToPoint:
+                // Sample the cubic curve
+                let control1 = element.pointee.points[0]
+                let control2 = element.pointee.points[1]
+                let end = element.pointee.points[2]
+                for t in stride(from: 0.25, through: 1.0, by: 0.25) {
+                    let t2 = CGFloat(t)
+                    let oneMinusT = 1.0 - t2
+                    let a = oneMinusT * oneMinusT * oneMinusT
+                    let b = 3 * oneMinusT * oneMinusT * t2
+                    let c = 3 * oneMinusT * t2 * t2
+                    let d = t2 * t2 * t2
+                    let x = a * currentPoint.x + b * control1.x + c * control2.x + d * end.x
+                    let y = a * currentPoint.y + b * control1.y + c * control2.y + d * end.y
+                    points.append(CGPoint(x: x, y: y))
+                }
+                currentPoint = end
+            case .closeSubpath:
+                // Close path - area calculation handles this
+                break
+            @unknown default:
+                break
+            }
+        }
+
+        // Calculate area using Shoelace formula
+        guard points.count >= 3 else { return 0 }
+
+        var area: CGFloat = 0
+        let n = points.count
+        for i in 0..<n {
+            let j = (i + 1) % n
+            area += points[i].x * points[j].y
+            area -= points[j].x * points[i].y
+        }
+
+        return abs(area) / 2.0
     }
 
     /// Creates an edge-based physics body from a path.

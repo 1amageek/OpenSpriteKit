@@ -18,7 +18,7 @@ import AVFAudio
 /// By default, `SKAudioNode` objects are positional, i.e. their `isPositional` property is set
 /// to `true`. If you add an audio node to a scene with a `listener` set, SpriteKit will set the
 /// stereo balance and the volume based on the relative positions of the two nodes.
-open class SKAudioNode: SKNode {
+open class SKAudioNode: SKNode, @unchecked Sendable {
 
     // MARK: - Audio Properties
 
@@ -82,31 +82,6 @@ open class SKAudioNode: SKNode {
         self.init()
         self.audioURL = url
         loadAudio(from: url)
-    }
-
-    public required init?(coder: NSCoder) {
-        isPositional = coder.decodeBool(forKey: "isPositional")
-        autoplayLooped = coder.decodeBool(forKey: "autoplayLooped")
-        audioURL = coder.decodeObject(forKey: "audioURL") as? URL
-        audioFileName = coder.decodeObject(forKey: "audioFileName") as? String
-        super.init(coder: coder)
-
-        // Reload audio after decoding
-        if let url = audioURL {
-            loadAudio(from: url)
-        } else if let filename = audioFileName {
-            loadAudio(named: filename)
-        }
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(isPositional, forKey: "isPositional")
-        coder.encode(autoplayLooped, forKey: "autoplayLooped")
-        coder.encode(audioURL, forKey: "audioURL")
-        coder.encode(audioFileName, forKey: "audioFileName")
     }
 
     // MARK: - Private Methods

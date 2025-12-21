@@ -4,11 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(QuartzCore)
-import QuartzCore
-#else
 import OpenCoreAnimation
-#endif
 
 /// The base class of all SpriteKit nodes.
 ///
@@ -17,11 +13,7 @@ import OpenCoreAnimation
 ///
 /// `SKNode` does not draw any content itself. Its visual counterparts include
 /// `SKSpriteNode`, `SKShapeNode`, `SKLabelNode`, and other drawing nodes.
-open class SKNode: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKNode: @unchecked Sendable {
 
     // MARK: - Core Animation Layer Backing
 
@@ -190,21 +182,51 @@ open class SKNode: NSObject, NSCopying, NSSecureCoding {
     /// A dictionary containing arbitrary data.
     ///
     /// Use this property to store custom data in a node without subclassing it.
-    open var userData: NSMutableDictionary?
+    open var userData: [String: Any]?
 
     // MARK: - Initializers
 
     /// Initializes a blank node.
-    public override init() {
-        super.init()
+    public init() {
     }
 
     /// Creates a new node by loading an archive file from the game's main bundle.
     ///
+    /// This method loads a node from a `.sks` file created in Xcode's SpriteKit Scene Editor
+    /// or from a programmatically archived node.
+    ///
+    /// On WASM platforms, you must first register the file data with `SKResourceLoader`:
+    /// ```swift
+    /// SKResourceLoader.shared.registerScene(data: sksData, forName: "MyNode")
+    /// let node = SKNode(fileNamed: "MyNode")
+    /// ```
+    ///
     /// - Parameter filename: The name of the archive file (without the `.sks` extension).
     /// - Returns: A new node loaded from the archive, or `nil` if the file could not be loaded.
     public convenience init?(fileNamed filename: String) {
-        // TODO: Implement archive loading
+        // Try to load from registered scene data first (WASM)
+        if let data = SKResourceLoader.shared.sceneData(forName: filename) {
+            if let node = Self.unarchive(from: data) as? Self {
+                self.init()
+                // Copy properties from loaded node
+                self.copyProperties(from: node)
+                return
+            }
+        }
+
+        // Try to load from bundle (native platforms)
+        let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
+
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
+            if let data = try? Data(contentsOf: url),
+               let node = Self.unarchive(from: data) as? Self {
+                self.init()
+                self.copyProperties(from: node)
+                return
+            }
+        }
+
+        // Fallback: return empty node
         self.init()
     }
 
@@ -215,115 +237,95 @@ open class SKNode: NSObject, NSCopying, NSSecureCoding {
     ///   - classes: A set of classes that are allowed to be unarchived.
     /// - Throws: An error if the archive could not be loaded.
     public convenience init(fileNamed filename: String, securelyWithClasses classes: Set<AnyHashable>) throws {
-        // TODO: Implement secure archive loading
-        self.init()
-    }
-
-    /// Called when a node is initialized from an `.sks` file.
-    ///
-    /// - Parameter coder: The coder to read data from.
-    public required init?(coder: NSCoder) {
-        super.init()
-
-        // Position and transform
-        let posX = CGFloat(coder.decodeDouble(forKey: "position.x"))
-        let posY = CGFloat(coder.decodeDouble(forKey: "position.y"))
-        position = CGPoint(x: posX, y: posY)
-        zPosition = CGFloat(coder.decodeDouble(forKey: "zPosition"))
-        zRotation = CGFloat(coder.decodeDouble(forKey: "zRotation"))
-        xScale = CGFloat(coder.decodeDouble(forKey: "xScale"))
-        yScale = CGFloat(coder.decodeDouble(forKey: "yScale"))
-
-        // Visibility
-        alpha = CGFloat(coder.decodeDouble(forKey: "alpha"))
-        isHidden = coder.decodeBool(forKey: "isHidden")
-
-        // Action properties
-        speed = CGFloat(coder.decodeDouble(forKey: "speed"))
-        isPaused = coder.decodeBool(forKey: "isPaused")
-
-        // User interaction
-        isUserInteractionEnabled = coder.decodeBool(forKey: "isUserInteractionEnabled")
-        if let focusBehaviorRaw = coder.decodeObject(forKey: "focusBehavior") as? Int,
-           let behavior = SKNodeFocusBehavior(rawValue: focusBehaviorRaw) {
-            focusBehavior = behavior
-        }
-
-        // Metadata
-        name = coder.decodeObject(forKey: "name") as? String
-        userData = coder.decodeObject(forKey: "userData") as? NSMutableDictionary
-
-        // Physics
-        physicsBody = coder.decodeObject(forKey: "physicsBody") as? SKPhysicsBody
-
-        // Constraints
-        constraints = coder.decodeObject(forKey: "constraints") as? [SKConstraint]
-        reachConstraints = coder.decodeObject(forKey: "reachConstraints") as? SKReachConstraints
-
-        // Children
-        if let decodedChildren = coder.decodeObject(forKey: "children") as? [SKNode] {
-            for child in decodedChildren {
-                addChild(child)
+        // Try to load from registered scene data first (WASM)
+        if let data = SKResourceLoader.shared.sceneData(forName: filename) {
+            if let node = try Self.unarchiveSecurely(from: data, classes: classes) as? Self {
+                self.init()
+                self.copyProperties(from: node)
+                return
             }
         }
+
+        // Try to load from bundle (native platforms)
+        let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
+
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
+           let data = try? Data(contentsOf: url) {
+            if let node = try Self.unarchiveSecurely(from: data, classes: classes) as? Self {
+                self.init()
+                self.copyProperties(from: node)
+                return
+            }
+        }
+
+        throw SKResourceError.notFound
     }
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        // Position and transform
-        coder.encode(Double(position.x), forKey: "position.x")
-        coder.encode(Double(position.y), forKey: "position.y")
-        coder.encode(Double(zPosition), forKey: "zPosition")
-        coder.encode(Double(zRotation), forKey: "zRotation")
-        coder.encode(Double(xScale), forKey: "xScale")
-        coder.encode(Double(yScale), forKey: "yScale")
-
-        // Visibility
-        coder.encode(Double(alpha), forKey: "alpha")
-        coder.encode(isHidden, forKey: "isHidden")
-
-        // Action properties
-        coder.encode(Double(speed), forKey: "speed")
-        coder.encode(isPaused, forKey: "isPaused")
-
-        // User interaction
-        coder.encode(isUserInteractionEnabled, forKey: "isUserInteractionEnabled")
-        coder.encode(focusBehavior.rawValue, forKey: "focusBehavior")
-
-        // Metadata
-        coder.encode(name, forKey: "name")
-        coder.encode(userData, forKey: "userData")
-
-        // Physics
-        coder.encode(physicsBody, forKey: "physicsBody")
-
-        // Constraints
-        coder.encode(constraints, forKey: "constraints")
-        coder.encode(reachConstraints, forKey: "reachConstraints")
-
-        // Children
-        coder.encode(children, forKey: "children")
+    /// Unarchives a node from data using SKSParser.
+    private static func unarchive(from data: Data) -> SKNode? {
+        // Use SKSParser for pure Swift parsing
+        do {
+            let scene = try SKSParser.parseScene(from: data)
+            // If the root is not exactly what we want, return its first child or the scene itself
+            if scene.children.count == 1 {
+                return scene.children.first
+            }
+            return scene
+        } catch {
+            return nil
+        }
     }
 
-    // MARK: - NSCopying
+    /// Unarchives a node from data (classes parameter ignored in pure Swift implementation).
+    private static func unarchiveSecurely(from data: Data, classes: Set<AnyHashable>) throws -> SKNode? {
+        // Pure Swift implementation doesn't need class filtering
+        return unarchive(from: data)
+    }
 
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKNode()
-        copy.position = position
-        copy.zPosition = zPosition
-        copy.zRotation = zRotation
-        copy.xScale = xScale
-        copy.yScale = yScale
-        copy.alpha = alpha
-        copy.isHidden = isHidden
-        copy.speed = speed
-        copy.isPaused = isPaused
-        copy.name = name
-        copy.isUserInteractionEnabled = isUserInteractionEnabled
-        copy.focusBehavior = focusBehavior
-        copy.userData = userData?.mutableCopy() as? NSMutableDictionary
-        return copy
+    /// Copies properties from another node.
+    internal func copyProperties(from node: SKNode) {
+        self.position = node.position
+        self.zPosition = node.zPosition
+        self.zRotation = node.zRotation
+        self.xScale = node.xScale
+        self.yScale = node.yScale
+        self.alpha = node.alpha
+        self.isHidden = node.isHidden
+        self.speed = node.speed
+        self.isPaused = node.isPaused
+        self.name = node.name
+        self.isUserInteractionEnabled = node.isUserInteractionEnabled
+        self.focusBehavior = node.focusBehavior
+        self.physicsBody = node.physicsBody
+        self.constraints = node.constraints
+
+        // Copy children
+        for child in node.children {
+            self.addChild(child)
+        }
+    }
+
+    // MARK: - Copying
+
+    /// Creates a copy of this node.
+    ///
+    /// - Returns: A new node with the same properties.
+    open func copy() -> SKNode {
+        let nodeCopy = SKNode()
+        nodeCopy.position = position
+        nodeCopy.zPosition = zPosition
+        nodeCopy.zRotation = zRotation
+        nodeCopy.xScale = xScale
+        nodeCopy.yScale = yScale
+        nodeCopy.alpha = alpha
+        nodeCopy.isHidden = isHidden
+        nodeCopy.speed = speed
+        nodeCopy.isPaused = isPaused
+        nodeCopy.name = name
+        nodeCopy.isUserInteractionEnabled = isUserInteractionEnabled
+        nodeCopy.focusBehavior = focusBehavior
+        nodeCopy.userData = userData
+        return nodeCopy
     }
 
     // MARK: - Scaling

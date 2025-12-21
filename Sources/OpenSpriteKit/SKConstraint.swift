@@ -9,11 +9,7 @@
 /// An `SKConstraint` object describes a mathematical constraint on a node's position
 /// or orientation. Constraints are evaluated each time a new frame is processed for a scene,
 /// after any actions have been processed but before the physics simulation is processed.
-open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKConstraint: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -54,29 +50,20 @@ open class SKConstraint: NSObject, NSCopying, NSSecureCoding {
 
     // MARK: - Initializers
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
-    public required init?(coder: NSCoder) {
-        enabled = coder.decodeBool(forKey: "enabled")
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(enabled, forKey: "enabled")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKConstraint()
-        copy.enabled = enabled
-        copy.referenceNode = referenceNode
-        copy.constraintType = constraintType
-        return copy
+    /// Creates a copy of this constraint.
+    ///
+    /// - Returns: A new constraint with the same properties.
+    open func copy() -> SKConstraint {
+        let constraintCopy = SKConstraint()
+        constraintCopy.enabled = enabled
+        constraintCopy.referenceNode = referenceNode
+        constraintCopy.constraintType = constraintType
+        return constraintCopy
     }
 
     // MARK: - Position Constraints

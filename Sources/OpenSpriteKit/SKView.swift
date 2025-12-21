@@ -4,21 +4,21 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(UIKit)
-import UIKit
-public typealias SKViewBase = UIView
-#elseif canImport(AppKit)
-import AppKit
-public typealias SKViewBase = NSView
-#else
-// For WASM or other platforms without UIKit/AppKit
-open class SKViewBase: NSObject {}
+#if arch(wasm32)
+import JavaScriptKit
 #endif
+
+/// Base class for SKView
+open class SKViewBase {
+    public init() {
+    }
+}
 
 /// A view that displays SpriteKit content.
 ///
 /// An `SKView` object renders a SpriteKit scene. You add the view to a window and then
 /// tell it which scene to present.
+@MainActor
 open class SKView: SKViewBase {
 
     // MARK: - Properties
@@ -72,45 +72,18 @@ open class SKView: SKViewBase {
     open weak var delegate: SKViewDelegate?
 
     /// The size of the view for scene calculations.
-    /// This is a cross-platform property that returns the view's size.
-    open nonisolated var viewSize: CGSize {
-        #if canImport(UIKit) || canImport(AppKit)
-        return MainActor.assumeIsolated { bounds.size }
-        #else
-        return _viewSize
-        #endif
-    }
+    open nonisolated(unsafe) var viewSize: CGSize = .zero
 
-    #if !canImport(UIKit) && !canImport(AppKit)
-    private var _viewSize: CGSize = .zero
-
-    /// Sets the view size on platforms without UIKit/AppKit.
+    /// Sets the view size.
     open func setViewSize(_ size: CGSize) {
-        _viewSize = size
+        viewSize = size
     }
-    #endif
 
-    #if canImport(UIKit) || canImport(AppKit)
     // MARK: - Initializers
 
-    public override init(frame: CGRect) {
-        super.init(frame: frame)
-        commonInit()
-    }
-
-    public required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        commonInit()
-    }
-
-    private func commonInit() {
-        // Setup rendering
-    }
-    #else
     public override init() {
         super.init()
     }
-    #endif
 
     // MARK: - Scene Presentation
 
@@ -460,52 +433,15 @@ open class SKView: SKViewBase {
 
     /// Renders a label node to a Core Graphics context.
     private func renderLabelNode(_ label: SKLabelNode, to context: CGContext) {
-        // For WASM, text rendering would need a different approach
-        // This is a placeholder that works on native platforms
-        #if canImport(CoreText)
+        // For WASM, text rendering is done via the WebGPU renderer
+        // This is a simple placeholder for software rendering
         guard let text = label.text, !text.isEmpty else { return }
 
-        let font = CTFontCreateWithName(
-            (label.fontName ?? "Helvetica") as CFString,
-            label.fontSize,
-            nil
-        )
+        // Set text color
+        context.setFillColor(label.fontColor?.cgColor ?? CGColor(red: 1, green: 1, blue: 1, alpha: 1))
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: label.fontColor?.cgColor ?? CGColor(red: 1, green: 1, blue: 1, alpha: 1)
-        ]
-
-        let attributedString = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attributedString)
-        let bounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
-
-        // Position based on alignment
-        var xOffset: CGFloat = 0
-        switch label.horizontalAlignmentMode {
-        case .center:
-            xOffset = -bounds.width / 2
-        case .left:
-            xOffset = 0
-        case .right:
-            xOffset = -bounds.width
-        }
-
-        var yOffset: CGFloat = 0
-        switch label.verticalAlignmentMode {
-        case .center:
-            yOffset = -bounds.height / 2
-        case .top:
-            yOffset = -bounds.height
-        case .bottom:
-            yOffset = 0
-        case .baseline:
-            yOffset = 0
-        }
-
-        context.textPosition = CGPoint(x: xOffset, y: yOffset)
-        CTLineDraw(line, context)
-        #endif
+        // Basic text positioning (actual rendering is done by WebGPU)
+        context.textPosition = CGPoint(x: 0, y: 0)
     }
 
     // MARK: - Render Loop Control
@@ -528,11 +464,9 @@ open class SKView: SKViewBase {
     }
 }
 
-// MARK: - WASM Canvas Integration
+// MARK: - Canvas Integration
 
 #if arch(wasm32)
-import JavaScriptKit
-
 extension SKView {
     /// Attaches the view to a canvas element and starts rendering.
     ///
@@ -582,7 +516,7 @@ extension SKView {
 // MARK: - SKViewDelegate
 
 /// Methods that allow you to participate in the scene rendering process.
-public protocol SKViewDelegate: NSObjectProtocol {
+public protocol SKViewDelegate: AnyObject {
 
     /// Asks the delegate whether the scene should render.
     ///
@@ -606,7 +540,7 @@ public extension SKViewDelegate {
 /// An object used to perform an animated transition to a new scene.
 ///
 /// An `SKTransition` object is used to animate a change from one scene to another.
-open class SKTransition: NSObject, NSCopying {
+open class SKTransition: @unchecked Sendable {
 
     // MARK: - Internal Types
 
@@ -644,15 +578,13 @@ open class SKTransition: NSObject, NSCopying {
     // MARK: - Initializers
 
     /// Creates an empty transition.
-    public override init() {
-        super.init()
+    public init() {
     }
 
     /// Creates a transition with the specified type and duration.
     private init(type: TransitionType, duration: TimeInterval) {
         self.transitionType = type
         self.duration = duration
-        super.init()
     }
 
     // MARK: - Factory Methods
@@ -805,13 +737,16 @@ open class SKTransition: NSObject, NSCopying {
         return SKTransition(type: .ciFilter(filter: filter), duration: duration)
     }
 
-    // MARK: - NSCopying
+    // MARK: - Copying
 
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKTransition(type: transitionType, duration: duration)
-        copy.pausesIncomingScene = pausesIncomingScene
-        copy.pausesOutgoingScene = pausesOutgoingScene
-        return copy
+    /// Creates a copy of this transition.
+    ///
+    /// - Returns: A new transition with the same properties.
+    open func copy() -> SKTransition {
+        let transitionCopy = SKTransition(type: transitionType, duration: duration)
+        transitionCopy.pausesIncomingScene = pausesIncomingScene
+        transitionCopy.pausesOutgoingScene = pausesOutgoingScene
+        return transitionCopy
     }
 }
 
@@ -825,14 +760,9 @@ public enum SKTransitionDirection: Int, Sendable, Hashable {
     case left = 3
 }
 
-// MARK: - SKColor Typealias
+// MARK: - SKColor
 
-#if canImport(UIKit)
-public typealias SKColor = UIColor
-#elseif canImport(AppKit)
-public typealias SKColor = NSColor
-#else
-/// A color type for use when neither UIKit nor AppKit is available.
+/// A color type for SpriteKit.
 public struct SKColor: Sendable, Hashable {
     public var red: CGFloat
     public var green: CGFloat
@@ -854,4 +784,3 @@ public struct SKColor: Sendable, Hashable {
     public static let blue = SKColor(red: 0, green: 0, blue: 1, alpha: 1)
     public static let gray = SKColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
 }
-#endif

@@ -12,7 +12,7 @@ import Foundation
 /// a particular point lies inside this area. For example, regions are used to define the area
 /// that a physics field can affect. Regions are defined using paths and mathematical shapes
 /// and can also be combined using constructive solid geometry.
-open class SKRegion: NSObject, NSCopying, NSSecureCoding {
+open class SKRegion: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -34,8 +34,7 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
     // MARK: - Initializers
 
     /// Creates a new empty region.
-    public override init() {
-        super.init()
+    public init() {
     }
 
     /// Returns a region that defines a region that includes all points.
@@ -61,7 +60,6 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
         mutablePath.addRect(rect)
         self.path = mutablePath
         self.rectSize = size
-        super.init()
     }
 
     /// Initializes a new region with a circular area.
@@ -74,7 +72,6 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
         mutablePath.addEllipse(in: rect)
         self.path = mutablePath
         self.radius = radius
-        super.init()
     }
 
     /// Initializes a new region using a Core Graphics path.
@@ -82,7 +79,6 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
     /// - Parameter path: A Core Graphics path that defines the region.
     public init(path: CGPath) {
         self.path = path
-        super.init()
     }
 
     // MARK: - Constructive Solid Geometry
@@ -195,81 +191,19 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
         return isInverted
     }
 
-    // MARK: - NSCopying
+    // MARK: - Copying
 
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKRegion()
-        copy.path = self.path
-        copy.isInfinite = self.isInfinite
-        copy.isInverted = self.isInverted
-        copy.radius = self.radius
-        copy.rectSize = self.rectSize
-        return copy
-    }
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
-
-    public required init?(coder: NSCoder) {
-        isInfinite = coder.decodeBool(forKey: "isInfinite")
-        isInverted = coder.decodeBool(forKey: "isInverted")
-
-        if coder.containsValue(forKey: "radius") {
-            radius = coder.decodeFloat(forKey: "radius")
-        }
-
-        if coder.containsValue(forKey: "rectSize.width") {
-            rectSize = CGSize(
-                width: CGFloat(coder.decodeDouble(forKey: "rectSize.width")),
-                height: CGFloat(coder.decodeDouble(forKey: "rectSize.height"))
-            )
-        }
-
-        // Note: CGPath is not directly codable, so we reconstruct from properties
-        super.init()
-
-        // Reconstruct path from stored parameters
-        if let r = radius {
-            let cgRadius = CGFloat(r)
-            let rect = CGRect(x: -cgRadius, y: -cgRadius, width: cgRadius * 2, height: cgRadius * 2)
-            let mutablePath = CGMutablePath()
-            mutablePath.addEllipse(in: rect)
-            self.path = mutablePath
-        } else if let size = rectSize {
-            let rect = CGRect(
-                x: -size.width / 2,
-                y: -size.height / 2,
-                width: size.width,
-                height: size.height
-            )
-            let mutablePath = CGMutablePath()
-            mutablePath.addRect(rect)
-            self.path = mutablePath
-        } else if let pathElements = coder.decodeObject(forKey: "pathElements") as? [[String: Any]] {
-            // Reconstruct custom path from serialized elements
-            self.path = SKRegion.deserializePath(from: pathElements)
-        }
-    }
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(isInfinite, forKey: "isInfinite")
-        coder.encode(isInverted, forKey: "isInverted")
-
-        if let r = radius {
-            coder.encode(r, forKey: "radius")
-        }
-
-        if let size = rectSize {
-            coder.encode(Double(size.width), forKey: "rectSize.width")
-            coder.encode(Double(size.height), forKey: "rectSize.height")
-        }
-
-        // For custom paths, serialize path elements
-        if radius == nil && rectSize == nil, let path = self.path {
-            let pathData = serializePath(path)
-            coder.encode(pathData, forKey: "pathElements")
-        }
+    /// Creates a copy of this region.
+    ///
+    /// - Returns: A new region with the same properties.
+    open func copy() -> SKRegion {
+        let regionCopy = SKRegion()
+        regionCopy.path = self.path
+        regionCopy.isInfinite = self.isInfinite
+        regionCopy.isInverted = self.isInverted
+        regionCopy.radius = self.radius
+        regionCopy.rectSize = self.rectSize
+        return regionCopy
     }
 
     // MARK: - Path Serialization Helpers
@@ -375,7 +309,7 @@ open class SKRegion: NSObject, NSCopying, NSSecureCoding {
 /// A region that represents the result of a boolean operation between two regions.
 ///
 /// This class handles containment testing for union, intersection, and difference operations.
-internal final class CompositeRegion: SKRegion {
+internal final class CompositeRegion: SKRegion, @unchecked Sendable {
 
     enum CompositeType {
         case union
@@ -392,10 +326,6 @@ internal final class CompositeRegion: SKRegion {
         self.regionA = regionA
         self.regionB = regionB
         super.init()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("CompositeRegion does not support NSCoding")
     }
 
     override func contains(_ point: CGPoint) -> Bool {
@@ -439,13 +369,13 @@ internal final class CompositeRegion: SKRegion {
         }
     }
 
-    override func copy(with zone: NSZone? = nil) -> Any {
-        let copy = CompositeRegion(
+    override func copy() -> SKRegion {
+        let regionCopy = CompositeRegion(
             type: type,
-            regionA: regionA.copy() as! SKRegion,
-            regionB: regionB.copy() as! SKRegion
+            regionA: regionA.copy(),
+            regionB: regionB.copy()
         )
-        copy.path = self.path
-        return copy
+        regionCopy.path = self.path
+        return regionCopy
     }
 }

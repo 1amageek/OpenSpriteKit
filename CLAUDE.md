@@ -75,8 +75,8 @@ swift build --triple wasm32-unknown-wasi
 This library provides standalone implementations of SpriteKit types for WASM environments. Each type must exactly mirror the SpriteKit API:
 
 ```swift
-// Example: SKNode must match SpriteKit.SKNode exactly
-open class SKNode: NSResponder, Sendable {
+// Example: SKNode API (Pure Swift, no NSObject)
+open class SKNode: @unchecked Sendable {
     public var position: CGPoint
     public var zPosition: CGFloat
     public var xScale: CGFloat
@@ -92,6 +92,7 @@ open class SKNode: NSResponder, Sendable {
     public func addChild(_ node: SKNode)
     public func removeFromParent()
     public func run(_ action: SKAction)
+    public func copy() -> Self
     // ... all other SpriteKit.SKNode APIs
 }
 ```
@@ -419,9 +420,10 @@ scene.addChild(sprite)
 
 ## Protocol Conformances
 
-- `SKNode`, `SKScene`: Should conform to `NSCopying`, `NSSecureCoding` (where applicable)
-- Value types should conform to: `Sendable`, `Hashable`, `Equatable`, `Codable`
-- Node classes should properly support `Sendable` for concurrent access
+- **Node classes**: Pure Swift classes with `@unchecked Sendable`, no NSObject/NSCopying/NSSecureCoding
+- **Value types**: Should conform to `Sendable`, `Hashable`, `Equatable`, `Codable`
+- **Copying**: Use `func copy() -> Self` method instead of `NSCopying`
+- **Serialization**: Use `Codable` or `SKSParser` instead of `NSSecureCoding`
 
 ## Implementation Policy
 
@@ -430,7 +432,166 @@ scene.addChild(sprite)
 - Rendering should produce visually correct results matching SpriteKit behavior
 - GameplayKit integration is lower priority for initial implementation
 
+### Pure Swift Implementation (No Objective-C Dependencies)
+
+**This library is WASM-only. All Objective-C/Foundation dependencies must be eliminated.**
+
+#### Prohibited Types and Patterns
+
+| Prohibited | Replacement |
+|------------|-------------|
+| `NSObject` inheritance | Pure Swift class |
+| `NSCopying` protocol | `func copy() -> Self` method |
+| `NSSecureCoding` / `NSCoding` | `Codable` or `SKSParser` |
+| `NSMutableDictionary` | `[String: Any]` |
+| `NSCoder` | `Codable` / JSON |
+| `init?(coder:)` | Remove entirely |
+| `encode(with:)` | Remove entirely |
+
+#### Correct Base Class Pattern
+
+```swift
+// ✅ CORRECT - Pure Swift
+open class SKNode: @unchecked Sendable {
+    public init() {}
+
+    open var userData: [String: Any]?
+
+    /// Creates a copy of this node
+    open func copy() -> Self {
+        // Implementation
+    }
+}
+```
+
+```swift
+// ❌ WRONG - Objective-C dependencies
+open class SKNode: NSObject, NSCopying, NSSecureCoding {
+    public static var supportsSecureCoding: Bool { true }
+
+    public required init?(coder: NSCoder) { ... }
+    public func encode(with coder: NSCoder) { ... }
+    public func copy(with zone: NSZone?) -> Any { ... }
+
+    open var userData: NSMutableDictionary?
+}
+```
+
+#### .sks File Support
+
+Instead of NSKeyedArchiver/NSSecureCoding, use a custom parser:
+
+```swift
+// .sks files are Binary Plist (NSKeyedArchiver format)
+// Parse with SKSParser instead of NSKeyedUnarchiver
+
+public final class SKSParser {
+    /// Load scene from .sks file data
+    public static func scene(from data: Data) throws -> SKScene
+
+    /// Load scene by name (from SKResourceLoader)
+    public static func scene(fileNamed name: String) -> SKScene?
+}
+
+// Usage:
+let scene = SKSParser.scene(fileNamed: "GameScene")
+```
+
+#### Implementation Phases
+
+1. **Phase 1**: Remove all NSSecureCoding (init?(coder:), encode(with:), supportsSecureCoding)
+2. **Phase 2**: Remove NSCopying, replace with Swift copy() method
+3. **Phase 3**: Remove NSObject inheritance
+4. **Phase 4**: Replace NSMutableDictionary with [String: Any]
+5. **Phase 5**: Implement SKSParser for .sks file support
+
 ## Coding Rules
+
+### Internal Delegate Pattern for Architecture-Specific Code
+
+**Use the Internal Delegate Pattern instead of scattering `#if arch(wasm32)` conditionals inside functions.**
+
+When implementing architecture-specific functionality (like WebGPU rendering), define a protocol and provide separate implementations per architecture. The delegate is:
+- **Internal** (not exposed to users)
+- **Non-optional** (not `weak` or `Optional`)
+- **Switched at initialization time** based on architecture
+
+This follows the same pattern as `CGContextRendererDelegate` in OpenCoreGraphics.
+
+```swift
+// ✅ CORRECT - Internal Delegate Pattern
+
+// 1. Define the protocol
+internal protocol SKSceneRendererDelegate: AnyObject, Sendable {
+    func initialize() async throws
+    func render(layer: CALayer)
+    func resize(width: Int, height: Int)
+    func invalidate()
+}
+
+// 2. WebGPU implementation (in separate file, wrapped with #if arch(wasm32))
+#if arch(wasm32)
+internal final class SKWebGPUSceneRenderer: SKSceneRendererDelegate {
+    private var webGPURenderer: CAWebGPURenderer?
+    private let canvas: JSObject
+
+    init(canvas: JSObject) { self.canvas = canvas }
+
+    func render(layer: CALayer) {
+        webGPURenderer?.render(layer: layer)
+    }
+    // ...
+}
+#endif
+
+// 3. Null implementation for testing/non-WASM builds
+internal final class SKNullSceneRenderer: SKSceneRendererDelegate {
+    func initialize() async throws {}
+    func render(layer: CALayer) {}
+    func resize(width: Int, height: Int) {}
+    func invalidate() {}
+}
+
+// 4. Use in main class - NO conditionals in method bodies
+open class SKRenderer: NSObject {
+    private let renderer: SKSceneRendererDelegate
+
+    public init() {
+        self.renderer = SKNullSceneRenderer()
+        super.init()
+    }
+
+    #if arch(wasm32)
+    public init(canvas: JSObject) {
+        self.renderer = SKWebGPUSceneRenderer(canvas: canvas)
+        super.init()
+    }
+    #endif
+
+    open func render() {
+        guard let scene = scene else { return }
+        renderer.render(layer: scene.layer)  // No #if here!
+    }
+}
+```
+
+```swift
+// ❌ WRONG - Conditionals scattered in function bodies
+open func render() {
+    guard let scene = scene else { return }
+    #if arch(wasm32)
+    webGPURenderer?.render(layer: scene.layer)
+    #else
+    // native code...
+    #endif
+}
+```
+
+**Benefits:**
+- Cleaner, more maintainable code
+- Easy to test with mock implementations
+- Architecture switching happens once at initialization
+- Each implementation file can have its own imports (`import JavaScriptKit` only in WebGPU file)
 
 ### DO NOT use platform-specific C library imports
 

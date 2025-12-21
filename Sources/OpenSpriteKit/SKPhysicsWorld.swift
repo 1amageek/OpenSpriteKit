@@ -13,11 +13,7 @@ import simd
 /// `SKPhysicsWorld` runs the physics engine of a scene and is the place that contact detection occurs.
 /// Do not create a `SKPhysicsWorld` directly; the system creates a physics world and adds it to the scene's
 /// `physicsWorld` property.
-open class SKPhysicsWorld: NSObject, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKPhysicsWorld: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -80,21 +76,7 @@ open class SKPhysicsWorld: NSObject, NSSecureCoding {
 
     // MARK: - Initializers
 
-    public override init() {
-        super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        gravity = coder.decodeCGVector(forKey: "gravity")
-        speed = CGFloat(coder.decodeDouble(forKey: "speed"))
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(gravity, forKey: "gravity")
-        coder.encode(Double(speed), forKey: "speed")
+    public init() {
     }
 
     // MARK: - Joint Management
@@ -642,45 +624,3 @@ open class SKPhysicsWorld: NSObject, NSSecureCoding {
     }
 }
 
-// MARK: - NSCoder Extensions for CG Types
-
-extension NSCoder {
-    // MARK: CGVector
-
-    func decodeCGVector(forKey key: String) -> CGVector {
-        let dx = decodeDouble(forKey: "\(key).dx")
-        let dy = decodeDouble(forKey: "\(key).dy")
-        return CGVector(dx: dx, dy: dy)
-    }
-
-    func encode(_ vector: CGVector, forKey key: String) {
-        encode(Double(vector.dx), forKey: "\(key).dx")
-        encode(Double(vector.dy), forKey: "\(key).dy")
-    }
-
-    // MARK: CGPoint
-
-    func decodeCGPoint(forKey key: String) -> CGPoint {
-        let x = decodeDouble(forKey: "\(key).x")
-        let y = decodeDouble(forKey: "\(key).y")
-        return CGPoint(x: x, y: y)
-    }
-
-    func encode(_ point: CGPoint, forKey key: String) {
-        encode(Double(point.x), forKey: "\(key).x")
-        encode(Double(point.y), forKey: "\(key).y")
-    }
-
-    // MARK: CGSize
-
-    func decodeCGSize(forKey key: String) -> CGSize {
-        let width = decodeDouble(forKey: "\(key).width")
-        let height = decodeDouble(forKey: "\(key).height")
-        return CGSize(width: width, height: height)
-    }
-
-    func encode(_ size: CGSize, forKey key: String) {
-        encode(Double(size.width), forKey: "\(key).width")
-        encode(Double(size.height), forKey: "\(key).height")
-    }
-}

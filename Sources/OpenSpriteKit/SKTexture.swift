@@ -63,11 +63,7 @@ internal final class SKTextureCache: @unchecked Sendable {
 ///
 /// An `SKTexture` object is a container for texture data. Textures hold image data
 /// and can be applied to sprites or other nodes that need to render images.
-open class SKTexture: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKTexture: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -90,13 +86,12 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     open var usesMipmaps: Bool = false
 
     /// The underlying CGImage if available.
-    open private(set) var cgImage: CGImage?
+    open internal(set) var cgImage: CGImage?
 
     // MARK: - Initializers
 
     /// Creates an empty texture.
-    public override init() {
-        super.init()
+    public init() {
     }
 
     /// The name of the image used to create this texture (for caching purposes).
@@ -142,7 +137,6 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     public init(cgImage: CGImage) {
         self.cgImage = cgImage
         self._size = CGSize(width: cgImage.width, height: cgImage.height)
-        super.init()
     }
 
     /// Creates a texture from raw RGBA image data.
@@ -152,7 +146,6 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     ///   - size: The size of the texture in pixels.
     public init(data: Data, size: CGSize) {
         self._size = size
-        super.init()
         self.cgImage = Self.createCGImage(from: data, size: size, flipped: false)
     }
 
@@ -164,7 +157,6 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     ///   - flipped: Whether the image should be flipped vertically.
     public init(data: Data, size: CGSize, flipped: Bool) {
         self._size = size
-        super.init()
         self.cgImage = Self.createCGImage(from: data, size: size, flipped: flipped)
     }
 
@@ -177,7 +169,6 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     ///   - alignment: The byte alignment of each row.
     public init(data: Data, size: CGSize, rowLength: UInt32, alignment: UInt32) {
         self._size = size
-        super.init()
         self.cgImage = Self.createCGImage(from: data, size: size, rowLength: Int(rowLength), alignment: Int(alignment))
     }
 
@@ -259,7 +250,6 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
             width: texture.size.width * rect.width,
             height: texture.size.height * rect.height
         )
-        super.init()
     }
 
     /// Creates a texture from a CIImage.
@@ -267,7 +257,6 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     /// - Parameter image: The Core Image image to use as the texture source.
     public init(image: CIImage) {
         self._size = image.extent.size
-        super.init()
         // Render CIImage to CGImage
         let context = CIContext()
         if let cgImage = context.createCGImage(image, from: image.extent) {
@@ -441,45 +430,19 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
         return a + t * (b - a)
     }
 
-    public required init?(coder: NSCoder) {
-        _size = CGSize(
-            width: CGFloat(coder.decodeDouble(forKey: "size.width")),
-            height: CGFloat(coder.decodeDouble(forKey: "size.height"))
-        )
-        _textureRect = CGRect(
-            x: CGFloat(coder.decodeDouble(forKey: "textureRect.x")),
-            y: CGFloat(coder.decodeDouble(forKey: "textureRect.y")),
-            width: CGFloat(coder.decodeDouble(forKey: "textureRect.width")),
-            height: CGFloat(coder.decodeDouble(forKey: "textureRect.height"))
-        )
-        filteringMode = SKTextureFilteringMode(rawValue: coder.decodeInteger(forKey: "filteringMode")) ?? .linear
-        usesMipmaps = coder.decodeBool(forKey: "usesMipmaps")
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(Double(_size.width), forKey: "size.width")
-        coder.encode(Double(_size.height), forKey: "size.height")
-        coder.encode(Double(_textureRect.origin.x), forKey: "textureRect.x")
-        coder.encode(Double(_textureRect.origin.y), forKey: "textureRect.y")
-        coder.encode(Double(_textureRect.size.width), forKey: "textureRect.width")
-        coder.encode(Double(_textureRect.size.height), forKey: "textureRect.height")
-        coder.encode(filteringMode.rawValue, forKey: "filteringMode")
-        coder.encode(usesMipmaps, forKey: "usesMipmaps")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKTexture()
-        copy._size = _size
-        copy._textureRect = _textureRect
-        copy.filteringMode = filteringMode
-        copy.usesMipmaps = usesMipmaps
-        copy.cgImage = cgImage
-        return copy
+    /// Creates a copy of this texture.
+    ///
+    /// - Returns: A new texture with the same properties.
+    open func copy() -> SKTexture {
+        let textureCopy = SKTexture()
+        textureCopy._size = _size
+        textureCopy._textureRect = _textureRect
+        textureCopy.filteringMode = filteringMode
+        textureCopy.usesMipmaps = usesMipmaps
+        textureCopy.cgImage = cgImage
+        return textureCopy
     }
 
     // MARK: - Texture Operations
@@ -597,7 +560,7 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     /// - Returns: A new texture with the filter applied.
     open func applying(_ filter: CIFilter) -> SKTexture {
         guard let cgImage = self.cgImage else {
-            return self.copy() as! SKTexture
+            return self.copy()
         }
 
         // Create CIImage from CGImage
@@ -607,13 +570,13 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
         filter.setValue(inputImage, forKey: kCIInputImageKey)
 
         guard let outputImage = filter.outputImage else {
-            return self.copy() as! SKTexture
+            return self.copy()
         }
 
         // Render filtered image to CGImage
         let context = CIContext()
         guard let filteredCGImage = context.createCGImage(outputImage, from: outputImage.extent) else {
-            return self.copy() as! SKTexture
+            return self.copy()
         }
 
         // Create new texture with filtered image
@@ -628,6 +591,108 @@ open class SKTexture: NSObject, NSCopying, NSSecureCoding {
     /// - Returns: A CGImage, or nil if the texture cannot be converted.
     open func getCGImage() -> CGImage? {
         return cgImage
+    }
+
+    // MARK: - Image File Loading
+
+    /// Creates a texture from image file data.
+    ///
+    /// Supports PNG, JPEG, GIF, BMP, TIFF, and WebP formats via ImageIO/OpenImageIO.
+    ///
+    /// - Parameter imageData: The raw image file data (e.g., PNG or JPEG bytes).
+    /// - Returns: A new texture, or nil if the data could not be decoded.
+    ///
+    /// ## Example
+    /// ```swift
+    /// let pngData = try Data(contentsOf: imageURL)
+    /// if let texture = SKTexture(imageData: pngData) {
+    ///     sprite.texture = texture
+    /// }
+    /// ```
+    public convenience init?(imageData: Data) {
+        guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return nil
+        }
+        self.init(cgImage: cgImage)
+    }
+
+    /// Creates a texture from an image file URL.
+    ///
+    /// Supports PNG, JPEG, GIF, BMP, TIFF, and WebP formats via ImageIO/OpenImageIO.
+    ///
+    /// - Parameter url: The URL to the image file.
+    /// - Returns: A new texture, or nil if the file could not be loaded or decoded.
+    ///
+    /// ## Example
+    /// ```swift
+    /// let fileURL = Bundle.main.url(forResource: "player", withExtension: "png")!
+    /// if let texture = SKTexture(contentsOf: fileURL) {
+    ///     sprite.texture = texture
+    /// }
+    /// ```
+    public convenience init?(contentsOf url: URL) {
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        self.init(imageData: data)
+    }
+
+    /// Asynchronously loads a texture from an image file URL.
+    ///
+    /// This method loads the image data in the background and decodes it,
+    /// avoiding blocking the main thread for large images.
+    ///
+    /// - Parameter url: The URL to the image file.
+    /// - Returns: A new texture.
+    /// - Throws: `SKResourceError` if loading or decoding fails.
+    ///
+    /// ## Example
+    /// ```swift
+    /// let texture = try await SKTexture.load(from: imageURL)
+    /// sprite.texture = texture
+    /// ```
+    public static func load(from url: URL) async throws -> SKTexture {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let data = try Data(contentsOf: url)
+                    guard let texture = SKTexture(imageData: data) else {
+                        continuation.resume(throwing: SKResourceError.decodingFailed)
+                        return
+                    }
+                    continuation.resume(returning: texture)
+                } catch {
+                    continuation.resume(throwing: SKResourceError.networkFailed)
+                }
+            }
+        }
+    }
+
+    /// Returns metadata about an image file without fully decoding it.
+    ///
+    /// This is useful for getting image dimensions before creating a texture.
+    ///
+    /// - Parameter data: The image file data.
+    /// - Returns: A dictionary containing image properties, or nil if unavailable.
+    public static func imageProperties(from data: Data) -> [String: Any]? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return nil
+        }
+        return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+    }
+
+    /// Returns the size of an image from file data without fully decoding it.
+    ///
+    /// - Parameter data: The image file data.
+    /// - Returns: The image size, or nil if unavailable.
+    public static func imageSize(from data: Data) -> CGSize? {
+        guard let props = imageProperties(from: data),
+              let width = props[kCGImagePropertyPixelWidth as String] as? Int,
+              let height = props[kCGImagePropertyPixelHeight as String] as? Int else {
+            return nil
+        }
+        return CGSize(width: width, height: height)
     }
 }
 
@@ -650,11 +715,7 @@ public enum SKTextureFilteringMode: Int, Sendable, Hashable {
 ///
 /// An `SKTextureAtlas` object lets you store multiple textures together as a single
 /// resource. Using a texture atlas can improve rendering performance.
-open class SKTextureAtlas: NSObject, NSSecureCoding, @unchecked Sendable {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKTextureAtlas: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -666,15 +727,13 @@ open class SKTextureAtlas: NSObject, NSSecureCoding, @unchecked Sendable {
     // MARK: - Initializers
 
     /// Creates an empty texture atlas.
-    public override init() {
-        super.init()
+    public init() {
     }
 
     /// Creates a texture atlas from a dictionary of textures.
     ///
     /// - Parameter dictionary: A dictionary mapping texture names to CGImages or SKTextures.
     public init(dictionary: [String: Any]) {
-        super.init()
         for (name, value) in dictionary {
             if let texture = value as? SKTexture {
                 textures[name] = texture
@@ -709,7 +768,6 @@ open class SKTextureAtlas: NSObject, NSSecureCoding, @unchecked Sendable {
     ///
     /// - Parameter name: The name of the texture atlas.
     public init(named name: String) {
-        super.init()
         if let atlasData = SKResourceLoader.shared.atlas(forName: name) {
             loadFromAtlasData(atlasData)
         }
@@ -726,17 +784,6 @@ open class SKTextureAtlas: NSObject, NSSecureCoding, @unchecked Sendable {
             textures[frameName] = subTexture
             textureNames.append(frameName)
         }
-    }
-
-    public required init?(coder: NSCoder) {
-        textureNames = coder.decodeObject(forKey: "textureNames") as? [String] ?? []
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(textureNames, forKey: "textureNames")
     }
 
     // MARK: - Texture Access

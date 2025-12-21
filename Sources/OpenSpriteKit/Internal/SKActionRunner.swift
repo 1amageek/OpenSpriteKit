@@ -46,6 +46,15 @@ internal final class SKActionRunner {
         var currentIndex: Int = 0  // For sequence
         var childStates: [RunningAction]?  // For group/sequence
         var repeatCount: Int = 0  // For repeat
+
+        /// Duration calculated at runtime for velocity-based actions.
+        /// If nil, uses action.duration.
+        var calculatedDuration: TimeInterval?
+
+        /// Effective duration considering both action.duration and calculatedDuration.
+        var effectiveDuration: TimeInterval {
+            calculatedDuration ?? action.duration
+        }
     }
 
     /// Captures the initial state of a node for interpolation.
@@ -93,6 +102,9 @@ internal final class SKActionRunner {
             initialState: initialState,
             completion: completion
         )
+
+        // Calculate duration for velocity-based reach actions
+        runningAction.calculatedDuration = calculateVelocityBasedDuration(for: action, from: node)
 
         // Initialize child states for compound actions
         if case .group(let actions) = action.actionType {
@@ -219,10 +231,11 @@ internal final class SKActionRunner {
         runningAction.elapsedTime += effectiveDelta
 
         // Calculate progress (0.0 to 1.0)
-        let duration = action.duration
+        // Use effectiveDuration which may be calculated at runtime for velocity-based actions
+        let duration = runningAction.effectiveDuration
         var progress: Float
 
-        if duration <= 0 {
+        if duration <= 0 || duration == .infinity {
             progress = 1.0
         } else {
             progress = Float(min(runningAction.elapsedTime / duration, 1.0))
@@ -311,6 +324,34 @@ internal final class SKActionRunner {
         }
 
         return state
+    }
+
+    /// Calculates duration for velocity-based actions.
+    ///
+    /// For reach actions with velocity, the duration is calculated as distance / velocity.
+    /// Returns nil for actions that don't need velocity-based duration calculation.
+    private func calculateVelocityBasedDuration(for action: SKAction, from node: SKNode) -> TimeInterval? {
+        switch action.actionType {
+        case .reach(let target, _, let velocity):
+            guard let velocity = velocity, velocity > 0 else { return nil }
+            let dx = target.x - node.position.x
+            let dy = target.y - node.position.y
+            let distance = sqrt(dx * dx + dy * dy)
+            return TimeInterval(distance / velocity)
+
+        case .reachToNode(let targetNode, _, let velocity):
+            guard let velocity = velocity, velocity > 0 else { return nil }
+            // Convert target node position to common coordinate space
+            guard let scene = node.scene, targetNode.scene === scene else { return nil }
+            let worldTarget = targetNode.convert(.zero, to: scene)
+            let dx = worldTarget.x - node.position.x
+            let dy = worldTarget.y - node.position.y
+            let distance = sqrt(dx * dx + dy * dy)
+            return TimeInterval(distance / velocity)
+
+        default:
+            return nil
+        }
     }
 
     // MARK: - Action Execution
@@ -483,7 +524,7 @@ internal final class SKActionRunner {
                 }
                 runningAction.childStates = childStates
                 if allCompleted {
-                    runningAction.elapsedTime = action.duration
+                    runningAction.elapsedTime = runningAction.effectiveDuration
                 }
             }
 
@@ -525,7 +566,7 @@ internal final class SKActionRunner {
             }
 
             if runningAction.currentIndex >= actions.count {
-                runningAction.elapsedTime = action.duration
+                runningAction.elapsedTime = runningAction.effectiveDuration
             }
 
         case .repeatAction(let repeatedAction, let count):
@@ -553,7 +594,7 @@ internal final class SKActionRunner {
                             completion: nil
                         )]
                     } else {
-                        runningAction.elapsedTime = action.duration
+                        runningAction.elapsedTime = runningAction.effectiveDuration
                     }
                 } else {
                     runningAction.childStates = [childState]
@@ -604,7 +645,7 @@ internal final class SKActionRunner {
         #endif
 
         case .customAction(let block):
-            block(node, CGFloat(progress) * CGFloat(action.duration))
+            block(node, CGFloat(progress) * CGFloat(runningAction.effectiveDuration))
 
         case .removeFromParent:
             if progress >= 1.0 {
@@ -871,13 +912,13 @@ internal final class SKActionRunner {
         case .animateWarps(let geometries, let times, _):
             guard !geometries.isEmpty, !times.isEmpty else { break }
             if var warpable = node as? SKWarpable {
-                let totalDuration = times.last?.doubleValue ?? 1.0
+                let totalDuration = times.last ?? 1.0
                 let currentTime = Double(progress) * totalDuration
 
                 // Find the appropriate warp geometry for current time
                 var warpIndex = 0
                 for (index, time) in times.enumerated() {
-                    if currentTime >= time.doubleValue {
+                    if currentTime >= time {
                         warpIndex = index
                     } else {
                         break
@@ -891,8 +932,8 @@ internal final class SKActionRunner {
                        let nextGrid = geometries[warpIndex + 1] as? SKWarpGeometryGrid,
                        currentGrid.numberOfColumns == nextGrid.numberOfColumns,
                        currentGrid.numberOfRows == nextGrid.numberOfRows {
-                        let startTime = times[warpIndex].doubleValue
-                        let endTime = times[warpIndex + 1].doubleValue
+                        let startTime = times[warpIndex]
+                        let endTime = times[warpIndex + 1]
                         let segmentProgress = Float((currentTime - startTime) / (endTime - startTime))
                         let clampedProgress = max(0, min(1, segmentProgress))
                         warpable.warpGeometry = interpolateWarpGeometry(

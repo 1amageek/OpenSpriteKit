@@ -99,9 +99,7 @@ public struct SKTileAdjacencyMask: OptionSet, Sendable, Hashable {
 // MARK: - SKTileDefinition
 
 /// A single tile that can be placed in a tile map.
-open class SKTileDefinition: NSObject, NSCopying, NSSecureCoding {
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKTileDefinition: @unchecked Sendable {
 
     /// The textures used for this tile.
     open var textures: [SKTexture] = []
@@ -122,7 +120,7 @@ open class SKTileDefinition: NSObject, NSCopying, NSSecureCoding {
     open var name: String?
 
     /// User data for this tile.
-    open var userData: NSMutableDictionary?
+    open var userData: [String: Any]?
 
     /// The rotation of this tile.
     open var rotation: SKTileDefinitionRotation = .rotation0
@@ -133,34 +131,29 @@ open class SKTileDefinition: NSObject, NSCopying, NSSecureCoding {
     /// Whether this tile should flip horizontally.
     open var flipHorizontally: Bool = false
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
     public init(texture: SKTexture) {
         self.textures = [texture]
         self.size = texture.size
-        super.init()
     }
 
     public init(texture: SKTexture, size: CGSize) {
         self.textures = [texture]
         self.size = size
-        super.init()
     }
 
     public init(texture: SKTexture, normalTexture: SKTexture, size: CGSize) {
         self.textures = [texture]
         self.normalTextures = [normalTexture]
         self.size = size
-        super.init()
     }
 
     public init(textures: [SKTexture], size: CGSize, timePerFrame: CGFloat) {
         self.textures = textures
         self.size = size
         self.timePerFrame = timePerFrame
-        super.init()
     }
 
     public init(textures: [SKTexture], normalTextures: [SKTexture], size: CGSize, timePerFrame: CGFloat) {
@@ -168,27 +161,23 @@ open class SKTileDefinition: NSObject, NSCopying, NSSecureCoding {
         self.normalTextures = normalTextures
         self.size = size
         self.timePerFrame = timePerFrame
-        super.init()
     }
 
-    public required init?(coder: NSCoder) {
-        super.init()
-    }
-
-    public func encode(with coder: NSCoder) {}
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKTileDefinition()
-        copy.textures = textures
-        copy.normalTextures = normalTextures
-        copy.size = size
-        copy.timePerFrame = timePerFrame
-        copy.placementWeight = placementWeight
-        copy.name = name
-        copy.rotation = rotation
-        copy.flipVertically = flipVertically
-        copy.flipHorizontally = flipHorizontally
-        return copy
+    /// Creates a copy of this tile definition.
+    ///
+    /// - Returns: A new tile definition with the same properties.
+    open func copy() -> SKTileDefinition {
+        let definitionCopy = SKTileDefinition()
+        definitionCopy.textures = textures
+        definitionCopy.normalTextures = normalTextures
+        definitionCopy.size = size
+        definitionCopy.timePerFrame = timePerFrame
+        definitionCopy.placementWeight = placementWeight
+        definitionCopy.name = name
+        definitionCopy.rotation = rotation
+        definitionCopy.flipVertically = flipVertically
+        definitionCopy.flipHorizontally = flipHorizontally
+        return definitionCopy
     }
 }
 
@@ -203,9 +192,7 @@ public enum SKTileDefinitionRotation: UInt, Sendable, Hashable {
 // MARK: - SKTileGroupRule
 
 /// A rule that describes how tiles should be placed in a tile map.
-open class SKTileGroupRule: NSObject, NSCopying, NSSecureCoding {
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKTileGroupRule: @unchecked Sendable {
 
     /// The adjacency mask for this rule.
     open var adjacency: SKTileAdjacencyMask = []
@@ -216,37 +203,30 @@ open class SKTileGroupRule: NSObject, NSCopying, NSSecureCoding {
     /// A name for this rule.
     open var name: String?
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
     public init(adjacency: SKTileAdjacencyMask, tileDefinitions: [SKTileDefinition]) {
         self.adjacency = adjacency
         self.tileDefinitions = tileDefinitions
-        super.init()
     }
 
-    public required init?(coder: NSCoder) {
-        super.init()
-    }
-
-    public func encode(with coder: NSCoder) {}
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKTileGroupRule()
-        copy.adjacency = adjacency
-        copy.tileDefinitions = tileDefinitions.map { $0.copy() as! SKTileDefinition }
-        copy.name = name
-        return copy
+    /// Creates a copy of this tile group rule.
+    ///
+    /// - Returns: A new tile group rule with the same properties.
+    open func copy() -> SKTileGroupRule {
+        let ruleCopy = SKTileGroupRule()
+        ruleCopy.adjacency = adjacency
+        ruleCopy.tileDefinitions = tileDefinitions.map { $0.copy() }
+        ruleCopy.name = name
+        return ruleCopy
     }
 }
 
 // MARK: - SKTileGroup
 
 /// A set of related tile definitions and rules.
-open class SKTileGroup: NSObject, NSCopying, NSSecureCoding {
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKTileGroup: @unchecked Sendable {
 
     /// The rules for this tile group.
     open var rules: [SKTileGroupRule] = []
@@ -254,45 +234,37 @@ open class SKTileGroup: NSObject, NSCopying, NSSecureCoding {
     /// A name for this tile group.
     open var name: String?
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
     public init(rules: [SKTileGroupRule]) {
         self.rules = rules
-        super.init()
     }
 
     public init(tileDefinition: SKTileDefinition) {
         let rule = SKTileGroupRule(adjacency: [], tileDefinitions: [tileDefinition])
         self.rules = [rule]
-        super.init()
     }
 
     public class func empty() -> SKTileGroup {
         return SKTileGroup()
     }
 
-    public required init?(coder: NSCoder) {
-        super.init()
-    }
-
-    public func encode(with coder: NSCoder) {}
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKTileGroup()
-        copy.rules = rules.map { $0.copy() as! SKTileGroupRule }
-        copy.name = name
-        return copy
+    /// Creates a copy of this tile group.
+    ///
+    /// - Returns: A new tile group with the same properties.
+    open func copy() -> SKTileGroup {
+        let groupCopy = SKTileGroup()
+        groupCopy.rules = rules.map { $0.copy() }
+        groupCopy.name = name
+        return groupCopy
     }
 }
 
 // MARK: - SKTileSet
 
 /// A container for tile groups that define a theme.
-open class SKTileSet: NSObject, NSCopying, NSSecureCoding {
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKTileSet: @unchecked Sendable {
 
     /// The type of this tile set.
     open var type: SKTileSetType = .grid
@@ -309,52 +281,187 @@ open class SKTileSet: NSObject, NSCopying, NSSecureCoding {
     /// A name for this tile set.
     open var name: String?
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
     public init(tileGroups: [SKTileGroup]) {
         self.tileGroups = tileGroups
-        super.init()
     }
 
     public init(tileGroups: [SKTileGroup], tileSetType: SKTileSetType) {
         self.tileGroups = tileGroups
         self.type = tileSetType
-        super.init()
     }
 
+    /// Creates a tile set by loading from registered resources or the app bundle.
+    ///
+    /// On WASM platforms, you must first register the tile set data with `SKResourceLoader`:
+    /// ```swift
+    /// SKResourceLoader.shared.registerTileSet(data: tileSetData, forName: "MyTileSet")
+    /// let tileSet = SKTileSet.tileSet(named: "MyTileSet")
+    /// ```
+    ///
+    /// - Parameter name: The name of the tile set file (with or without `.sks` extension).
+    /// - Returns: A tile set, or nil if the file could not be loaded.
     public class func tileSet(named name: String) -> SKTileSet? {
-        // TODO: Load from resources
+        // Try to load from registered tile set data (WASM)
+        if let data = SKResourceLoader.shared.tileSetData(forName: name) {
+            return parseTileSet(from: data)
+        }
+
+        // Try to load from bundle (native platforms)
+        let nameWithoutExtension = name.hasSuffix(".sks") ? String(name.dropLast(4)) : name
+
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
+           let data = try? Data(contentsOf: url) {
+            return parseTileSet(from: data)
+        }
+
         return nil
     }
 
+    /// Creates a tile set by loading from a URL.
+    ///
+    /// - Parameter url: The URL to the tile set file.
+    /// - Returns: A tile set, or nil if the file could not be loaded.
     public class func tileSet(from url: URL) -> SKTileSet? {
-        // TODO: Load from URL
-        return nil
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return parseTileSet(from: data)
     }
 
-    public required init?(coder: NSCoder) {
-        super.init()
+    /// Parses tile set data (property list format).
+    private class func parseTileSet(from data: Data) -> SKTileSet? {
+        // Parse as property list
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+            return nil
+        }
+
+        let tileSet = SKTileSet()
+
+        // Parse basic properties
+        if let name = plist["name"] as? String {
+            tileSet.name = name
+        }
+
+        if let typeRaw = plist["type"] as? UInt, let type = SKTileSetType(rawValue: typeRaw) {
+            tileSet.type = type
+        }
+
+        if let sizeDict = plist["defaultTileSize"] as? [String: Any],
+           let width = sizeDict["width"] as? CGFloat,
+           let height = sizeDict["height"] as? CGFloat {
+            tileSet.defaultTileSize = CGSize(width: width, height: height)
+        }
+
+        // Parse tile groups
+        if let groupsArray = plist["tileGroups"] as? [[String: Any]] {
+            tileSet.tileGroups = groupsArray.compactMap { parseTileGroup(from: $0) }
+        }
+
+        return tileSet
     }
 
-    public func encode(with coder: NSCoder) {}
+    /// Parses a tile group from a dictionary.
+    private class func parseTileGroup(from dict: [String: Any]) -> SKTileGroup? {
+        let group = SKTileGroup()
 
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKTileSet()
-        copy.type = type
-        copy.tileGroups = tileGroups.map { $0.copy() as! SKTileGroup }
-        copy.defaultTileGroup = defaultTileGroup?.copy() as? SKTileGroup
-        copy.defaultTileSize = defaultTileSize
-        copy.name = name
-        return copy
+        if let name = dict["name"] as? String {
+            group.name = name
+        }
+
+        if let rulesArray = dict["rules"] as? [[String: Any]] {
+            group.rules = rulesArray.compactMap { parseTileGroupRule(from: $0) }
+        }
+
+        return group
+    }
+
+    /// Parses a tile group rule from a dictionary.
+    private class func parseTileGroupRule(from dict: [String: Any]) -> SKTileGroupRule? {
+        let rule = SKTileGroupRule()
+
+        if let name = dict["name"] as? String {
+            rule.name = name
+        }
+
+        if let adjacencyRaw = dict["adjacency"] as? UInt {
+            rule.adjacency = SKTileAdjacencyMask(rawValue: adjacencyRaw)
+        }
+
+        if let defsArray = dict["tileDefinitions"] as? [[String: Any]] {
+            rule.tileDefinitions = defsArray.compactMap { parseTileDefinition(from: $0) }
+        }
+
+        return rule
+    }
+
+    /// Parses a tile definition from a dictionary.
+    private class func parseTileDefinition(from dict: [String: Any]) -> SKTileDefinition? {
+        let def = SKTileDefinition()
+
+        if let name = dict["name"] as? String {
+            def.name = name
+        }
+
+        if let sizeDict = dict["size"] as? [String: Any],
+           let width = sizeDict["width"] as? CGFloat,
+           let height = sizeDict["height"] as? CGFloat {
+            def.size = CGSize(width: width, height: height)
+        }
+
+        if let timePerFrame = dict["timePerFrame"] as? CGFloat {
+            def.timePerFrame = timePerFrame
+        }
+
+        if let placementWeight = dict["placementWeight"] as? Int {
+            def.placementWeight = placementWeight
+        }
+
+        if let rotationRaw = dict["rotation"] as? UInt, let rotation = SKTileDefinitionRotation(rawValue: rotationRaw) {
+            def.rotation = rotation
+        }
+
+        if let flipV = dict["flipVertically"] as? Bool {
+            def.flipVertically = flipV
+        }
+
+        if let flipH = dict["flipHorizontally"] as? Bool {
+            def.flipHorizontally = flipH
+        }
+
+        // Parse textures (texture names that need to be loaded)
+        if let textureNames = dict["textures"] as? [String] {
+            def.textures = textureNames.compactMap { name in
+                if let image = SKResourceLoader.shared.image(forName: name) {
+                    return SKTexture(cgImage: image)
+                }
+                return nil
+            }
+        }
+
+        return def
+    }
+
+    /// Creates a copy of this tile set.
+    ///
+    /// - Returns: A new tile set with the same properties.
+    open func copy() -> SKTileSet {
+        let setCopy = SKTileSet()
+        setCopy.type = type
+        setCopy.tileGroups = tileGroups.map { $0.copy() }
+        setCopy.defaultTileGroup = defaultTileGroup?.copy()
+        setCopy.defaultTileSize = defaultTileSize
+        setCopy.name = name
+        return setCopy
     }
 }
 
 // MARK: - SKTileMapNode
 
 /// A node that renders a two-dimensional grid of tiles.
-open class SKTileMapNode: SKNode {
+open class SKTileMapNode: SKNode, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -484,15 +591,6 @@ open class SKTileMapNode: SKNode {
         }
         super.init()
         initializeTileSprites()
-    }
-
-    public required init?(coder: NSCoder) {
-        self.tileSet = SKTileSet()
-        self.numberOfColumns = 0
-        self.numberOfRows = 0
-        self.tileSize = .zero
-        self.tiles = []
-        super.init(coder: coder)
     }
 
     // MARK: - Tile Access

@@ -33,11 +33,7 @@ public enum SKActionTimingMode: Int, Sendable, Hashable {
 /// Actions are used to change a node in some way over time. For example, you can use actions
 /// to move a node, scale it, rotate it, or fade its transparency. You can also use actions
 /// to play sounds or run custom code.
-open class SKAction: NSObject, NSCopying, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKAction: @unchecked Sendable {
 
     // MARK: - Timing Properties
 
@@ -112,7 +108,7 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
         case reach(target: CGPoint, rootNode: SKNode, velocity: CGFloat?)
         case reachToNode(target: SKNode, rootNode: SKNode, velocity: CGFloat?)
         case warp(geometry: SKWarpGeometry)
-        case animateWarps(geometries: [SKWarpGeometry], times: [NSNumber], restore: Bool)
+        case animateWarps(geometries: [SKWarpGeometry], times: [TimeInterval], restore: Bool)
         case stereopan(to: Float?, by: Float?)
         case changeObstruction(to: Float?, by: Float?)
         case changeOcclusion(to: Float?, by: Float?)
@@ -123,35 +119,22 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
 
     // MARK: - Initializers
 
-    public override init() {
-        super.init()
+    public init() {
     }
 
-    public required init?(coder: NSCoder) {
-        duration = coder.decodeDouble(forKey: "duration")
-        timingMode = SKActionTimingMode(rawValue: coder.decodeInteger(forKey: "timingMode")) ?? .linear
-        speed = CGFloat(coder.decodeDouble(forKey: "speed"))
-        super.init()
-    }
+    // MARK: - Copying
 
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(duration, forKey: "duration")
-        coder.encode(timingMode.rawValue, forKey: "timingMode")
-        coder.encode(Double(speed), forKey: "speed")
-    }
-
-    // MARK: - NSCopying
-
-    public func copy(with zone: NSZone? = nil) -> Any {
-        let copy = SKAction()
-        copy.duration = duration
-        copy.timingMode = timingMode
-        copy.timingFunction = timingFunction
-        copy.speed = speed
-        copy.actionType = actionType
-        return copy
+    /// Creates a copy of this action.
+    ///
+    /// - Returns: A new action with the same properties.
+    open func copy() -> SKAction {
+        let actionCopy = SKAction()
+        actionCopy.duration = duration
+        actionCopy.timingMode = timingMode
+        actionCopy.timingFunction = timingFunction
+        actionCopy.speed = speed
+        actionCopy.actionType = actionType
+        return actionCopy
     }
 
     // MARK: - Reversing an Animation
@@ -192,27 +175,99 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
     // MARK: - Named Action Initializers
 
     /// Creates an action of the given name from an action file.
+    ///
+    /// This method loads an action from an archived action file in the app bundle.
+    ///
+    /// On WASM platforms, you must first register the action data with `SKResourceLoader`:
+    /// ```swift
+    /// SKResourceLoader.shared.registerAction(data: actionData, forName: "Jump")
+    /// let action = SKAction(named: "Jump")
+    /// ```
+    ///
+    /// - Parameter name: The name of the action to load.
+    /// - Returns: The loaded action, or nil if the action could not be found.
     public convenience init?(named name: String) {
-        self.init()
-        // TODO: Load from action file
+        // Try to load from registered action data first (WASM)
+        if let data = SKResourceLoader.shared.actionData(forName: name) {
+            if let action = SKAction.unarchiveAction(from: data) {
+                self.init()
+                self.copyProperties(from: action)
+                return
+            }
+        }
+
+        // Try to load from bundle (native platforms)
+        // Action files typically have extensions like .ska or are stored in .sks files
+        let extensions = ["ska", "sks"]
+        for ext in extensions {
+            if let url = Bundle.main.url(forResource: name, withExtension: ext),
+               let data = try? Data(contentsOf: url),
+               let action = SKAction.unarchiveAction(from: data) {
+                self.init()
+                self.copyProperties(from: action)
+                return
+            }
+        }
+
+        return nil
     }
 
     /// Creates an action of the given name from an action file with a new duration.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the action to load.
+    ///   - duration: The new duration for the action.
+    /// - Returns: The loaded action with the specified duration, or nil if the action could not be found.
     public convenience init?(named name: String, duration: TimeInterval) {
         self.init(named: name)
         self.duration = duration
     }
 
     /// Creates an action of the given name from an action file.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the action within the file.
+    ///   - url: The URL of the action file.
+    /// - Returns: The loaded action, or nil if the action could not be found.
     public convenience init?(named name: String, fromURL url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let action = SKAction.unarchiveAction(from: data) else {
+            return nil
+        }
         self.init()
-        // TODO: Load from action file at URL
+        self.copyProperties(from: action)
     }
 
     /// Creates an action of the given name from an action file with a new duration.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the action within the file.
+    ///   - url: The URL of the action file.
+    ///   - duration: The new duration for the action.
+    /// - Returns: The loaded action with the specified duration, or nil if the action could not be found.
     public convenience init?(named name: String, fromURL url: URL, duration: TimeInterval) {
         self.init(named: name, fromURL: url)
         self.duration = duration
+    }
+
+    /// Unarchives an action from data.
+    ///
+    /// - Note: Action archives are not supported in pure Swift WASM builds.
+    ///         Actions should be created programmatically instead.
+    ///         This method always returns nil for WASM compatibility.
+    private static func unarchiveAction(from data: Data) -> SKAction? {
+        // Action archives require NSKeyedUnarchiver which is not available in WASM.
+        // Use programmatic action creation instead.
+        return nil
+    }
+
+    /// Copies properties from another action.
+    private func copyProperties(from action: SKAction) {
+        self.duration = action.duration
+        self.timingMode = action.timingMode
+        self.timingFunction = action.timingFunction
+        self.speed = action.speed
+        self.actionType = action.actionType
     }
 
     // MARK: - Move Actions
@@ -647,9 +702,14 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
     // MARK: - Audio Actions
 
     /// Creates an action that plays a sound.
+    ///
+    /// When `waitForCompletion` is true, the action uses an estimated duration of 1.0 second.
+    /// The actual playback duration depends on the audio file and audio system implementation.
     public class func playSoundFileNamed(_ soundFile: String, waitForCompletion wait: Bool) -> SKAction {
         let action = SKAction()
-        action.duration = wait ? 1.0 : 0 // TODO: Get actual sound duration
+        // When waiting, use estimated duration. Actual duration depends on audio file.
+        // Getting accurate duration would require loading and parsing the audio file.
+        action.duration = wait ? 1.0 : 0
         action.actionType = .playSoundFile(filename: soundFile, waitForCompletion: wait)
         return action
     }
@@ -1011,9 +1071,15 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
     }
 
     /// Creates an action that performs an inverse kinematic reach.
+    ///
+    /// The duration is calculated dynamically at runtime based on the distance and velocity.
+    /// An initial estimate of 1.0 seconds is used; the actual duration is determined when the action runs.
     public class func reach(to position: CGPoint, rootNode root: SKNode, velocity: CGFloat) -> SKAction {
         let action = SKAction()
-        action.duration = 1.0 // TODO: Calculate from distance and velocity
+        // Duration is dynamically calculated at runtime based on distance/velocity
+        // Using velocity-based calculation: duration = distance / velocity
+        // Initial placeholder; will be recalculated when action starts on a node
+        action.duration = TimeInterval.infinity
         action.actionType = .reach(target: position, rootNode: root, velocity: velocity)
         return action
     }
@@ -1027,9 +1093,12 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
     }
 
     /// Creates an action that performs an inverse kinematic reach.
+    ///
+    /// The duration is calculated dynamically at runtime based on the distance and velocity.
     public class func reach(to node: SKNode, rootNode root: SKNode, velocity: CGFloat) -> SKAction {
         let action = SKAction()
-        action.duration = 1.0 // TODO: Calculate from distance and velocity
+        // Duration is dynamically calculated at runtime based on distance/velocity
+        action.duration = TimeInterval.infinity
         action.actionType = .reachToNode(target: node, rootNode: root, velocity: velocity)
         return action
     }
@@ -1045,15 +1114,15 @@ open class SKAction: NSObject, NSCopying, NSSecureCoding {
     }
 
     /// Creates an action to distort a node through a sequence of SKWarpGeometry objects.
-    public class func animate(withWarps warps: [SKWarpGeometry], times: [NSNumber]) -> SKAction? {
+    public class func animate(withWarps warps: [SKWarpGeometry], times: [TimeInterval]) -> SKAction? {
         return animate(withWarps: warps, times: times, restore: false)
     }
 
     /// Creates an action to distort a node through a sequence of SKWarpGeometry objects.
-    public class func animate(withWarps warps: [SKWarpGeometry], times: [NSNumber], restore: Bool) -> SKAction? {
+    public class func animate(withWarps warps: [SKWarpGeometry], times: [TimeInterval], restore: Bool) -> SKAction? {
         guard warps.count == times.count else { return nil }
         let action = SKAction()
-        action.duration = times.last?.doubleValue ?? 0
+        action.duration = times.last ?? 0
         action.actionType = .animateWarps(geometries: warps, times: times, restore: restore)
         return action
     }

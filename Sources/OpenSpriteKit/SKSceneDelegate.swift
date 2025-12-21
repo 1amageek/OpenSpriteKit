@@ -10,7 +10,7 @@
 /// Typically, you supply a delegate when you want to use a scene without requiring the scene to be subclassed.
 /// The methods in this protocol all correspond to methods implemented by the `SKScene` class.
 /// If the delegate implements a particular method, that method is called instead of the corresponding method on the scene object.
-public protocol SKSceneDelegate: NSObjectProtocol {
+public protocol SKSceneDelegate: AnyObject {
 
     /// Tells you to perform any app specific logic to update your scene.
     ///

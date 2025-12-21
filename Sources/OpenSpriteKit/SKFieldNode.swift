@@ -30,7 +30,7 @@ public typealias SKFieldForceEvaluator = (
 ///
 /// There are many different kinds of field nodes that can be created, each with different effects.
 /// Instantiate the appropriate kind of field node and then add it to the scene's node tree.
-open class SKFieldNode: SKNode {
+open class SKFieldNode: SKNode, @unchecked Sendable {
 
     // MARK: - Field Type
 
@@ -132,34 +132,6 @@ open class SKFieldNode: SKNode {
     public override init() {
         self.region = SKRegion.infinite()
         super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        isEnabled = coder.decodeBool(forKey: "isEnabled")
-        isExclusive = coder.decodeBool(forKey: "isExclusive")
-        region = coder.decodeObject(forKey: "region") as? SKRegion
-        minimumRadius = coder.decodeFloat(forKey: "minimumRadius")
-        categoryBitMask = UInt32(coder.decodeInt32(forKey: "categoryBitMask"))
-        strength = coder.decodeFloat(forKey: "strength")
-        falloff = coder.decodeFloat(forKey: "falloff")
-        animationSpeed = coder.decodeFloat(forKey: "animationSpeed")
-        smoothness = coder.decodeFloat(forKey: "smoothness")
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(isEnabled, forKey: "isEnabled")
-        coder.encode(isExclusive, forKey: "isExclusive")
-        coder.encode(region, forKey: "region")
-        coder.encode(minimumRadius, forKey: "minimumRadius")
-        coder.encode(Int32(categoryBitMask), forKey: "categoryBitMask")
-        coder.encode(strength, forKey: "strength")
-        coder.encode(falloff, forKey: "falloff")
-        coder.encode(animationSpeed, forKey: "animationSpeed")
-        coder.encode(smoothness, forKey: "smoothness")
     }
 
     // MARK: - Factory Methods

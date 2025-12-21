@@ -8,25 +8,10 @@
 ///
 /// `SKReachConstraints` objects work with reach actions to control the rotation
 /// limits when performing inverse kinematics calculations.
-open class SKReachConstraints: NSObject, NSSecureCoding {
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
+open class SKReachConstraints: @unchecked Sendable {
 
     // MARK: - Initializers
 
-    public override init() {
-        super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        super.init()
-    }
-
-    // MARK: - NSCoding
-
-    public func encode(with coder: NSCoder) {
-        // TODO: Implement encoding
+    public init() {
     }
 }

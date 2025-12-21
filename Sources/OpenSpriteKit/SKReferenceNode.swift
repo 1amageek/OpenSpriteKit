@@ -15,7 +15,7 @@ import Foundation
 /// As an example, you might want to share an enemy ship across two different levels, Scene1.sks
 /// and Scene2.sks, in a level-based game. Reference nodes allow you to do that without creating
 /// copies of the shared node and its properties.
-open class SKReferenceNode: SKNode {
+open class SKReferenceNode: SKNode, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -61,20 +61,6 @@ open class SKReferenceNode: SKNode {
         }
     }
 
-
-    public required init?(coder: NSCoder) {
-        referenceURL = coder.decodeObject(forKey: "referenceURL") as? URL
-        referenceFileName = coder.decodeObject(forKey: "referenceFileName") as? String
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(referenceURL, forKey: "referenceURL")
-        coder.encode(referenceFileName, forKey: "referenceFileName")
-    }
 
     // MARK: - Regenerating
 
@@ -157,17 +143,19 @@ open class SKReferenceNode: SKNode {
         return loadNode(from: fileURL)
     }
 
-    /// Unarchives a node from data.
+    /// Unarchives a node from data using SKSParser.
     ///
     /// - Parameter data: The archived data.
     /// - Returns: The unarchived node, or nil if unarchiving failed.
     private func unarchiveNode(from data: Data) -> SKNode? {
+        // Use SKSParser for pure Swift parsing
         do {
-            let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
-            unarchiver.requiresSecureCoding = false
-            let node = unarchiver.decodeObject(forKey: NSKeyedArchiveRootObjectKey) as? SKNode
-            unarchiver.finishDecoding()
-            return node
+            let scene = try SKSParser.parseScene(from: data)
+            // Return the scene's first child if it exists, otherwise the scene
+            if scene.children.count == 1 {
+                return scene.children.first
+            }
+            return scene
         } catch {
             return nil
         }

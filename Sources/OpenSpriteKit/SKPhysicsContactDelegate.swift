@@ -8,7 +8,7 @@
 ///
 /// The `SKPhysicsContactDelegate` protocol allows your app to respond when two physics
 /// bodies begin or end contact with each other.
-public protocol SKPhysicsContactDelegate: NSObjectProtocol {
+public protocol SKPhysicsContactDelegate: AnyObject {
 
     /// Called when two physics bodies begin contact.
     ///
@@ -34,7 +34,7 @@ public extension SKPhysicsContactDelegate {
 ///
 /// An `SKPhysicsContact` object describes the contact between two physics bodies.
 /// The contact object is passed to the contact delegate's methods.
-open class SKPhysicsContact: NSObject {
+open class SKPhysicsContact: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -69,6 +69,5 @@ open class SKPhysicsContact: NSObject {
         self.contactPoint = contactPoint
         self.contactNormal = contactNormal
         self.collisionImpulse = collisionImpulse
-        super.init()
     }
 }

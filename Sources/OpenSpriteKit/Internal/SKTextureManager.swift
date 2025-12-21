@@ -4,11 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(QuartzCore)
-import QuartzCore
-#else
 import OpenCoreAnimation
-#endif
 
 #if arch(wasm32)
 import JavaScriptKit

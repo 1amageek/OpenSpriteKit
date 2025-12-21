@@ -14,7 +14,7 @@ import simd
 /// `SKTransformNode` adds the ability to rotate nodes across the x and y axes.
 /// When combined with `SKNode`'s `zRotation` property, nodes added as children
 /// to a transform node have the ability to rotate in 3D.
-open class SKTransformNode: SKNode {
+open class SKTransformNode: SKNode, @unchecked Sendable {
 
     // MARK: - Rotation Properties
 
@@ -29,20 +29,6 @@ open class SKTransformNode: SKNode {
     /// Creates a new transform node.
     public override init() {
         super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        xRotation = CGFloat(coder.decodeDouble(forKey: "xRotation"))
-        yRotation = CGFloat(coder.decodeDouble(forKey: "yRotation"))
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(Double(xRotation), forKey: "xRotation")
-        coder.encode(Double(yRotation), forKey: "yRotation")
     }
 
     // MARK: - Setting Rotation

@@ -13,7 +13,7 @@
 /// `SKScene` is a subclass of `SKEffectNode` and enables certain effects to apply to the entire scene.
 /// Though applying effects to an entire scene can be an expensive operation, creativity and ingenuity
 /// may help you find some interesting ways to use effects.
-open class SKScene: SKEffectNode {
+open class SKScene: SKEffectNode, @unchecked Sendable {
 
     // MARK: - Size and Scale Properties
 
@@ -98,34 +98,31 @@ open class SKScene: SKEffectNode {
 
     /// Creates a scene from a file in the app bundle.
     ///
-    /// - Parameter filename: The name of the scene file.
+    /// This method loads a scene from a `.sks` file created in Xcode's SpriteKit Scene Editor.
+    ///
+    /// On WASM platforms, you must first register the file data with `SKResourceLoader`:
+    /// ```swift
+    /// SKResourceLoader.shared.registerScene(data: sksData, forName: "GameScene")
+    /// let scene = SKScene.scene(fileNamed: "GameScene")
+    /// ```
+    ///
+    /// - Parameter filename: The name of the scene file (with or without `.sks` extension).
     /// - Returns: A new scene, or nil if the file could not be loaded.
     public class func scene(fileNamed filename: String) -> SKScene? {
-        // TODO: Implement scene loading from file
+        // Try to load from registered scene data first (WASM)
+        if let data = SKResourceLoader.shared.sceneData(forName: filename) {
+            return SKSParser.scene(from: data)
+        }
+
+        // Try to load from bundle (native platforms)
+        let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
+
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
+           let data = try? Data(contentsOf: url) {
+            return SKSParser.scene(from: data)
+        }
+
         return nil
-    }
-
-    public required init?(coder: NSCoder) {
-        let width = CGFloat(coder.decodeDouble(forKey: "size.width"))
-        let height = CGFloat(coder.decodeDouble(forKey: "size.height"))
-        _size = CGSize(width: width, height: height)
-        scaleMode = SKSceneScaleMode(rawValue: coder.decodeInteger(forKey: "scaleMode")) ?? .fill
-        let anchorX = CGFloat(coder.decodeDouble(forKey: "anchorPoint.x"))
-        let anchorY = CGFloat(coder.decodeDouble(forKey: "anchorPoint.y"))
-        anchorPoint = CGPoint(x: anchorX, y: anchorY)
-        super.init(coder: coder)
-        physicsWorld.scene = self
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(Double(_size.width), forKey: "size.width")
-        coder.encode(Double(_size.height), forKey: "size.height")
-        coder.encode(scaleMode.rawValue, forKey: "scaleMode")
-        coder.encode(Double(anchorPoint.x), forKey: "anchorPoint.x")
-        coder.encode(Double(anchorPoint.y), forKey: "anchorPoint.y")
     }
 
     // MARK: - Scene Reference

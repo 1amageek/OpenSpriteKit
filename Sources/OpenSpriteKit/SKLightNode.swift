@@ -17,7 +17,7 @@ import Foundation
 /// 2. The light node's `isEnabled` property is `true`.
 /// 3. The light node's `categoryBitMask` property and one of the sprite's lighting masks are
 ///    logically combined using an AND operation, and the result is a nonzero number.
-open class SKLightNode: SKNode {
+open class SKLightNode: SKNode, @unchecked Sendable {
 
     // MARK: - Activation Properties
 
@@ -66,21 +66,5 @@ open class SKLightNode: SKNode {
     /// Creates a new light node.
     public override init() {
         super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        isEnabled = coder.decodeBool(forKey: "isEnabled")
-        categoryBitMask = UInt32(coder.decodeInt32(forKey: "categoryBitMask"))
-        falloff = CGFloat(coder.decodeDouble(forKey: "falloff"))
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(isEnabled, forKey: "isEnabled")
-        coder.encode(Int32(categoryBitMask), forKey: "categoryBitMask")
-        coder.encode(Double(falloff), forKey: "falloff")
     }
 }

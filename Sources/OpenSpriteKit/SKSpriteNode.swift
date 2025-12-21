@@ -4,17 +4,13 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-#if canImport(QuartzCore)
-import QuartzCore
-#else
 import OpenCoreAnimation
-#endif
 
 /// An image or solid color.
 ///
 /// `SKSpriteNode` is an onscreen graphical element that can be initialized from an image or a solid color.
 /// SpriteKit adds functionality to its ability to display images using the functions discussed below.
-open class SKSpriteNode: SKNode, SKWarpable {
+open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
 
     // MARK: - Texture Properties
 
@@ -201,11 +197,134 @@ open class SKSpriteNode: SKNode, SKWarpable {
     public convenience init(imageNamed name: String, normalMapped generateNormalMap: Bool) {
         let texture = SKTexture(imageNamed: name)
         if generateNormalMap {
-            // TODO: Generate normal map from texture
-            self.init(texture: texture, normalMap: nil)
+            let normalMap = Self.generateNormalMap(from: texture)
+            self.init(texture: texture, normalMap: normalMap)
         } else {
             self.init(texture: texture)
         }
+    }
+
+    /// Generates a normal map from a texture using Sobel edge detection.
+    ///
+    /// This method analyzes the grayscale values of the source texture to compute
+    /// surface normals, creating a normal map that can be used for lighting effects.
+    ///
+    /// - Parameter texture: The source texture to generate a normal map from.
+    /// - Returns: A new texture containing the generated normal map, or nil if generation failed.
+    private static func generateNormalMap(from texture: SKTexture) -> SKTexture? {
+        guard let cgImage = texture.cgImage else { return nil }
+
+        let width = cgImage.width
+        let height = cgImage.height
+
+        guard width > 2, height > 2 else { return nil }
+
+        // Create a grayscale representation for height values
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        var pixelData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+
+        guard let context = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        // Convert to grayscale height values
+        var heightMap = [[Float]](repeating: [Float](repeating: 0, count: width), count: height)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * bytesPerRow) + (x * bytesPerPixel)
+                let r = Float(pixelData[offset]) / 255.0
+                let g = Float(pixelData[offset + 1]) / 255.0
+                let b = Float(pixelData[offset + 2]) / 255.0
+                // Convert to grayscale using luminance formula
+                heightMap[y][x] = 0.299 * r + 0.587 * g + 0.114 * b
+            }
+        }
+
+        // Create normal map using Sobel operator
+        var normalData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+
+        // Sobel kernels for X and Y gradients
+        let strength: Float = 2.0  // Normal map strength
+
+        for y in 1..<(height - 1) {
+            for x in 1..<(width - 1) {
+                // Sobel X kernel
+                let dx = (heightMap[y - 1][x + 1] - heightMap[y - 1][x - 1]) +
+                         2.0 * (heightMap[y][x + 1] - heightMap[y][x - 1]) +
+                         (heightMap[y + 1][x + 1] - heightMap[y + 1][x - 1])
+
+                // Sobel Y kernel
+                let dy = (heightMap[y + 1][x - 1] - heightMap[y - 1][x - 1]) +
+                         2.0 * (heightMap[y + 1][x] - heightMap[y - 1][x]) +
+                         (heightMap[y + 1][x + 1] - heightMap[y - 1][x + 1])
+
+                // Create normal vector
+                var nx = -dx * strength
+                var ny = -dy * strength
+                var nz: Float = 1.0
+
+                // Normalize the vector
+                let length = sqrt(nx * nx + ny * ny + nz * nz)
+                if length > 0 {
+                    nx /= length
+                    ny /= length
+                    nz /= length
+                }
+
+                // Convert from [-1, 1] to [0, 255]
+                let offset = (y * bytesPerRow) + (x * bytesPerPixel)
+                normalData[offset] = UInt8((nx * 0.5 + 0.5) * 255.0)     // R = X
+                normalData[offset + 1] = UInt8((ny * 0.5 + 0.5) * 255.0) // G = Y
+                normalData[offset + 2] = UInt8((nz * 0.5 + 0.5) * 255.0) // B = Z
+                normalData[offset + 3] = 255                              // A = 1
+            }
+        }
+
+        // Handle edges (copy nearest computed values)
+        for x in 0..<width {
+            // Top and bottom edges
+            let topOffset = x * bytesPerPixel
+            let secondRowOffset = bytesPerRow + x * bytesPerPixel
+            for i in 0..<4 { normalData[topOffset + i] = normalData[secondRowOffset + i] }
+
+            let bottomOffset = (height - 1) * bytesPerRow + x * bytesPerPixel
+            let secondLastRowOffset = (height - 2) * bytesPerRow + x * bytesPerPixel
+            for i in 0..<4 { normalData[bottomOffset + i] = normalData[secondLastRowOffset + i] }
+        }
+        for y in 0..<height {
+            // Left and right edges
+            let leftOffset = y * bytesPerRow
+            let secondColOffset = y * bytesPerRow + bytesPerPixel
+            for i in 0..<4 { normalData[leftOffset + i] = normalData[secondColOffset + i] }
+
+            let rightOffset = y * bytesPerRow + (width - 1) * bytesPerPixel
+            let secondLastColOffset = y * bytesPerRow + (width - 2) * bytesPerPixel
+            for i in 0..<4 { normalData[rightOffset + i] = normalData[secondLastColOffset + i] }
+        }
+
+        // Create CGImage from normal data
+        guard let normalContext = CGContext(
+            data: &normalData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        guard let normalCGImage = normalContext.makeImage() else { return nil }
+
+        return SKTexture(cgImage: normalCGImage)
     }
 
     /// Initializes a textured sprite using an existing texture object.
@@ -257,49 +376,6 @@ open class SKSpriteNode: SKNode, SKWarpable {
         self.colorBlendFactor = 1.0
     }
 
-    public required init?(coder: NSCoder) {
-        size = CGSize(
-            width: CGFloat(coder.decodeDouble(forKey: "size.width")),
-            height: CGFloat(coder.decodeDouble(forKey: "size.height"))
-        )
-        anchorPoint = CGPoint(
-            x: CGFloat(coder.decodeDouble(forKey: "anchorPoint.x")),
-            y: CGFloat(coder.decodeDouble(forKey: "anchorPoint.y"))
-        )
-        centerRect = CGRect(
-            x: CGFloat(coder.decodeDouble(forKey: "centerRect.x")),
-            y: CGFloat(coder.decodeDouble(forKey: "centerRect.y")),
-            width: CGFloat(coder.decodeDouble(forKey: "centerRect.width")),
-            height: CGFloat(coder.decodeDouble(forKey: "centerRect.height"))
-        )
-        colorBlendFactor = CGFloat(coder.decodeDouble(forKey: "colorBlendFactor"))
-        blendMode = SKBlendMode(rawValue: coder.decodeInteger(forKey: "blendMode")) ?? .alpha
-        lightingBitMask = UInt32(coder.decodeInt32(forKey: "lightingBitMask"))
-        shadowedBitMask = UInt32(coder.decodeInt32(forKey: "shadowedBitMask"))
-        shadowCastBitMask = UInt32(coder.decodeInt32(forKey: "shadowCastBitMask"))
-        subdivisionLevels = coder.decodeInteger(forKey: "subdivisionLevels")
-        super.init(coder: coder)
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(Double(size.width), forKey: "size.width")
-        coder.encode(Double(size.height), forKey: "size.height")
-        coder.encode(Double(anchorPoint.x), forKey: "anchorPoint.x")
-        coder.encode(Double(anchorPoint.y), forKey: "anchorPoint.y")
-        coder.encode(Double(centerRect.origin.x), forKey: "centerRect.x")
-        coder.encode(Double(centerRect.origin.y), forKey: "centerRect.y")
-        coder.encode(Double(centerRect.size.width), forKey: "centerRect.width")
-        coder.encode(Double(centerRect.size.height), forKey: "centerRect.height")
-        coder.encode(Double(colorBlendFactor), forKey: "colorBlendFactor")
-        coder.encode(blendMode.rawValue, forKey: "blendMode")
-        coder.encode(Int32(lightingBitMask), forKey: "lightingBitMask")
-        coder.encode(Int32(shadowedBitMask), forKey: "shadowedBitMask")
-        coder.encode(Int32(shadowCastBitMask), forKey: "shadowCastBitMask")
-        coder.encode(subdivisionLevels, forKey: "subdivisionLevels")
-    }
 
     // MARK: - Size Methods
 

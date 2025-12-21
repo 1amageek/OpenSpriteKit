@@ -5,12 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
-
-#if canImport(QuartzCore)
-import QuartzCore
-#else
 import OpenCoreAnimation
-#endif
 
 /// Manages scene transitions and their animations.
 @MainActor

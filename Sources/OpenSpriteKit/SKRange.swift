@@ -9,7 +9,7 @@ import Foundation
 /// A definition of a range of floating-point values.
 ///
 /// You typically use a `SKRange` to clamp a value so that it is within the specified range.
-open class SKRange: NSObject, NSCopying, NSSecureCoding {
+open class SKRange: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -29,7 +29,6 @@ open class SKRange: NSObject, NSCopying, NSSecureCoding {
     public required init(lowerLimit lower: CGFloat, upperLimit upper: CGFloat) {
         self.lowerLimit = lower
         self.upperLimit = upper
-        super.init()
     }
 
     /// Creates and initializes a new range object using a value and a maximum distance from that value.
@@ -69,24 +68,12 @@ open class SKRange: NSObject, NSCopying, NSSecureCoding {
         self.init(lowerLimit: value, upperLimit: value)
     }
 
-    // MARK: - NSCopying
+    // MARK: - Copying
 
-    public func copy(with zone: NSZone? = nil) -> Any {
+    /// Creates a copy of this range.
+    ///
+    /// - Returns: A new range with the same limits.
+    open func copy() -> SKRange {
         return SKRange(lowerLimit: lowerLimit, upperLimit: upperLimit)
-    }
-
-    // MARK: - NSSecureCoding
-
-    public static var supportsSecureCoding: Bool { true }
-
-    public required init?(coder: NSCoder) {
-        lowerLimit = CGFloat(coder.decodeDouble(forKey: "lowerLimit"))
-        upperLimit = CGFloat(coder.decodeDouble(forKey: "upperLimit"))
-        super.init()
-    }
-
-    public func encode(with coder: NSCoder) {
-        coder.encode(Double(lowerLimit), forKey: "lowerLimit")
-        coder.encode(Double(upperLimit), forKey: "upperLimit")
     }
 }

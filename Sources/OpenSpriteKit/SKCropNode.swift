@@ -10,7 +10,7 @@
 /// The crop node's children are rendered into a framebuffer, then the mask is rendered into the framebuffer.
 /// When the mask is rendered, SpriteKit uses a special blending mode that only keeps pixels where the mask
 /// was drawn over them.
-open class SKCropNode: SKNode {
+open class SKCropNode: SKNode, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -30,19 +30,6 @@ open class SKCropNode: SKNode {
     /// Creates a new crop node.
     public override init() {
         super.init()
-    }
-
-    public required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        maskNode = coder.decodeObject(forKey: "maskNode") as? SKNode
-        updateLayerMask()
-    }
-
-    // MARK: - NSCoding
-
-    public override func encode(with coder: NSCoder) {
-        super.encode(with: coder)
-        coder.encode(maskNode, forKey: "maskNode")
     }
 
     // MARK: - Masking
