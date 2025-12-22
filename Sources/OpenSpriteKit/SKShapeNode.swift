@@ -4,7 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
 import OpenCoreAnimation
+import OpenCoreGraphics
 
 /// A mathematical shape that can be stroked or filled.
 ///
@@ -123,19 +125,22 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
         path.applyWithBlock { element in
             switch element.pointee.type {
             case .moveToPoint:
-                currentPoint = element.pointee.points[0]
+                guard let pts = element.pointee.points else { return }
+                currentPoint = pts[0]
                 subpathStart = currentPoint
 
             case .addLineToPoint:
-                let endPoint = element.pointee.points[0]
+                guard let pts = element.pointee.points else { return }
+                let endPoint = pts[0]
                 let dx = endPoint.x - currentPoint.x
                 let dy = endPoint.y - currentPoint.y
                 totalLength += sqrt(dx * dx + dy * dy)
                 currentPoint = endPoint
 
             case .addQuadCurveToPoint:
-                let controlPoint = element.pointee.points[0]
-                let endPoint = element.pointee.points[1]
+                guard let pts = element.pointee.points else { return }
+                let controlPoint = pts[0]
+                let endPoint = pts[1]
                 totalLength += quadraticBezierLength(
                     start: currentPoint,
                     control: controlPoint,
@@ -144,9 +149,10 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
                 currentPoint = endPoint
 
             case .addCurveToPoint:
-                let control1 = element.pointee.points[0]
-                let control2 = element.pointee.points[1]
-                let endPoint = element.pointee.points[2]
+                guard let pts = element.pointee.points else { return }
+                let control1 = pts[0]
+                let control2 = pts[1]
+                let endPoint = pts[2]
                 totalLength += cubicBezierLength(
                     start: currentPoint,
                     control1: control1,
@@ -745,7 +751,7 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
         let bytesPerRow = boundsWidth * bytesPerPixel
         var pixelData = [UInt8](repeating: 0, count: bytesPerRow * boundsHeight)
 
-        guard let colorSpace = CGColorSpaceCreateDeviceRGB() as CGColorSpace?,
+        guard let colorSpace = .deviceRGB as CGColorSpace?,
               let context = CGContext(
                   data: &pixelData,
                   width: boundsWidth,
@@ -753,7 +759,7 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
                   bitsPerComponent: 8,
                   bytesPerRow: bytesPerRow,
                   space: colorSpace,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
               ) else {
             return nil
         }
@@ -819,14 +825,5 @@ extension CAShapeLayerLineJoin {
         @unknown default:
             self = .miter
         }
-    }
-}
-
-// MARK: - SKColor CGColor Extension
-
-extension SKColor {
-    /// Returns a CGColor representation of this color.
-    public var cgColor: CGColor {
-        return CGColor(red: red, green: green, blue: blue, alpha: alpha)
     }
 }

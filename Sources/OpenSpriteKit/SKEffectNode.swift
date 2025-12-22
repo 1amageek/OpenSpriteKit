@@ -4,6 +4,10 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+import OpenCoreImage
+
 /// A node that renders its children into a separate buffer, optionally applying an effect, before drawing the final result.
 ///
 /// An `SKEffectNode` object renders its children into a buffer and optionally applies a Core Image filter
@@ -166,12 +170,11 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
         }
 
         // Create CGImage from pixel data
-        guard let colorSpace = CGColorSpaceCreateDeviceRGB() as CGColorSpace? else {
+        guard let colorSpace = .deviceRGB as CGColorSpace? else {
             return nil
         }
 
-        let dataProvider = CGDataProvider(data: Data(pixelData) as CFData)
-        guard let provider = dataProvider else { return nil }
+        let provider = CGDataProvider(data: Data(pixelData))
 
         return CGImage(
             width: width,
@@ -229,8 +232,7 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
         let srcHeight = cgImage.height
         guard srcWidth > 0 && srcHeight > 0 else { return }
 
-        guard let srcData = cgImage.dataProvider?.data,
-              let srcBytes = CFDataGetBytePtr(srcData) else { return }
+        guard let srcData = cgImage.dataProvider?.data else { return }
 
         let srcBytesPerRow = cgImage.bytesPerRow
         let srcBytesPerPixel = cgImage.bitsPerPixel / 8
@@ -272,12 +274,12 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
 
                 // Read source pixel
                 let srcOffset = srcY * srcBytesPerRow + srcX * srcBytesPerPixel
-                guard srcOffset + 3 < CFDataGetLength(srcData) else { continue }
+                guard srcOffset + 3 < srcData.count else { continue }
 
-                let srcR = CGFloat(srcBytes[srcOffset]) / 255.0
-                let srcG = CGFloat(srcBytes[srcOffset + 1]) / 255.0
-                let srcB = CGFloat(srcBytes[srcOffset + 2]) / 255.0
-                let srcA = srcBytesPerPixel > 3 ? CGFloat(srcBytes[srcOffset + 3]) / 255.0 : 1.0
+                let srcR = CGFloat(srcData[srcOffset]) / 255.0
+                let srcG = CGFloat(srcData[srcOffset + 1]) / 255.0
+                let srcB = CGFloat(srcData[srcOffset + 2]) / 255.0
+                let srcA = srcBytesPerPixel > 3 ? CGFloat(srcData[srcOffset + 3]) / 255.0 : 1.0
 
                 // Apply alpha
                 let finalAlpha = srcA * alpha
@@ -290,16 +292,23 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
                 let dstA = CGFloat(pixelData[dstOffset + 3]) / 255.0
 
                 // Alpha compositing (Porter-Duff over)
-                let outA = finalAlpha + dstA * (1 - finalAlpha)
+                let oneMinusFinalAlpha: CGFloat = 1.0 - finalAlpha
+                let outA: CGFloat = finalAlpha + dstA * oneMinusFinalAlpha
                 if outA > 0 {
-                    let outR = (srcR * finalAlpha + dstR * dstA * (1 - finalAlpha)) / outA
-                    let outG = (srcG * finalAlpha + dstG * dstA * (1 - finalAlpha)) / outA
-                    let outB = (srcB * finalAlpha + dstB * dstA * (1 - finalAlpha)) / outA
+                    let dstContrib: CGFloat = dstA * oneMinusFinalAlpha
+                    let outR: CGFloat = (srcR * finalAlpha + dstR * dstContrib) / outA
+                    let outG: CGFloat = (srcG * finalAlpha + dstG * dstContrib) / outA
+                    let outB: CGFloat = (srcB * finalAlpha + dstB * dstContrib) / outA
 
-                    pixelData[dstOffset] = UInt8(min(255, max(0, outR * 255)))
-                    pixelData[dstOffset + 1] = UInt8(min(255, max(0, outG * 255)))
-                    pixelData[dstOffset + 2] = UInt8(min(255, max(0, outB * 255)))
-                    pixelData[dstOffset + 3] = UInt8(min(255, max(0, outA * 255)))
+                    let outRInt: Int = Int(outR * 255.0)
+                    let outGInt: Int = Int(outG * 255.0)
+                    let outBInt: Int = Int(outB * 255.0)
+                    let outAInt: Int = Int(outA * 255.0)
+
+                    pixelData[dstOffset] = UInt8(min(255, max(0, outRInt)))
+                    pixelData[dstOffset + 1] = UInt8(min(255, max(0, outGInt)))
+                    pixelData[dstOffset + 2] = UInt8(min(255, max(0, outBInt)))
+                    pixelData[dstOffset + 3] = UInt8(min(255, max(0, outAInt)))
                 }
             }
         }

@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+
 /// A single particle in the particle system.
 internal struct SKParticle {
     // MARK: - Position

@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+
 /// A texture whose contents can be dynamically updated.
 ///
 /// An `SKMutableTexture` object is a texture that can be dynamically updated. You create a mutable
@@ -127,10 +130,9 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
         guard width > 0 && height > 0 else { return }
 
         // Create a CGImage from the pixel data
-        guard let colorSpace = CGColorSpaceCreateDeviceRGB() as CGColorSpace? else { return }
+        guard let colorSpace = .deviceRGB as CGColorSpace? else { return }
 
-        let dataProvider = CGDataProvider(data: data as CFData)
-        guard let provider = dataProvider else { return }
+        let provider = CGDataProvider(data: data)
 
         let image = CGImage(
             width: width,

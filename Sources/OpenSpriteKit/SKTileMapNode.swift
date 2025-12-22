@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+
 // MARK: - SKTileSetType
 
 /// An enumeration defining how tiles are arranged.

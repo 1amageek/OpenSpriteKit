@@ -5,10 +5,8 @@
 // Licensed under MIT License
 
 import Foundation
-
-// ImageIO is re-exported from OpenSpriteKit.swift
-// On native platforms: ImageIO (system framework)
-// On WASM: OpenImageIO (supports PNG, JPEG, GIF, BMP, TIFF, WebP)
+import OpenCoreGraphics
+import OpenImageIO
 
 #if arch(wasm32)
 import JavaScriptKit
@@ -128,10 +126,9 @@ public final class SKResourceLoader {
     ///
     /// Supports PNG, JPEG, GIF, BMP, TIFF, and WebP formats via ImageIO/OpenImageIO.
     private func decodeImage(from data: Data) -> CGImage? {
-        // CGImageSourceCreateWithData is available on:
-        // - Native platforms: via ImageIO framework
-        // - WASM: via OpenImageIO (supports PNG, JPEG, GIF, BMP, TIFF, WebP)
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+        // CGImageSourceCreateWithData is available via OpenImageIO
+        // Supports PNG, JPEG, GIF, BMP, TIFF, WebP
+        guard let source = CGImageSourceCreateWithData(data, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             return nil
         }

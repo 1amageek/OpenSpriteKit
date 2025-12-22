@@ -4,6 +4,8 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
 import OpenCoreAnimation
 
 /// Line break modes for text rendering.

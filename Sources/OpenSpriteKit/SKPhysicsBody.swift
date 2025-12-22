@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+
 /// The shape type for a physics body collision shape.
 public enum SKPhysicsBodyShape {
     /// A circular shape centered at origin.
@@ -263,15 +266,18 @@ open class SKPhysicsBody: @unchecked Sendable {
         path.applyWithBlock { element in
             switch element.pointee.type {
             case .moveToPoint:
-                currentPoint = element.pointee.points[0]
+                guard let pts = element.pointee.points else { return }
+                currentPoint = pts[0]
                 points.append(currentPoint)
             case .addLineToPoint:
-                currentPoint = element.pointee.points[0]
+                guard let pts = element.pointee.points else { return }
+                currentPoint = pts[0]
                 points.append(currentPoint)
             case .addQuadCurveToPoint:
+                guard let pts = element.pointee.points else { return }
                 // Sample the quadratic curve
-                let control = element.pointee.points[0]
-                let end = element.pointee.points[1]
+                let control = pts[0]
+                let end = pts[1]
                 for t in stride(from: 0.25, through: 1.0, by: 0.25) {
                     let t2 = CGFloat(t)
                     let oneMinusT = 1.0 - t2
@@ -281,10 +287,11 @@ open class SKPhysicsBody: @unchecked Sendable {
                 }
                 currentPoint = end
             case .addCurveToPoint:
+                guard let pts = element.pointee.points else { return }
                 // Sample the cubic curve
-                let control1 = element.pointee.points[0]
-                let control2 = element.pointee.points[1]
-                let end = element.pointee.points[2]
+                let control1 = pts[0]
+                let control2 = pts[1]
+                let end = pts[2]
                 for t in stride(from: 0.25, through: 1.0, by: 0.25) {
                     let t2 = CGFloat(t)
                     let oneMinusT = 1.0 - t2

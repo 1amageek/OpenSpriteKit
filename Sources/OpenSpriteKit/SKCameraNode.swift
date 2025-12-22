@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+
 /// A node that determines which portion of the scene is visible in the view.
 ///
 /// An `SKCameraNode` object defines the viewport of a scene. When a camera is assigned to a scene's

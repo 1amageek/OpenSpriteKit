@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import OpenCoreGraphics
 #if canImport(Dispatch)
 import Dispatch
 #endif
@@ -89,14 +90,11 @@ open class SKAction: @unchecked Sendable {
         case repeatAction(action: SKAction, count: Int)
         case repeatForever(action: SKAction)
         case wait(duration: TimeInterval, range: TimeInterval)
-        case runBlock(block: () -> Void)
+        case runBlock(block: @Sendable () -> Void)
         #if canImport(Dispatch)
-        case runBlockOnQueue(block: () -> Void, queue: DispatchQueue)
+        case runBlockOnQueue(block: @Sendable () -> Void, queue: DispatchQueue)
         #endif
         case customAction(block: (SKNode, CGFloat) -> Void)
-        #if canImport(ObjectiveC)
-        case performSelector(selector: Selector, target: AnyObject)
-        #endif
         case applyForce(force: CGVector, point: CGPoint?)
         case applyTorque(torque: CGFloat)
         case applyImpulse(impulse: CGVector, point: CGPoint?)
@@ -354,25 +352,27 @@ open class SKAction: @unchecked Sendable {
         var startPoint: CGPoint = .zero
 
         path.applyWithBlock { element in
-            let points = element.pointee.points
-
             switch element.pointee.type {
             case .moveToPoint:
+                guard let points = element.pointee.points else { return }
                 currentPoint = points[0]
                 startPoint = currentPoint
 
             case .addLineToPoint:
+                guard let points = element.pointee.points else { return }
                 let endPoint = points[0]
                 length += distance(from: currentPoint, to: endPoint)
                 currentPoint = endPoint
 
             case .addQuadCurveToPoint:
+                guard let points = element.pointee.points else { return }
                 let controlPoint = points[0]
                 let endPoint = points[1]
                 length += quadraticBezierLength(from: currentPoint, control: controlPoint, to: endPoint)
                 currentPoint = endPoint
 
             case .addCurveToPoint:
+                guard let points = element.pointee.points else { return }
                 let control1 = points[0]
                 let control2 = points[1]
                 let endPoint = points[2]
@@ -1032,18 +1032,8 @@ open class SKAction: @unchecked Sendable {
         return action
     }
 
-    #if canImport(ObjectiveC)
-    /// Creates an action that calls a method on an object.
-    public class func perform(_ selector: Selector, onTarget target: Any) -> SKAction {
-        let action = SKAction()
-        action.duration = 0
-        action.actionType = .performSelector(selector: selector, target: target as AnyObject)
-        return action
-    }
-    #endif
-
     /// Creates an action that executes a block.
-    public class func run(_ block: @escaping () -> Void) -> SKAction {
+    public class func run(_ block: @escaping @Sendable () -> Void) -> SKAction {
         let action = SKAction()
         action.duration = 0
         action.actionType = .runBlock(block: block)
@@ -1052,7 +1042,7 @@ open class SKAction: @unchecked Sendable {
 
     #if canImport(Dispatch)
     /// Creates an action that executes a block on a specific dispatch queue.
-    public class func run(_ block: @escaping () -> Void, queue: DispatchQueue) -> SKAction {
+    public class func run(_ block: @escaping @Sendable () -> Void, queue: DispatchQueue) -> SKAction {
         let action = SKAction()
         action.duration = 0
         action.actionType = .runBlockOnQueue(block: block, queue: queue)

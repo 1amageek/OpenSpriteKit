@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenImageIO
+import OpenCoreGraphics
 import OpenCoreAnimation
 
 #if arch(wasm32)
@@ -231,7 +234,7 @@ open class SKRenderer: @unchecked Sendable {
         let bytesPerRow = width * bytesPerPixel
         var pixelData = [UInt8](repeating: 0, count: bytesPerRow * height)
 
-        guard let colorSpace = CGColorSpaceCreateDeviceRGB() as CGColorSpace?,
+        guard let colorSpace = .deviceRGB as CGColorSpace?,
               let context = CGContext(
                   data: &pixelData,
                   width: width,
@@ -239,7 +242,7 @@ open class SKRenderer: @unchecked Sendable {
                   bitsPerComponent: 8,
                   bytesPerRow: bytesPerRow,
                   space: colorSpace,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
               ) else {
             return nil
         }
@@ -348,14 +351,10 @@ open class SKRenderer: @unchecked Sendable {
         // Flip for text rendering (CGContext has inverted Y for text)
         context.scaleBy(x: 1, y: -1)
 
-        let fontSize = label.fontSize
+        _ = label.fontSize
         context.setFillColor(label.fontColor?.cgColor ?? CGColor(red: 1, green: 1, blue: 1, alpha: 1))
 
-        // Basic text rendering position
-        let position = CGPoint(x: 0, y: 0)
-
-        // Use Core Graphics text rendering
-        context.textPosition = position
+        // Note: Text positioning and actual rendering is handled by WebGPU renderer
 
         context.restoreGState()
     }

@@ -6,6 +6,11 @@
 
 // MARK: - SKTextureCache
 
+import Foundation
+import OpenCoreGraphics
+import OpenCoreImage
+import OpenImageIO
+
 /// Internal texture cache to avoid loading duplicate textures.
 /// Thread-safe through NSLock synchronization.
 internal final class SKTextureCache: @unchecked Sendable {
@@ -190,9 +195,9 @@ open class SKTexture: @unchecked Sendable {
             bitsPerComponent: 8,
             bitsPerPixel: 32,
             bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: .deviceRGB,
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: CGDataProvider(data: pixelData as CFData)!,
+            provider: CGDataProvider(data: pixelData),
             decode: nil,
             shouldInterpolate: true,
             intent: .defaultIntent
@@ -215,9 +220,9 @@ open class SKTexture: @unchecked Sendable {
             bitsPerComponent: 8,
             bitsPerPixel: 32,
             bytesPerRow: alignedBytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: .deviceRGB,
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: CGDataProvider(data: data as CFData)!,
+            provider: CGDataProvider(data: data),
             decode: nil,
             shouldInterpolate: true,
             intent: .defaultIntent
@@ -490,8 +495,8 @@ open class SKTexture: @unchecked Sendable {
                     height: height,
                     bitsPerComponent: 8,
                     bytesPerRow: bytesPerRow,
-                    space: CGColorSpaceCreateDeviceRGB(),
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                    space: .deviceRGB,
+                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
                 ) else {
                     return
                 }
@@ -610,7 +615,7 @@ open class SKTexture: @unchecked Sendable {
     /// }
     /// ```
     public convenience init?(imageData: Data) {
-        guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+        guard let source = CGImageSourceCreateWithData(imageData, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             return nil
         }
@@ -676,10 +681,10 @@ open class SKTexture: @unchecked Sendable {
     /// - Parameter data: The image file data.
     /// - Returns: A dictionary containing image properties, or nil if unavailable.
     public static func imageProperties(from data: Data) -> [String: Any]? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+        guard let source = CGImageSourceCreateWithData(data, nil) else {
             return nil
         }
-        return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+        return CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
     }
 
     /// Returns the size of an image from file data without fully decoding it.
@@ -744,7 +749,7 @@ open class SKTextureAtlas: @unchecked Sendable {
                 let texture = SKTexture(cgImage: cgImage)
                 textures[name] = texture
                 textureNames.append(name)
-            } else if let data = value as? Data {
+            } else if value is Data {
                 if let image = SKResourceLoader.shared.image(forName: name) {
                     let texture = SKTexture(cgImage: image)
                     textures[name] = texture
@@ -776,7 +781,6 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// Loads textures from atlas data.
     private func loadFromAtlasData(_ data: SKResourceLoader.AtlasData) {
         let atlasTexture = SKTexture(cgImage: data.image)
-        let atlasSize = atlasTexture.size
 
         for (frameName, normalizedRect) in data.frames {
             // Create sub-texture using normalized coordinates

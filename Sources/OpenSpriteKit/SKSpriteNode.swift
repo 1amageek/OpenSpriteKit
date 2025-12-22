@@ -4,6 +4,8 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
 import OpenCoreAnimation
 
 /// An image or solid color.
@@ -230,8 +232,8 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            space: .deviceRGB,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
         ) else { return nil }
 
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -318,8 +320,8 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            space: .deviceRGB,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
         ) else { return nil }
 
         guard let normalCGImage = normalContext.makeImage() else { return nil }

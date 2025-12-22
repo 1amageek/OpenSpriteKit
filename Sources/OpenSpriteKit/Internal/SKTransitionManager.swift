@@ -128,18 +128,18 @@ internal final class SKTransitionManager {
             let offset = offsetForDirection(direction, size: toScene.size)
             toScene.position = offset
 
-        case .reveal(let direction):
+        case .reveal(_):
             // Outgoing scene moves to reveal incoming scene underneath
             toScene.zPosition = -1
 
-        case .flip(let direction):
+        case .flip(_):
             // 3D flip would require more complex animation
             toScene.alpha = 0
 
-        case .doorsOpen(let horizontal):
+        case .doorsOpen(_):
             toScene.alpha = 0
 
-        case .doorsClose(let horizontal):
+        case .doorsClose(_):
             toScene.alpha = 0
 
         case .doorway:
@@ -163,7 +163,7 @@ internal final class SKTransitionManager {
             fromScene.alpha = 1 - p
             toScene.alpha = p
 
-        case .fade(let color):
+        case .fade(_):
             // First half: fade out to color
             // Second half: fade in from color
             if progress < 0.5 {
@@ -211,12 +211,12 @@ internal final class SKTransitionManager {
                 y: outOffset.y * p
             )
 
-        case .flip(let direction):
+        case .flip(_):
             // Simplified flip - just crossfade
             fromScene.alpha = 1 - p
             toScene.alpha = p
 
-        case .doorsOpen(let horizontal):
+        case .doorsOpen(_):
             if progress < 0.5 {
                 // Doors opening
                 fromScene.alpha = 1
@@ -226,7 +226,7 @@ internal final class SKTransitionManager {
                 toScene.alpha = 1
             }
 
-        case .doorsClose(let horizontal):
+        case .doorsClose(_):
             if progress < 0.5 {
                 toScene.alpha = 0
             } else {

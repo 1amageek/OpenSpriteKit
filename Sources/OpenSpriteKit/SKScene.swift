@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+
 /// An object that organizes all of the active SpriteKit content.
 ///
 /// An `SKScene` object represents a scene of content in SpriteKit. A scene is the root node

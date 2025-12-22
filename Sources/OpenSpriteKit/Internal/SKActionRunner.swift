@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import OpenCoreGraphics
 
 /// Manages the execution of SKActions on nodes.
 ///
@@ -334,18 +335,22 @@ internal final class SKActionRunner {
         switch action.actionType {
         case .reach(let target, _, let velocity):
             guard let velocity = velocity, velocity > 0 else { return nil }
-            let dx = target.x - node.position.x
-            let dy = target.y - node.position.y
+            // Target is in scene coordinates, so convert node position to scene coordinates
+            guard let scene = node.scene else { return nil }
+            let worldNode = node.convert(.zero, to: scene)
+            let dx = target.x - worldNode.x
+            let dy = target.y - worldNode.y
             let distance = sqrt(dx * dx + dy * dy)
             return TimeInterval(distance / velocity)
 
         case .reachToNode(let targetNode, _, let velocity):
             guard let velocity = velocity, velocity > 0 else { return nil }
-            // Convert target node position to common coordinate space
+            // Convert both positions to scene coordinates for accurate distance calculation
             guard let scene = node.scene, targetNode.scene === scene else { return nil }
             let worldTarget = targetNode.convert(.zero, to: scene)
-            let dx = worldTarget.x - node.position.x
-            let dy = worldTarget.y - node.position.y
+            let worldNode = node.convert(.zero, to: scene)
+            let dx = worldTarget.x - worldNode.x
+            let dy = worldTarget.y - worldNode.y
             let distance = sqrt(dx * dx + dy * dy)
             return TimeInterval(distance / velocity)
 
@@ -856,33 +861,34 @@ internal final class SKActionRunner {
         case .reach(let target, let rootNode, _):
             // Simplified IK implementation
             // Real IK would require iterative solving through the joint chain
+            // Target is in scene coordinates, so convert node position to scene coordinates
             if progress >= 1.0 {
                 solveIK(endEffector: node, target: target, rootNode: rootNode)
             } else {
-                // Interpolate towards target
-                let currentPos = node.position
+                // Interpolate towards target in scene coordinates
+                guard let scene = node.scene else { break }
+                let worldNode = node.convert(.zero, to: scene)
                 let interpolatedTarget = CGPoint(
-                    x: currentPos.x + (target.x - currentPos.x) * CGFloat(progress),
-                    y: currentPos.y + (target.y - currentPos.y) * CGFloat(progress)
+                    x: worldNode.x + (target.x - worldNode.x) * CGFloat(progress),
+                    y: worldNode.y + (target.y - worldNode.y) * CGFloat(progress)
                 )
                 solveIK(endEffector: node, target: interpolatedTarget, rootNode: rootNode)
             }
 
         case .reachToNode(let targetNode, let rootNode, _):
-            let target = targetNode.position
-            if let targetScene = targetNode.scene, let nodeScene = node.scene {
-                if targetScene === nodeScene {
-                    let worldTarget = targetNode.convert(.zero, to: nodeScene)
-                    if progress >= 1.0 {
-                        solveIK(endEffector: node, target: worldTarget, rootNode: rootNode)
-                    } else {
-                        let currentPos = node.position
-                        let interpolatedTarget = CGPoint(
-                            x: currentPos.x + (worldTarget.x - currentPos.x) * CGFloat(progress),
-                            y: currentPos.y + (worldTarget.y - currentPos.y) * CGFloat(progress)
-                        )
-                        solveIK(endEffector: node, target: interpolatedTarget, rootNode: rootNode)
-                    }
+            if let targetScene = targetNode.scene, let nodeScene = node.scene, targetScene === nodeScene {
+                // Convert both positions to scene coordinates for consistent interpolation
+                let worldTarget = targetNode.convert(.zero, to: nodeScene)
+                let worldNode = node.convert(.zero, to: nodeScene)
+                if progress >= 1.0 {
+                    solveIK(endEffector: node, target: worldTarget, rootNode: rootNode)
+                } else {
+                    // Interpolate in scene coordinates
+                    let interpolatedTarget = CGPoint(
+                        x: worldNode.x + (worldTarget.x - worldNode.x) * CGFloat(progress),
+                        y: worldNode.y + (worldTarget.y - worldNode.y) * CGFloat(progress)
+                    )
+                    solveIK(endEffector: node, target: interpolatedTarget, rootNode: rootNode)
                 }
             }
 
@@ -946,13 +952,6 @@ internal final class SKActionRunner {
                     }
                 }
             }
-
-        #if canImport(ObjectiveC)
-        case .performSelector(let selector, let target):
-            if progress >= 1.0 {
-                _ = target.perform(selector)
-            }
-        #endif
         }
     }
 
@@ -1024,7 +1023,6 @@ internal final class SKActionRunner {
         // Apply rotations to joints
         for i in 0..<(chain.count - 1) {
             let node = chain[i]
-            let parent = chain[i + 1]
 
             let dx = positions[i].x - positions[i + 1].x
             let dy = positions[i].y - positions[i + 1].y
@@ -1078,11 +1076,14 @@ internal final class SKActionRunner {
         path.applyWithBlock { element in
             switch element.pointee.type {
             case .moveToPoint, .addLineToPoint:
-                points.append(element.pointee.points[0])
+                guard let pts = element.pointee.points else { return }
+                points.append(pts[0])
             case .addQuadCurveToPoint:
-                points.append(element.pointee.points[1])
+                guard let pts = element.pointee.points else { return }
+                points.append(pts[1])
             case .addCurveToPoint:
-                points.append(element.pointee.points[2])
+                guard let pts = element.pointee.points else { return }
+                points.append(pts[2])
             case .closeSubpath:
                 break
             @unknown default:

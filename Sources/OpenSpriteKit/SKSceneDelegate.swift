@@ -4,6 +4,8 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+
 /// Methods that, when implemented, allow any class to participate in the SpriteKit render loop callbacks.
 ///
 /// The `SKSceneDelegate` protocol is used to implement a delegate to be called whenever the scene is being animated.

@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import OpenCoreGraphics
 
 /// The definition of an arbitrary area.
 ///
@@ -218,30 +219,34 @@ open class SKRegion: @unchecked Sendable {
 
             switch type {
             case .moveToPoint:
+                guard let pts = element.pointee.points else { return }
                 dict["type"] = "move"
-                dict["x"] = Double(element.pointee.points[0].x)
-                dict["y"] = Double(element.pointee.points[0].y)
+                dict["x"] = Double(pts[0].x)
+                dict["y"] = Double(pts[0].y)
 
             case .addLineToPoint:
+                guard let pts = element.pointee.points else { return }
                 dict["type"] = "line"
-                dict["x"] = Double(element.pointee.points[0].x)
-                dict["y"] = Double(element.pointee.points[0].y)
+                dict["x"] = Double(pts[0].x)
+                dict["y"] = Double(pts[0].y)
 
             case .addQuadCurveToPoint:
+                guard let pts = element.pointee.points else { return }
                 dict["type"] = "quad"
-                dict["cpx"] = Double(element.pointee.points[0].x)
-                dict["cpy"] = Double(element.pointee.points[0].y)
-                dict["x"] = Double(element.pointee.points[1].x)
-                dict["y"] = Double(element.pointee.points[1].y)
+                dict["cpx"] = Double(pts[0].x)
+                dict["cpy"] = Double(pts[0].y)
+                dict["x"] = Double(pts[1].x)
+                dict["y"] = Double(pts[1].y)
 
             case .addCurveToPoint:
+                guard let pts = element.pointee.points else { return }
                 dict["type"] = "curve"
-                dict["cp1x"] = Double(element.pointee.points[0].x)
-                dict["cp1y"] = Double(element.pointee.points[0].y)
-                dict["cp2x"] = Double(element.pointee.points[1].x)
-                dict["cp2y"] = Double(element.pointee.points[1].y)
-                dict["x"] = Double(element.pointee.points[2].x)
-                dict["y"] = Double(element.pointee.points[2].y)
+                dict["cp1x"] = Double(pts[0].x)
+                dict["cp1y"] = Double(pts[0].y)
+                dict["cp2x"] = Double(pts[1].x)
+                dict["cp2y"] = Double(pts[1].y)
+                dict["x"] = Double(pts[2].x)
+                dict["y"] = Double(pts[2].y)
 
             case .closeSubpath:
                 dict["type"] = "close"

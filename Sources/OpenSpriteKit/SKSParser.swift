@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import OpenCoreGraphics
 
 /// Errors that can occur during .sks file parsing.
 public enum SKSParserError: Error {

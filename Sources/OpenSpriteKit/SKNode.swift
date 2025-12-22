@@ -4,6 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
 import OpenCoreAnimation
 
 /// The base class of all SpriteKit nodes.

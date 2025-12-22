@@ -4,6 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
+import OpenCoreGraphics
+
 /// The abstract base class for objects that connect physics bodies.
 ///
 /// An `SKPhysicsJoint` object connects two physics bodies so that they are simulated together
