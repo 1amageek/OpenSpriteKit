@@ -93,6 +93,8 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
         super.init()
         physicsWorld.scene = self
         layer.backgroundColor = backgroundColor.cgColor
+        // Scene layer should use (0, 0) anchor so it fills from top-left of viewport
+        layer.anchorPoint = CGPoint(x: 0, y: 0)
     }
 
     /// Creates a new scene object with the specified size.
@@ -104,6 +106,9 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
         physicsWorld.scene = self
         layer.backgroundColor = backgroundColor.cgColor
         layer.bounds = CGRect(origin: .zero, size: size)
+        // Scene layer should use (0, 0) anchor so it fills from top-left of viewport
+        // This overrides the default (0.5, 0.5) from SKNode which would center the layer at origin
+        layer.anchorPoint = CGPoint(x: 0, y: 0)
     }
 
     /// Creates a scene from a file in the app bundle.
