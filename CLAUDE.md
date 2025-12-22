@@ -335,6 +335,65 @@ internal class ActionScheduler {
 }
 ```
 
+#### 4. Text Rendering (SKLabelNode)
+
+Text rendering follows the delegate pattern, with size measurement handled entirely by the renderer layer.
+
+**Architecture Flow:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      OpenSpriteKit                               │
+├─────────────────────────────────────────────────────────────────┤
+│  SKLabelNode                                                     │
+│    - Sets CATextLayer properties (text, font, fontSize)          │
+│    - Sets bounds.width only for wrapping (preferredMaxLayoutWidth)│
+│    - NO platform-specific code                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    OpenCoreAnimation                             │
+├─────────────────────────────────────────────────────────────────┤
+│  CAWebGPURenderer.renderTextLayer()  (#if arch(wasm32))         │
+│    - If bounds is empty → measureTextSize() with Canvas2D       │
+│    - Creates offscreen canvas with measured dimensions           │
+│    - Renders text to canvas → converts to WebGPU texture        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Size Determination Logic:**
+
+| SKLabelNode Setting | layer.bounds | Renderer Behavior |
+|---------------------|--------------|-------------------|
+| Default (no constraints) | `.zero` | Auto-measure with Canvas2D |
+| `preferredMaxLayoutWidth = 200` | `(0,0,200,0)` | Use width, measure height |
+| `lineBreakMode = .byWordWrapping` | - | Wrap text at `maxWidth` |
+
+**Key Implementation Details:**
+
+1. **SKLabelNode.updateLayerBounds()**: Only sets width when `preferredMaxLayoutWidth > 0`, otherwise leaves bounds as zero for renderer to auto-measure.
+
+2. **CAWebGPURenderer.measureTextSize()**: Uses Canvas2D `measureText()` API with the same word-wrapping algorithm as `drawWrappedText()` to ensure consistency.
+
+3. **Algorithm Consistency**: Both measurement and rendering use identical logic:
+   ```swift
+   // Word wrapping (same in both functions)
+   let testLine = line.isEmpty ? String(word) : line + " " + String(word)
+   let testWidth = ctx.measureText(testLine).width
+   if testWidth > maxWidth && !line.isEmpty {
+       // Start new line
+   }
+   ```
+
+**Supported Scenarios:**
+
+| Scenario | isWrapped | maxWidth | Result |
+|----------|-----------|----------|--------|
+| Single line | false | nil | Auto-width, single line |
+| Single line with clip | false | 200 | Width=200, text clipped |
+| Multi-line wrap | true | 200 | Width=200, height=lines×lineHeight |
+
 ### Rendering Strategy
 
 #### Sprite Batching
