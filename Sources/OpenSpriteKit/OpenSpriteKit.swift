@@ -6,3 +6,4 @@
 
 // Re-export SIMD types from SIMDSupport module
 @_exported import SIMDSupport
+@_exported import OpenCoreGraphics
