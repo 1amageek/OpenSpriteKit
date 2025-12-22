@@ -42,6 +42,7 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
     open var text: String? {
         didSet {
             textLayer.string = text
+            updateLayerBounds()
         }
     }
 
@@ -49,6 +50,7 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
     open var attributedText: NSAttributedString? {
         didSet {
             textLayer.string = attributedText
+            updateLayerBounds()
         }
     }
 
@@ -76,6 +78,25 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
     open var fontSize: CGFloat = 32.0 {
         didSet {
             textLayer.fontSize = fontSize
+            updateLayerBounds()
+        }
+    }
+
+    // MARK: - Layer Bounds
+
+    /// Updates layer bounds based on preferredMaxLayoutWidth.
+    ///
+    /// Text size measurement is handled by the renderer (CAWebGPURenderer).
+    /// If bounds is empty, the renderer will auto-measure text using Canvas2D.
+    /// This method only sets bounds width when preferredMaxLayoutWidth is specified
+    /// (for multi-line text wrapping).
+    private func updateLayerBounds() {
+        if preferredMaxLayoutWidth > 0 {
+            // Set width for text wrapping - height will be calculated by renderer
+            layer.bounds = CGRect(x: 0, y: 0, width: preferredMaxLayoutWidth, height: 0)
+        } else {
+            // Let renderer auto-measure the text size
+            layer.bounds = .zero
         }
     }
 
@@ -153,14 +174,16 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
     /// Creates a new label node.
     public override init() {
         super.init()
+        syncLayerProperties()
     }
 
     /// Initializes a new label object with a specified font.
     ///
     /// - Parameter fontName: The name of the font to use for the label.
     public init(fontNamed fontName: String?) {
-        self.fontName = fontName
         super.init()
+        self.fontName = fontName
+        syncLayerProperties()
     }
 
     /// Initializes a new label object with a text string.
@@ -177,6 +200,19 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
     public convenience init(attributedText: NSAttributedString?) {
         self.init()
         self.attributedText = attributedText
+    }
+
+    /// Syncs all properties to the layer after initialization.
+    private func syncLayerProperties() {
+        textLayer.foregroundColor = fontColor?.cgColor
+        textLayer.fontSize = fontSize
+        #if canImport(QuartzCore)
+        textLayer.font = fontName as CFTypeRef?
+        #else
+        textLayer.font = fontName
+        #endif
+        updateTextLayerAlignment()
+        updateTextLayerTruncation()
     }
 
 }

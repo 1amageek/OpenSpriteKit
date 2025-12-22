@@ -73,13 +73,31 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
     // MARK: - Color Properties
 
     /// The sprite's color.
-    open var color: SKColor = .white
+    open var color: SKColor = .white {
+        didSet {
+            updateLayerBackgroundColor()
+        }
+    }
 
     /// A floating-point value that describes how the color is blended with the sprite's texture.
     ///
     /// A value of 0.0 means the texture is used without any color blending.
     /// A value of 1.0 means the color is used entirely.
-    open var colorBlendFactor: CGFloat = 0.0
+    open var colorBlendFactor: CGFloat = 0.0 {
+        didSet {
+            updateLayerBackgroundColor()
+        }
+    }
+
+    /// Updates the layer's background color based on color and colorBlendFactor.
+    private func updateLayerBackgroundColor() {
+        // Only set backgroundColor when using solid color (no texture and full blend)
+        if texture == nil && colorBlendFactor > 0 {
+            layer.backgroundColor = color.cgColor
+        } else {
+            layer.backgroundColor = nil
+        }
+    }
 
     // MARK: - Blending Properties
 
@@ -356,6 +374,9 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
         self.color = color
         self.size = size
         super.init()
+        // Manually update layer since didSet isn't called during init
+        updateLayerBounds()
+        updateLayerContents()
     }
 
     /// Initializes a textured sprite with a normal map to simulate 3D lighting.
@@ -376,6 +397,7 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
     public convenience init(color: SKColor, size: CGSize) {
         self.init(texture: nil, color: color, size: size)
         self.colorBlendFactor = 1.0
+        layer.backgroundColor = color.cgColor
     }
 
 

@@ -485,6 +485,7 @@ open class SKTexture: @unchecked Sendable {
         let bytesPerRow = width * bytesPerPixel
         let totalBytes = height * bytesPerRow
 
+        #if canImport(Dispatch)
         DispatchQueue.global(qos: .userInitiated).async {
             var pixelData = Data(count: totalBytes)
 
@@ -512,6 +513,29 @@ open class SKTexture: @unchecked Sendable {
                 completionHandler()
             }
         }
+        #else
+        // WASM: Synchronous preload (no threading)
+        var pixelData = Data(count: totalBytes)
+
+        pixelData.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: .deviceRGB,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            ) else {
+                return
+            }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+
+        self.decodedData = pixelData
+        self.isPreloaded = true
+        completionHandler()
+        #endif
     }
 
     /// Preloads multiple textures into memory.
@@ -525,6 +549,7 @@ open class SKTexture: @unchecked Sendable {
             return
         }
 
+        #if canImport(Dispatch)
         // Preload all textures concurrently
         let group = DispatchGroup()
         for texture in textures {
@@ -536,6 +561,13 @@ open class SKTexture: @unchecked Sendable {
         group.notify(queue: .main) {
             completionHandler()
         }
+        #else
+        // WASM: Preload synchronously (each preload is sync on WASM)
+        for texture in textures {
+            texture.preload {}
+        }
+        completionHandler()
+        #endif
     }
 
     /// Removes the cached decoded data to free memory.
@@ -658,6 +690,7 @@ open class SKTexture: @unchecked Sendable {
     /// sprite.texture = texture
     /// ```
     public static func load(from url: URL) async throws -> SKTexture {
+        #if canImport(Dispatch)
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
@@ -672,6 +705,18 @@ open class SKTexture: @unchecked Sendable {
                 }
             }
         }
+        #else
+        // WASM: Load synchronously
+        do {
+            let data = try Data(contentsOf: url)
+            guard let texture = SKTexture(imageData: data) else {
+                throw SKResourceError.decodingFailed
+            }
+            return texture
+        } catch {
+            throw SKResourceError.networkFailed
+        }
+        #endif
     }
 
     /// Returns metadata about an image file without fully decoding it.
@@ -743,9 +788,8 @@ open class SKTextureAtlas: @unchecked Sendable {
             if let texture = value as? SKTexture {
                 textures[name] = texture
                 textureNames.append(name)
-            } else if CFGetTypeID(value as CFTypeRef) == CGImage.typeID {
-                // Handle CGImage (CoreFoundation type)
-                let cgImage = value as! CGImage
+            } else if let cgImage = value as? CGImage {
+                // Handle CGImage
                 let texture = SKTexture(cgImage: cgImage)
                 textures[name] = texture
                 textureNames.append(name)
@@ -821,6 +865,7 @@ open class SKTextureAtlas: @unchecked Sendable {
     ///   - atlases: The atlases to preload.
     ///   - completionHandler: A block called when preloading is complete.
     public class func preloadTextureAtlases(_ atlases: [SKTextureAtlas], withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+        #if canImport(Dispatch)
         let group = DispatchGroup()
         for atlas in atlases {
             group.enter()
@@ -831,6 +876,13 @@ open class SKTextureAtlas: @unchecked Sendable {
         group.notify(queue: .main) {
             completionHandler()
         }
+        #else
+        // WASM: Preload synchronously (each preload is sync on WASM)
+        for atlas in atlases {
+            atlas.preload {}
+        }
+        completionHandler()
+        #endif
     }
 
     /// Preloads multiple named texture atlases into memory.

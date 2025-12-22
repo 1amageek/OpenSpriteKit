@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import OpenCoreGraphics
 
 /// A node that lights surrounding nodes.
 ///

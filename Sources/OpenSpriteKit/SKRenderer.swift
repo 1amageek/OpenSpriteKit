@@ -34,7 +34,17 @@ open class SKRenderer: @unchecked Sendable {
     // MARK: - Properties
 
     /// The scene to render.
-    open var scene: SKScene?
+    open var scene: SKScene? {
+        didSet {
+            if let newScene = scene {
+                // Call sceneDidLoad() once when the scene is first assigned
+                if !newScene._didCallSceneDidLoad {
+                    newScene._didCallSceneDidLoad = true
+                    newScene.sceneDidLoad()
+                }
+            }
+        }
+    }
 
     /// A Boolean value that indicates whether the renderer ignores sibling order for rendering.
     open var ignoresSiblingOrder: Bool = false

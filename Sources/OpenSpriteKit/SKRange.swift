@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import OpenCoreGraphics
 
 /// A definition of a range of floating-point values.
 ///

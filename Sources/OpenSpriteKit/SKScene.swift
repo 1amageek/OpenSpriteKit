@@ -63,7 +63,11 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
     // MARK: - Background
 
     /// The background color of the scene.
-    open var backgroundColor: SKColor = .gray
+    open var backgroundColor: SKColor = .gray {
+        didSet {
+            layer.backgroundColor = backgroundColor.cgColor
+        }
+    }
 
     // MARK: - Physics
 
@@ -88,6 +92,7 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
     public override init() {
         super.init()
         physicsWorld.scene = self
+        layer.backgroundColor = backgroundColor.cgColor
     }
 
     /// Creates a new scene object with the specified size.
@@ -97,6 +102,8 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
         self._size = size
         super.init()
         physicsWorld.scene = self
+        layer.backgroundColor = backgroundColor.cgColor
+        layer.bounds = CGRect(origin: .zero, size: size)
     }
 
     /// Creates a scene from a file in the app bundle.

@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import OpenCoreGraphics
 #if canImport(AVFoundation)
 import AVFoundation
 #endif

@@ -4,7 +4,9 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
+import Foundation
 import OpenCoreAnimation
+import OpenCoreGraphics
 
 #if arch(wasm32)
 import JavaScriptKit
@@ -128,7 +130,6 @@ internal final class SKTextureManager {
         let height = cgImage.height
         let bytesPerPixel = 4
         let bytesPerRow = width * bytesPerPixel
-        let totalBytes = bytesPerRow * height
 
         // If the image already has compatible RGBA data, use it directly
         if let data = cgImage.data,
