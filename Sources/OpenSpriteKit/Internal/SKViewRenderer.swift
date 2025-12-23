@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
-import OpenCoreAnimation
 
 #if arch(wasm32)
 import JavaScriptKit

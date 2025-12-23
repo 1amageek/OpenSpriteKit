@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 
 /// A specification for constraining a node's position or rotation.
 ///

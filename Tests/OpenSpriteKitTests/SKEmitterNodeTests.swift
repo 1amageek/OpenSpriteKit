@@ -363,14 +363,14 @@ struct SKKeyframeSequenceTests {
     @Test("Interpolation mode defaults to linear")
     func testInterpolationModeDefault() {
         let keyframes = SKKeyframeSequence(keyframeValues: [0.0, 1.0] as [NSNumber], times: [0.0, 1.0])
-
-        #expect(keyframes.interpolationMode == .linear)
+        // Use fully qualified enum name to work around Swift compiler bug with #expect macro
+        #expect(keyframes.interpolationMode == SKInterpolationMode.linear)
     }
 
     @Test("Repeat mode defaults to clamp")
     func testRepeatModeDefault() {
         let keyframes = SKKeyframeSequence(keyframeValues: [0.0, 1.0] as [NSNumber], times: [0.0, 1.0])
-
-        #expect(keyframes.repeatMode == .clamp)
+        // Use fully qualified enum name to work around Swift compiler bug with #expect macro
+        #expect(keyframes.repeatMode == SKRepeatMode.clamp)
     }
 }

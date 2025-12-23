@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 
 // Note: SceneKit is not available in WASM environments, so SK3DNode provides
 // a stub implementation for API compatibility. In actual SpriteKit on Apple platforms,

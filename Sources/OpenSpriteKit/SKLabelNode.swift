@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
-import OpenCoreAnimation
 
 /// Line break modes for text rendering.
 public enum NSLineBreakMode: Int, Sendable, Hashable {
@@ -39,9 +37,12 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
     // MARK: - Text Properties
 
     /// The string that the label node displays.
+    private var _skText: String?
     open var text: String? {
-        didSet {
-            textLayer.string = text
+        get { return _skText }
+        set {
+            _skText = newValue
+            textLayer.string = newValue
             updateLayerBounds()
         }
     }

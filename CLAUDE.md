@@ -110,35 +110,17 @@ This library depends on:
   - `CIImage`, `CIFilter`, `CIContext`
   - Filter effects and image processing
 
-### Conditional Imports for Dependencies
+### DO NOT add imports in source files
 
-**IMPORTANT**: Dependencies are re-exported from `OpenSpriteKit.swift` using `@_exported import`. This means:
+`OpenSpriteKit.swift` で `@_exported import` しているため、他のソースファイルでインポートは不要。
 
-1. **In `OpenSpriteKit.swift` only**:
 ```swift
-#if canImport(CoreGraphics)
-@_exported import CoreGraphics
-#else
-@_exported import OpenCoreGraphics
-#endif
+// ❌ WRONG - causes ambiguity errors
+import OpenCoreGraphics
+import OpenCoreAnimation
 
-#if canImport(CoreImage)
-@_exported import CoreImage
-#else
-@_exported import OpenCoreImage
-#endif
-
-@_exported import Foundation
+// ✅ CORRECT - no imports needed, types are available through re-export
 ```
-
-2. **In all other source files**: No imports needed! CG*, CI*, and Foundation types are automatically available.
-
-3. **In test files**: Only `@testable import OpenSpriteKit` is needed - all CG* types are available through the re-export.
-
-This pattern ensures:
-- **During tests** (`swift test`): Native CoreGraphics/CoreImage are used (Apple platforms)
-- **For WASM builds** (`swift build --triple wasm32-unknown-wasi`): OpenCoreGraphics/OpenCoreImage are used
-- Clean source files without repetitive import statements
 
 ## Types to Implement
 
@@ -565,6 +547,37 @@ let scene = SKSParser.scene(fileNamed: "GameScene")
 5. **Phase 5**: Implement SKSParser for .sks file support
 
 ## Coding Rules
+
+### DO NOT rely on `didSet` during initialization
+
+Swift の `didSet` は初期化時に呼ばれない。CALayer にプロパティを同期する SKNode サブクラスでは、必ず `init()` の最後で `syncXXXProperties()` を呼ぶこと。
+
+```swift
+// ❌ WRONG - didSet is not called during init
+open var fillColor: SKColor = .clear {
+    didSet { shapeLayer.fillColor = fillColor.cgColor }
+}
+
+// ✅ CORRECT - Call sync method in init
+public override init() {
+    super.init()
+    syncShapeLayerProperties()
+}
+```
+
+### DO NOT use CoreGraphics C-style APIs
+
+OpenCoreGraphics は Swift ネイティブ API を提供する。C スタイル関数は存在しない。
+
+```swift
+// ❌ WRONG
+CGColorSpaceCreateDeviceRGB()
+CGDataProvider(data: data as CFData)
+
+// ✅ CORRECT
+CGColorSpace.deviceRGB
+CGDataProvider(data: data)
+```
 
 ### Internal Delegate Pattern for Architecture-Specific Code
 

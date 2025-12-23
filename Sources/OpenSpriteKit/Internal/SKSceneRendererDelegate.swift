@@ -4,7 +4,6 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import OpenCoreAnimation
 
 /// Protocol for rendering backends that execute scene rendering operations.
 ///

@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 import OpenImageIO
 
 #if arch(wasm32)

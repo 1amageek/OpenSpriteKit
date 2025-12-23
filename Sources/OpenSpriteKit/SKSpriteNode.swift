@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
-import OpenCoreAnimation
 
 /// An image or solid color.
 ///

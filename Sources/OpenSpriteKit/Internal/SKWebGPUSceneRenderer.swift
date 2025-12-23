@@ -6,7 +6,6 @@
 
 #if arch(wasm32)
 
-import OpenCoreAnimation
 import JavaScriptKit
 
 /// WebGPU-based scene renderer for WASM environments.

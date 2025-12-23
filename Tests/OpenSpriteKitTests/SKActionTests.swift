@@ -604,8 +604,7 @@ struct SKActionCustomTests {
 
     @Test("run block creates instant action with block type")
     func testRunBlock() {
-        var executed = false
-        let action = SKAction.run { executed = true }
+        let action = SKAction.run { /* block content */ }
 
         #expect(action.duration == 0)
         if case .runBlock = action.actionType {

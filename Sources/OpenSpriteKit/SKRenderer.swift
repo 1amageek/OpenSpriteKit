@@ -6,8 +6,6 @@
 
 import Foundation
 import OpenImageIO
-import OpenCoreGraphics
-import OpenCoreAnimation
 
 #if arch(wasm32)
 import JavaScriptKit

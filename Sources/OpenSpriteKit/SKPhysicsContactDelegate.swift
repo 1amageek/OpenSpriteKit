@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 
 /// Methods your app can implement to respond when physics bodies come into contact.
 ///

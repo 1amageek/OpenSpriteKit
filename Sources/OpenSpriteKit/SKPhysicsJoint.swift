@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 
 /// The abstract base class for objects that connect physics bodies.
 ///

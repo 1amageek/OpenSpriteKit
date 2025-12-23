@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreAnimation
-import OpenCoreGraphics
 
 /// A mathematical shape that can be stroked or filled.
 ///
@@ -30,9 +28,12 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
     // MARK: - Path Property
 
     /// The path that defines the shape.
+    private var _skPath: CGPath?
     open var path: CGPath? {
-        didSet {
-            shapeLayer.path = path
+        get { return _skPath }
+        set {
+            _skPath = newValue
+            shapeLayer.path = newValue
         }
     }
 
@@ -303,6 +304,20 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
     /// Creates a new shape node.
     public override init() {
         super.init()
+        syncShapeLayerProperties()
+    }
+
+    /// Syncs all properties to the backing CAShapeLayer after initialization.
+    ///
+    /// This is necessary because `didSet` observers are not called during
+    /// property initialization, so we must manually sync the default values.
+    private func syncShapeLayerProperties() {
+        shapeLayer.fillColor = fillColor.cgColor
+        shapeLayer.strokeColor = strokeColor.cgColor
+        shapeLayer.lineWidth = lineWidth
+        shapeLayer.lineCap = CAShapeLayerLineCap(from: lineCap)
+        shapeLayer.lineJoin = CAShapeLayerLineJoin(from: lineJoin)
+        shapeLayer.miterLimit = miterLimit
     }
 
     /// Creates a shape node from a Core Graphics path.

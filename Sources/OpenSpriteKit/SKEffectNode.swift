@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 import OpenCoreImage
 
 /// A node that renders its children into a separate buffer, optionally applying an effect, before drawing the final result.

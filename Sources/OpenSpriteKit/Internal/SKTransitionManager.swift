@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreAnimation
 
 /// Manages scene transitions and their animations.
 @MainActor

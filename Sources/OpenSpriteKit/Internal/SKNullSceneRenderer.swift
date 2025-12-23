@@ -4,7 +4,6 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import OpenCoreAnimation
 
 /// A no-op scene renderer for testing and non-WASM builds.
 ///

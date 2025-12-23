@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 
 /// A texture whose contents can be dynamically updated.
 ///
@@ -130,7 +129,7 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
         guard width > 0 && height > 0 else { return }
 
         // Create a CGImage from the pixel data
-        guard let colorSpace = .deviceRGB as CGColorSpace? else { return }
+        let colorSpace = CGColorSpace.deviceRGB
 
         let provider = CGDataProvider(data: data)
 

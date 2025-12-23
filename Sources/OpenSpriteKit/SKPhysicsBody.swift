@@ -5,7 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreGraphics
 
 /// The shape type for a physics body collision shape.
 public enum SKPhysicsBodyShape {
