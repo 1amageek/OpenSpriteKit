@@ -95,6 +95,18 @@ open class SKNode: @unchecked Sendable {
         return CGRect(origin: position, size: .zero)
     }
 
+    /// A rectangle in the node's local coordinate system that defines its content area.
+    ///
+    /// Unlike `frame`, which is in the parent's coordinate system, `_contentBounds` is in the
+    /// node's own coordinate system. The origin represents the offset from the node's
+    /// position based on the anchor point, and the size represents the content dimensions.
+    ///
+    /// The default implementation returns a zero-sized rectangle at the origin.
+    /// Subclasses should override this to return their actual content bounds.
+    internal var _contentBounds: CGRect {
+        return .zero
+    }
+
     // MARK: - Node Tree Properties
 
     /// The scene node that contains this node.
@@ -282,8 +294,28 @@ open class SKNode: @unchecked Sendable {
         return unarchive(from: data)
     }
 
-    /// Copies properties from another node.
+    /// Copies properties from another node, including a deep copy of all children.
+    ///
+    /// This method delegates to `_copyNodeProperties(from:)` to ensure subclass-specific
+    /// properties are also copied correctly during .sks file loading.
     internal func copyProperties(from node: SKNode) {
+        self._copyNodeProperties(from: node)
+    }
+
+    // MARK: - Copying
+
+    /// Creates a copy of this node, including all child nodes.
+    ///
+    /// - Returns: A new node with the same properties and a deep copy of all children.
+    open func copy() -> SKNode {
+        let nodeCopy = SKNode()
+        nodeCopy._copyNodeProperties(from: self)
+        return nodeCopy
+    }
+
+    /// Internal helper to copy SKNode properties.
+    /// Subclasses override this to copy their specific properties.
+    internal func _copyNodeProperties(from node: SKNode) {
         self.position = node.position
         self.zPosition = node.zPosition
         self.zRotation = node.zRotation
@@ -296,36 +328,15 @@ open class SKNode: @unchecked Sendable {
         self.name = node.name
         self.isUserInteractionEnabled = node.isUserInteractionEnabled
         self.focusBehavior = node.focusBehavior
-        self.physicsBody = node.physicsBody
-        self.constraints = node.constraints
+        self.userData = node.userData
+        self.physicsBody = node.physicsBody?.copy()
+        self.constraints = node.constraints?.map { $0.copy() }
+        self.reachConstraints = node.reachConstraints
 
-        // Copy children
+        // Deep copy all children
         for child in node.children {
-            self.addChild(child)
+            self.addChild(child.copy())
         }
-    }
-
-    // MARK: - Copying
-
-    /// Creates a copy of this node.
-    ///
-    /// - Returns: A new node with the same properties.
-    open func copy() -> SKNode {
-        let nodeCopy = SKNode()
-        nodeCopy.position = position
-        nodeCopy.zPosition = zPosition
-        nodeCopy.zRotation = zRotation
-        nodeCopy.xScale = xScale
-        nodeCopy.yScale = yScale
-        nodeCopy.alpha = alpha
-        nodeCopy.isHidden = isHidden
-        nodeCopy.speed = speed
-        nodeCopy.isPaused = isPaused
-        nodeCopy.name = name
-        nodeCopy.isUserInteractionEnabled = isUserInteractionEnabled
-        nodeCopy.focusBehavior = focusBehavior
-        nodeCopy.userData = userData
-        return nodeCopy
     }
 
     // MARK: - Scaling
@@ -343,13 +354,14 @@ open class SKNode: @unchecked Sendable {
     ///
     /// - Returns: The accumulated frame of the node and its children.
     open func calculateAccumulatedFrame() -> CGRect {
-        var accumulated = frame
+        var accumulated = frame  // In parent's coordinate system
         for child in children {
-            let childFrame = child.calculateAccumulatedFrame()
-            // Transform the child frame to this node's coordinate system
-            // accounting for the child's position, scale, and rotation
-            let convertedFrame = transformChildFrame(childFrame, child: child)
-            accumulated = accumulated.union(convertedFrame)
+            // child.calculateAccumulatedFrame() returns in THIS node's local coordinate system
+            // (child's parent = this node). We need to transform it to this node's parent
+            // coordinate system using this node's transform (position, scale, rotation).
+            let childAccumInLocal = child.calculateAccumulatedFrame()
+            let childAccumInParent = transformRectToParent(childAccumInLocal)
+            accumulated = accumulated.union(childAccumInParent)
         }
         return accumulated
     }
@@ -698,7 +710,13 @@ open class SKNode: @unchecked Sendable {
         // Handle recursive search
         if pattern.hasPrefix("//") {
             let subpattern = String(pattern.dropFirst(2))
-            enumerateAllDescendants(root: root, pattern: subpattern, stop: &stop, block: block)
+            // Split the subpattern into components for path-based recursive search
+            // e.g., "//node/child" should find all "node" descendants, then search for "child" in each
+            let components = subpattern.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+            if components.isEmpty {
+                return
+            }
+            enumerateAllDescendantsWithPath(root: root, components: components, stop: &stop, block: block)
             return
         }
 
@@ -707,18 +725,36 @@ open class SKNode: @unchecked Sendable {
         enumerateWithComponents(components, from: root, stop: &stop, block: block)
     }
 
-    private func enumerateAllDescendants(root: SKNode, pattern: String, stop: inout ObjCBool, block: (SKNode, UnsafeMutablePointer<ObjCBool>) -> Void) {
+    private func enumerateAllDescendantsWithPath(root: SKNode, components: [String], stop: inout ObjCBool, block: (SKNode, UnsafeMutablePointer<ObjCBool>) -> Void) {
+        guard !components.isEmpty else { return }
         if stop.boolValue { return }
 
-        for child in root.children {
+        let firstPattern = components[0]
+        let remainingComponents = Array(components.dropFirst())
+
+        func findMatchingDescendants(from node: SKNode) {
             if stop.boolValue { return }
 
-            if matchesPattern(child.name, pattern: pattern) {
-                block(child, &stop)
+            for child in node.children {
                 if stop.boolValue { return }
+
+                if matchesPattern(child.name, pattern: firstPattern) {
+                    if remainingComponents.isEmpty {
+                        // No more components, this is a final match
+                        block(child, &stop)
+                        if stop.boolValue { return }
+                    } else {
+                        // Continue searching from this node with remaining components
+                        enumerateWithComponents(remainingComponents, from: child, stop: &stop, block: block)
+                        if stop.boolValue { return }
+                    }
+                }
+                // Continue searching deeper in the tree
+                findMatchingDescendants(from: child)
             }
-            enumerateAllDescendants(root: child, pattern: pattern, stop: &stop, block: block)
         }
+
+        findMatchingDescendants(from: root)
     }
 
     private func enumerateWithComponents(_ components: [String], from node: SKNode, stop: inout ObjCBool, block: (SKNode, UnsafeMutablePointer<ObjCBool>) -> Void) {
@@ -727,6 +763,16 @@ open class SKNode: @unchecked Sendable {
 
         var remaining = components
         let first = remaining.removeFirst()
+
+        // Handle leading "/" - empty first component means "start from this node"
+        // e.g., "/foo" splits to ["", "foo"], so skip empty and search children for "foo"
+        if first.isEmpty {
+            if remaining.isEmpty {
+                return
+            }
+            enumerateWithComponents(remaining, from: node, stop: &stop, block: block)
+            return
+        }
 
         if remaining.isEmpty {
             // Last component - call block for matches
@@ -799,7 +845,13 @@ open class SKNode: @unchecked Sendable {
         // Handle recursive search
         if pattern.hasPrefix("//") {
             let subpattern = String(pattern.dropFirst(2))
-            return searchAllDescendants(root: root, pattern: subpattern)
+            // Split the subpattern into components for path-based recursive search
+            // e.g., "//node/child" should find all "node" descendants, then search for "child" in each
+            let components = subpattern.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+            if components.isEmpty {
+                return []
+            }
+            return searchAllDescendantsWithPath(root: root, components: components)
         }
 
         // Handle path-based search
@@ -812,6 +864,15 @@ open class SKNode: @unchecked Sendable {
 
         var current = components
         let first = current.removeFirst()
+
+        // Handle leading "/" - empty first component means "start from this node"
+        // e.g., "/foo" splits to ["", "foo"], so skip empty and search children for "foo"
+        if first.isEmpty {
+            if current.isEmpty {
+                return []
+            }
+            return searchWithComponents(current, from: node)
+        }
 
         var matches: [SKNode] = []
 
@@ -834,22 +895,31 @@ open class SKNode: @unchecked Sendable {
         return matches.flatMap { searchWithComponents(current, from: $0) }
     }
 
-    private func searchAllDescendants(root: SKNode, pattern: String) -> [SKNode] {
+    private func searchAllDescendantsWithPath(root: SKNode, components: [String]) -> [SKNode] {
+        guard !components.isEmpty else { return [] }
+
         var results: [SKNode] = []
+        let firstPattern = components[0]
+        let remainingComponents = Array(components.dropFirst())
 
-        func search(node: SKNode) {
-            if matchesPattern(node.name, pattern: pattern) {
-                results.append(node)
-            }
+        func findMatchingDescendants(from node: SKNode) {
             for child in node.children {
-                search(node: child)
+                if matchesPattern(child.name, pattern: firstPattern) {
+                    if remainingComponents.isEmpty {
+                        // No more components, this is a final match
+                        results.append(child)
+                    } else {
+                        // Continue searching from this node with remaining components
+                        let subResults = searchWithComponents(remainingComponents, from: child)
+                        results.append(contentsOf: subResults)
+                    }
+                }
+                // Continue searching deeper in the tree
+                findMatchingDescendants(from: child)
             }
         }
 
-        for child in root.children {
-            search(node: child)
-        }
-
+        findMatchingDescendants(from: root)
         return results
     }
 
@@ -918,8 +988,12 @@ open class SKNode: @unchecked Sendable {
 
     /// Returns a Boolean value that indicates whether a point lies inside the parent's coordinate system.
     ///
-    /// - Parameter p: A point in the node's coordinate system.
+    /// - Parameter p: A point in the parent's coordinate system.
     /// - Returns: `true` if the point is inside the node's frame.
+    ///
+    /// This method performs a simple geometric test using the node's `frame` property,
+    /// which is in the parent's coordinate system. It does not check visibility or
+    /// user interaction state—those checks are performed by `atPoint(_:)` and `nodes(at:)`.
     open func contains(_ p: CGPoint) -> Bool {
         return frame.contains(p)
     }
@@ -927,17 +1001,57 @@ open class SKNode: @unchecked Sendable {
     /// Returns the deepest visible descendant that intersects a point.
     ///
     /// - Parameter p: A point in the node's coordinate system.
-    /// - Returns: The deepest descendant at the point, or this node if no descendants are at the point.
+    /// - Returns: The deepest hittable descendant at the point, or this node if no hittable descendants are found.
+    ///
+    /// A node is hittable if:
+    /// - Its accumulated alpha > 0 (product of all ancestor alphas)
+    /// - It is not hidden (and no ancestor is hidden)
+    /// - Its own isUserInteractionEnabled is true
     open func atPoint(_ p: CGPoint) -> SKNode {
+        // If this node is invisible, entire subtree is invisible - return self
+        if isHidden || alpha == 0 { return self }
+
+        // Search with accumulated alpha (visibility propagates through ancestors)
+        if let result = atPointHelper(p, accumulatedAlpha: alpha) {
+            return result
+        }
+
+        // No hittable descendant found - return self only if self is hittable
+        if _contentBounds.contains(p) && isUserInteractionEnabled {
+            return self
+        }
+
+        // Nothing hittable at point - return self as fallback (standard SpriteKit behavior)
+        return self
+    }
+
+    /// Internal helper for atPoint that tracks accumulated properties.
+    private func atPointHelper(_ p: CGPoint, accumulatedAlpha: CGFloat) -> SKNode? {
         // Search children in reverse order (top-most first)
         for child in children.reversed() {
+            // Skip hidden children
             if child.isHidden { continue }
+
+            // Calculate effective properties for this child
+            let childEffectiveAlpha = accumulatedAlpha * child.alpha
+
+            // Skip if effectively invisible
+            if childEffectiveAlpha == 0 { continue }
+
             let childPoint = convertPointToChild(p, child: child)
-            if child.contains(childPoint) {
-                return child.atPoint(childPoint)
+
+            // Recurse into child's subtree
+            if let result = child.atPointHelper(childPoint, accumulatedAlpha: childEffectiveAlpha) {
+                return result
+            }
+
+            // Check if this child itself is hittable
+            if child._contentBounds.contains(childPoint) && child.isUserInteractionEnabled {
+                return child
             }
         }
-        return self
+
+        return nil
     }
 
     /// Converts a point from this node's coordinate system to a child's coordinate system.
@@ -973,29 +1087,44 @@ open class SKNode: @unchecked Sendable {
     ///
     /// - Parameter p: A point in the node's coordinate system.
     /// - Returns: An array of nodes at the specified point, sorted with topmost first.
+    ///
+    /// A node is hittable if:
+    /// - Its accumulated alpha > 0 (product of all ancestor alphas)
+    /// - It is not hidden (and no ancestor is hidden)
+    /// - Its own isUserInteractionEnabled is true
     open func nodes(at p: CGPoint) -> [SKNode] {
-        // Use a stack-based approach instead of recursion with captured variables
-        var stack: [(node: SKNode, point: CGPoint, accZ: CGFloat, depth: Int)] = [(self, p, 0, 0)]
+        // Stack includes accumulated alpha (visibility propagates through ancestors)
+        var stack: [(node: SKNode, point: CGPoint, accZ: CGFloat, depth: Int, accAlpha: CGFloat)] = [
+            (self, p, 0, 0, 1.0)  // Start with neutral accumulated alpha
+        ]
         var results: [(node: SKNode, z: CGFloat, depth: Int)] = []
         var depthCounter = 0
 
         while !stack.isEmpty {
-            let (node, point, accZ, _) = stack.removeLast()
+            let (node, point, accZ, _, parentAlpha) = stack.removeLast()
 
+            // Skip hidden nodes and their entire subtree
             if node.isHidden { continue }
+
+            // Calculate effective properties for this node
+            let effectiveAlpha = parentAlpha * node.alpha
+
+            // Skip if effectively invisible
+            if effectiveAlpha == 0 { continue }
 
             let currentDepth = depthCounter
             depthCounter += 1
             let nodeZ = accZ + node.zPosition
 
-            if node.contains(point) {
+            // Add to results only if hittable (visible AND interactive AND at point)
+            if node.isUserInteractionEnabled && node._contentBounds.contains(point) {
                 results.append((node, nodeZ, currentDepth))
             }
 
-            // Add children in reverse order so they're processed in correct order
+            // Add children with accumulated properties
             for child in node.children.reversed() {
                 let childPoint = node.convertPointToChild(point, child: child)
-                stack.append((child, childPoint, nodeZ, 0))
+                stack.append((child, childPoint, nodeZ, 0, effectiveAlpha))
             }
         }
 
@@ -1015,15 +1144,16 @@ open class SKNode: @unchecked Sendable {
     /// - Parameter node: The node to test for intersection.
     /// - Returns: `true` if the nodes' frames intersect.
     open func intersects(_ node: SKNode) -> Bool {
-        // Convert both frames to a common coordinate system
+        // Convert both bounds to a common coordinate system
         guard let commonAncestor = findCommonAncestor(with: node) else {
             return false
         }
 
-        let selfFrameInCommon = convertFrameToAncestor(frame, ancestor: commonAncestor)
-        let nodeFrameInCommon = node.convertFrameToAncestor(node.frame, ancestor: commonAncestor)
+        // Use bounds (local coords) and transform through the node chain
+        let selfBoundsInCommon = convertBoundsToAncestor(ancestor: commonAncestor)
+        let nodeBoundsInCommon = node.convertBoundsToAncestor(ancestor: commonAncestor)
 
-        return selfFrameInCommon.intersects(nodeFrameInCommon)
+        return selfBoundsInCommon.intersects(nodeBoundsInCommon)
     }
 
     private func findCommonAncestor(with other: SKNode) -> SKNode? {
@@ -1045,19 +1175,61 @@ open class SKNode: @unchecked Sendable {
         return nil
     }
 
-    private func convertFrameToAncestor(_ rect: CGRect, ancestor: SKNode) -> CGRect {
-        var result = rect
+    /// Converts this node's bounds to the coordinate system of an ancestor node.
+    ///
+    /// Starts with `bounds` (local coordinates) and applies each node's transform
+    /// going up the parent chain to the specified ancestor.
+    ///
+    /// - Parameter ancestor: The ancestor node whose coordinate system to convert to.
+    /// - Returns: The bounds rectangle in the ancestor's coordinate system.
+    private func convertBoundsToAncestor(ancestor: SKNode) -> CGRect {
+        var result = _contentBounds  // Start with local coords
         var current: SKNode? = self
+
+        // Transform through each node up to (but not including) the ancestor
         while let node = current, node !== ancestor {
-            result = CGRect(
-                x: result.origin.x + node.position.x,
-                y: result.origin.y + node.position.y,
-                width: result.width,
-                height: result.height
-            )
+            result = node.transformRectToParent(result)
             current = node.parent
         }
+
         return result
+    }
+
+    /// Transforms a rectangle from this node's local coordinate system to the parent's coordinate system.
+    ///
+    /// This applies the node's position, scale, and rotation to the rectangle.
+    /// If the node has rotation, the result is an axis-aligned bounding box (AABB) of the rotated rectangle.
+    private func transformRectToParent(_ rect: CGRect) -> CGRect {
+        // Transform all 4 corners and compute AABB
+        // This handles rotation and negative scale correctly
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY)
+        ]
+
+        let cosA = cos(zRotation)
+        let sinA = sin(zRotation)
+
+        var minX = CGFloat.infinity
+        var minY = CGFloat.infinity
+        var maxX = -CGFloat.infinity
+        var maxY = -CGFloat.infinity
+
+        for corner in corners {
+            let scaled = CGPoint(x: corner.x * xScale, y: corner.y * yScale)
+            let rotated = CGPoint(
+                x: scaled.x * cosA - scaled.y * sinA + position.x,
+                y: scaled.x * sinA + scaled.y * cosA + position.y
+            )
+            minX = min(minX, rotated.x)
+            minY = min(minY, rotated.y)
+            maxX = max(maxX, rotated.x)
+            maxY = max(maxY, rotated.y)
+        }
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     // MARK: - Coordinate Conversion

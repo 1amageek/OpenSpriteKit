@@ -134,6 +134,35 @@ open class SKFieldNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this field node.
+    open override func copy() -> SKNode {
+        let fieldCopy = SKFieldNode()
+        fieldCopy._copyNodeProperties(from: self)
+        return fieldCopy
+    }
+
+    /// Internal helper to copy SKFieldNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let field = node as? SKFieldNode else { return }
+
+        self.fieldType = field.fieldType
+        self.isEnabled = field.isEnabled
+        self.isExclusive = field.isExclusive
+        self.region = field.region
+        self.minimumRadius = field.minimumRadius
+        self.categoryBitMask = field.categoryBitMask
+        self.strength = field.strength
+        self.falloff = field.falloff
+        self.animationSpeed = field.animationSpeed
+        self.smoothness = field.smoothness
+        self.direction = field.direction
+        self.texture = field.texture
+        self.customEvaluator = field.customEvaluator
+    }
+
     // MARK: - Factory Methods
 
     /// Creates a field node that applies a force that resists the motion of physics bodies.

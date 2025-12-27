@@ -31,6 +31,24 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this transform node.
+    open override func copy() -> SKNode {
+        let transformCopy = SKTransformNode()
+        transformCopy._copyNodeProperties(from: self)
+        return transformCopy
+    }
+
+    /// Internal helper to copy SKTransformNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let transformNode = node as? SKTransformNode else { return }
+
+        self.xRotation = transformNode.xRotation
+        self.yRotation = transformNode.yRotation
+    }
+
     // MARK: - Setting Rotation
 
     /// Sets the rotation using Euler angles.

@@ -294,6 +294,17 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
         )
     }
 
+    /// A rectangle in the shape's local coordinate system that defines its content area.
+    ///
+    /// The bounds are the bounding box of the path without applying position, rotation,
+    /// or scale transformations. If no path is set, returns a zero-sized rectangle.
+    internal override var _contentBounds: CGRect {
+        guard let path = path else {
+            return .zero
+        }
+        return path.boundingBox
+    }
+
     // MARK: - Shader Attribute Properties
 
     /// The values of each attribute associated with the node's attached shader.
@@ -305,6 +316,37 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
     public override init() {
         super.init()
         syncShapeLayerProperties()
+    }
+
+    // MARK: - Copying
+
+    /// Creates a copy of this shape node.
+    open override func copy() -> SKNode {
+        let shapeCopy = SKShapeNode()
+        shapeCopy._copyNodeProperties(from: self)
+        return shapeCopy
+    }
+
+    /// Internal helper to copy SKShapeNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let shape = node as? SKShapeNode else { return }
+
+        self.path = shape.path
+        self.fillColor = shape.fillColor
+        self.fillTexture = shape.fillTexture
+        self.fillShader = shape.fillShader
+        self.strokeColor = shape.strokeColor
+        self.strokeTexture = shape.strokeTexture
+        self.strokeShader = shape.strokeShader
+        self.lineWidth = shape.lineWidth
+        self.glowWidth = shape.glowWidth
+        self.lineCap = shape.lineCap
+        self.lineJoin = shape.lineJoin
+        self.miterLimit = shape.miterLimit
+        self.isAntialiased = shape.isAntialiased
+        self.blendMode = shape.blendMode
+        self.attributeValues = shape.attributeValues
     }
 
     /// Syncs all properties to the backing CAShapeLayer after initialization.

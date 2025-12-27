@@ -67,4 +67,26 @@ open class SKLightNode: SKNode, @unchecked Sendable {
     public override init() {
         super.init()
     }
+
+    // MARK: - Copying
+
+    /// Creates a copy of this light node.
+    open override func copy() -> SKNode {
+        let lightCopy = SKLightNode()
+        lightCopy._copyNodeProperties(from: self)
+        return lightCopy
+    }
+
+    /// Internal helper to copy SKLightNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let light = node as? SKLightNode else { return }
+
+        self.isEnabled = light.isEnabled
+        self.categoryBitMask = light.categoryBitMask
+        self.ambientColor = light.ambientColor
+        self.lightColor = light.lightColor
+        self.shadowColor = light.shadowColor
+        self.falloff = light.falloff
+    }
 }

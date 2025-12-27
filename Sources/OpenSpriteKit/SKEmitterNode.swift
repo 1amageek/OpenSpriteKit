@@ -263,6 +263,71 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this emitter node.
+    open override func copy() -> SKNode {
+        let emitterCopy = SKEmitterNode()
+        emitterCopy._copyNodeProperties(from: self)
+        return emitterCopy
+    }
+
+    /// Internal helper to copy SKEmitterNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let emitter = node as? SKEmitterNode else { return }
+
+        self.targetNode = emitter.targetNode
+        self.particleBirthRate = emitter.particleBirthRate
+        self.numParticlesToEmit = emitter.numParticlesToEmit
+        self.particleRenderOrder = emitter.particleRenderOrder
+        self.particleLifetime = emitter.particleLifetime
+        self.particleLifetimeRange = emitter.particleLifetimeRange
+        self.particlePosition = emitter.particlePosition
+        self.particlePositionRange = emitter.particlePositionRange
+        self.particleZPosition = emitter.particleZPosition
+        self.particleZPositionRange = emitter.particleZPositionRange
+        self.particleSpeed = emitter.particleSpeed
+        self.particleSpeedRange = emitter.particleSpeedRange
+        self.emissionAngle = emitter.emissionAngle
+        self.emissionAngleRange = emitter.emissionAngleRange
+        self.xAcceleration = emitter.xAcceleration
+        self.yAcceleration = emitter.yAcceleration
+        self.particleZPositionSpeed = emitter.particleZPositionSpeed
+        self.particleRotation = emitter.particleRotation
+        self.particleRotationRange = emitter.particleRotationRange
+        self.particleRotationSpeed = emitter.particleRotationSpeed
+        self.particleScale = emitter.particleScale
+        self.particleScaleRange = emitter.particleScaleRange
+        self.particleScaleSpeed = emitter.particleScaleSpeed
+        self.particleScaleSequence = emitter.particleScaleSequence
+        self.particleTexture = emitter.particleTexture
+        self.particleSize = emitter.particleSize
+        self.particleColorSequence = emitter.particleColorSequence
+        self.particleColor = emitter.particleColor
+        self.particleColorAlphaRange = emitter.particleColorAlphaRange
+        self.particleColorBlueRange = emitter.particleColorBlueRange
+        self.particleColorGreenRange = emitter.particleColorGreenRange
+        self.particleColorRedRange = emitter.particleColorRedRange
+        self.particleColorAlphaSpeed = emitter.particleColorAlphaSpeed
+        self.particleColorBlueSpeed = emitter.particleColorBlueSpeed
+        self.particleColorGreenSpeed = emitter.particleColorGreenSpeed
+        self.particleColorRedSpeed = emitter.particleColorRedSpeed
+        self.particleColorBlendFactorSequence = emitter.particleColorBlendFactorSequence
+        self.particleColorBlendFactor = emitter.particleColorBlendFactor
+        self.particleColorBlendFactorRange = emitter.particleColorBlendFactorRange
+        self.particleColorBlendFactorSpeed = emitter.particleColorBlendFactorSpeed
+        self.particleBlendMode = emitter.particleBlendMode
+        self.particleAlphaSequence = emitter.particleAlphaSequence
+        self.particleAlpha = emitter.particleAlpha
+        self.particleAlphaRange = emitter.particleAlphaRange
+        self.particleAlphaSpeed = emitter.particleAlphaSpeed
+        self.particleAction = emitter.particleAction
+        self.fieldBitMask = emitter.fieldBitMask
+        self.shader = emitter.shader
+        self.attributeValues = emitter.attributeValues
+    }
+
     /// Creates an emitter node from an archived file.
     ///
     /// On WASM platforms, you must first register the emitter data with `SKResourceLoader`:

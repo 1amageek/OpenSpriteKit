@@ -21,6 +21,15 @@ open class SKCameraNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this camera node.
+    open override func copy() -> SKNode {
+        let cameraCopy = SKCameraNode()
+        cameraCopy._copyNodeProperties(from: self)
+        return cameraCopy
+    }
+
     // MARK: - Visibility Methods
 
     /// Checks to see if a node is visible in the camera's viewport.

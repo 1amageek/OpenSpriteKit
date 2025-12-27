@@ -205,6 +205,21 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
         )
     }
 
+    /// A rectangle in the sprite's local coordinate system that defines its content area.
+    ///
+    /// The bounds are calculated from the sprite's size and anchor point, without
+    /// applying position, rotation, or scale transformations.
+    internal override var _contentBounds: CGRect {
+        let width = size.width
+        let height = size.height
+        return CGRect(
+            x: -width * anchorPoint.x,
+            y: -height * anchorPoint.y,
+            width: width,
+            height: height
+        )
+    }
+
     // MARK: - Initializers
 
     /// Creates a new sprite node.
@@ -410,6 +425,36 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
         layer.backgroundColor = color.cgColor
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this sprite node.
+    open override func copy() -> SKNode {
+        let spriteCopy = SKSpriteNode()
+        spriteCopy._copyNodeProperties(from: self)
+        return spriteCopy
+    }
+
+    /// Internal helper to copy SKSpriteNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let sprite = node as? SKSpriteNode else { return }
+
+        self.texture = sprite.texture
+        self.normalTexture = sprite.normalTexture
+        self.size = sprite.size
+        self.anchorPoint = sprite.anchorPoint
+        self.centerRect = sprite.centerRect
+        self.color = sprite.color
+        self.colorBlendFactor = sprite.colorBlendFactor
+        self.blendMode = sprite.blendMode
+        self.lightingBitMask = sprite.lightingBitMask
+        self.shadowedBitMask = sprite.shadowedBitMask
+        self.shadowCastBitMask = sprite.shadowCastBitMask
+        self.shader = sprite.shader
+        self.attributeValues = sprite.attributeValues
+        self.warpGeometry = sprite.warpGeometry
+        self.subdivisionLevels = sprite.subdivisionLevels
+    }
 
     // MARK: - Size Methods
 

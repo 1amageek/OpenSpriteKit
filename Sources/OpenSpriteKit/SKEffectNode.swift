@@ -67,6 +67,31 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this effect node.
+    open override func copy() -> SKNode {
+        let effectCopy = SKEffectNode()
+        effectCopy._copyNodeProperties(from: self)
+        return effectCopy
+    }
+
+    /// Internal helper to copy SKEffectNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let effectNode = node as? SKEffectNode else { return }
+
+        self.filter = effectNode.filter
+        self.shouldEnableEffects = effectNode.shouldEnableEffects
+        self.shouldCenterFilter = effectNode.shouldCenterFilter
+        self.shader = effectNode.shader
+        self.attributeValues = effectNode.attributeValues
+        self.shouldRasterize = effectNode.shouldRasterize
+        self.blendMode = effectNode.blendMode
+        self.warpGeometry = effectNode.warpGeometry
+        self.subdivisionLevels = effectNode.subdivisionLevels
+    }
+
     // MARK: - Attribute Management
 
     /// Sets an attribute value for an attached shader.

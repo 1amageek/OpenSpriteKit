@@ -170,6 +170,131 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
     /// The blend mode used to draw the label into the parent's framebuffer.
     open var blendMode: SKBlendMode = .alpha
 
+    // MARK: - Computed Properties
+
+    /// Estimates the text size based on the current text and font settings.
+    ///
+    /// This is an approximation since actual text measurement requires platform-specific APIs.
+    /// The renderer may calculate the actual size for rendering purposes.
+    private func estimatedTextSize() -> CGSize {
+        guard let text = text, !text.isEmpty else {
+            return .zero
+        }
+
+        // Approximate character width as 0.6 * fontSize for typical fonts
+        let characterWidthFactor: CGFloat = 0.6
+        let lineHeight = fontSize * 1.2
+
+        if preferredMaxLayoutWidth > 0 && (lineBreakMode == .byWordWrapping || lineBreakMode == .byCharWrapping) {
+            // Multi-line text: estimate based on wrapping
+            let charWidth = fontSize * characterWidthFactor
+            let charsPerLine = max(1, Int(preferredMaxLayoutWidth / charWidth))
+            let lines = max(1, (text.count + charsPerLine - 1) / charsPerLine)
+            let effectiveLines = numberOfLines > 0 ? min(lines, numberOfLines) : lines
+            return CGSize(width: preferredMaxLayoutWidth, height: lineHeight * CGFloat(effectiveLines))
+        } else {
+            // Single line text
+            let width = CGFloat(text.count) * fontSize * characterWidthFactor
+            return CGSize(width: width, height: lineHeight)
+        }
+    }
+
+    /// A rectangle in the label's local coordinate system that defines its content area.
+    ///
+    /// The bounds are calculated from the estimated text size and alignment modes.
+    internal override var _contentBounds: CGRect {
+        let textSize = estimatedTextSize()
+        guard textSize.width > 0 && textSize.height > 0 else {
+            return .zero
+        }
+
+        var originX: CGFloat = 0
+        var originY: CGFloat = 0
+
+        // Adjust for horizontal alignment
+        switch horizontalAlignmentMode {
+        case .center:
+            originX = -textSize.width / 2
+        case .left:
+            originX = 0
+        case .right:
+            originX = -textSize.width
+        }
+
+        // Adjust for vertical alignment
+        switch verticalAlignmentMode {
+        case .center:
+            originY = -textSize.height / 2
+        case .top:
+            originY = -textSize.height
+        case .bottom:
+            originY = 0
+        case .baseline:
+            // Baseline is typically about 0.2 * fontSize from the bottom
+            originY = -textSize.height + fontSize * 0.2
+        }
+
+        return CGRect(origin: CGPoint(x: originX, y: originY), size: textSize)
+    }
+
+    /// The calculated frame of the label in the parent's coordinate system.
+    ///
+    /// The frame accounts for the label's size, alignment, position, scale, and rotation.
+    open override var frame: CGRect {
+        let localBounds = _contentBounds
+        guard localBounds.width > 0 && localBounds.height > 0 else {
+            return CGRect(origin: position, size: .zero)
+        }
+
+        // Apply scale
+        let scaledWidth = localBounds.width * abs(xScale)
+        let scaledHeight = localBounds.height * abs(yScale)
+        let scaledOriginX = localBounds.origin.x * xScale
+        let scaledOriginY = localBounds.origin.y * yScale
+
+        // If no rotation, simple bounding box
+        if zRotation == 0 {
+            return CGRect(
+                x: position.x + scaledOriginX,
+                y: position.y + scaledOriginY,
+                width: scaledWidth,
+                height: scaledHeight
+            )
+        }
+
+        // With rotation, calculate the bounding box of the rotated rectangle
+        let cosVal = cos(Double(zRotation))
+        let sinVal = sin(Double(zRotation))
+
+        let corners = [
+            CGPoint(x: scaledOriginX, y: scaledOriginY),
+            CGPoint(x: scaledOriginX + scaledWidth, y: scaledOriginY),
+            CGPoint(x: scaledOriginX + scaledWidth, y: scaledOriginY + scaledHeight),
+            CGPoint(x: scaledOriginX, y: scaledOriginY + scaledHeight)
+        ]
+
+        var minX = CGFloat.infinity
+        var maxX = -CGFloat.infinity
+        var minY = CGFloat.infinity
+        var maxY = -CGFloat.infinity
+
+        for corner in corners {
+            let rotatedX = CGFloat(Double(corner.x) * cosVal - Double(corner.y) * sinVal)
+            let rotatedY = CGFloat(Double(corner.x) * sinVal + Double(corner.y) * cosVal)
+            minX = min(minX, rotatedX)
+            maxX = max(maxX, rotatedX)
+            minY = min(minY, rotatedY)
+            maxY = max(maxY, rotatedY)
+        }
+
+        return CGRect(
+            x: position.x + minX,
+            y: position.y + minY,
+            width: maxX - minX,
+            height: maxY - minY
+        )
+    }
+
     // MARK: - Initializers
 
     /// Creates a new label node.
@@ -214,6 +339,35 @@ open class SKLabelNode: SKNode, @unchecked Sendable {
         #endif
         updateTextLayerAlignment()
         updateTextLayerTruncation()
+    }
+
+    // MARK: - Copying
+
+    /// Creates a copy of this label node.
+    open override func copy() -> SKNode {
+        let labelCopy = SKLabelNode()
+        labelCopy._copyNodeProperties(from: self)
+        return labelCopy
+    }
+
+    /// Internal helper to copy SKLabelNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let label = node as? SKLabelNode else { return }
+
+        self.text = label.text
+        self.attributedText = label.attributedText
+        self.fontColor = label.fontColor
+        self.fontName = label.fontName
+        self.fontSize = label.fontSize
+        self.verticalAlignmentMode = label.verticalAlignmentMode
+        self.horizontalAlignmentMode = label.horizontalAlignmentMode
+        self.preferredMaxLayoutWidth = label.preferredMaxLayoutWidth
+        self.lineBreakMode = label.lineBreakMode
+        self.numberOfLines = label.numberOfLines
+        self.color = label.color
+        self.colorBlendFactor = label.colorBlendFactor
+        self.blendMode = label.blendMode
     }
 
 }

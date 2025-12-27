@@ -68,6 +68,28 @@ open class SK3DNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this 3D node.
+    open override func copy() -> SKNode {
+        let nodeCopy = SK3DNode()
+        nodeCopy._copyNodeProperties(from: self)
+        return nodeCopy
+    }
+
+    /// Internal helper to copy SK3DNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let node3d = node as? SK3DNode else { return }
+
+        self.viewportSize = node3d.viewportSize
+        self.isPlaying = node3d.isPlaying
+        self.loops = node3d.loops
+        self.scnScene = node3d.scnScene
+        self.pointOfView = node3d.pointOfView
+        self.autoenablesDefaultLighting = node3d.autoenablesDefaultLighting
+    }
+
     // MARK: - Hit Testing
 
     /// Searches for objects in the scene that correspond to a point in the SpriteKit scene.

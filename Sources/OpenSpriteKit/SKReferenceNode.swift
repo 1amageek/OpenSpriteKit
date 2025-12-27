@@ -32,6 +32,24 @@ open class SKReferenceNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this reference node.
+    open override func copy() -> SKNode {
+        let refCopy = SKReferenceNode()
+        refCopy._copyNodeProperties(from: self)
+        return refCopy
+    }
+
+    /// Internal helper to copy SKReferenceNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let refNode = node as? SKReferenceNode else { return }
+
+        self.referenceURL = refNode.referenceURL
+        self.referenceFileName = refNode.referenceFileName
+    }
+
     /// Initializes a reference node from a URL.
     ///
     /// - Parameter url: The URL of the archived `.sks` file.

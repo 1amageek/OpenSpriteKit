@@ -32,6 +32,23 @@ open class SKCropNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this crop node.
+    open override func copy() -> SKNode {
+        let cropCopy = SKCropNode()
+        cropCopy._copyNodeProperties(from: self)
+        return cropCopy
+    }
+
+    /// Internal helper to copy SKCropNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let cropNode = node as? SKCropNode else { return }
+
+        self.maskNode = cropNode.maskNode?.copy()
+    }
+
     // MARK: - Masking
 
     /// Updates the layer's mask to match the current maskNode.

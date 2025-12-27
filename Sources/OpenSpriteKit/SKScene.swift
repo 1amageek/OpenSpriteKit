@@ -96,6 +96,31 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
         layer.anchorPoint = CGPoint(x: 0, y: 0)
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this scene.
+    open override func copy() -> SKNode {
+        let sceneCopy = SKScene()
+        sceneCopy._copyNodeProperties(from: self)
+        return sceneCopy
+    }
+
+    /// Internal helper to copy SKScene properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let scene = node as? SKScene else { return }
+
+        self._size = scene._size
+        self.scaleMode = scene.scaleMode
+        self.camera = scene.camera
+        self.anchorPoint = scene.anchorPoint
+        self.backgroundColor = scene.backgroundColor
+        self.listener = scene.listener
+        // Copy physics world settings (not delegate - that's set by the owner)
+        self.physicsWorld.gravity = scene.physicsWorld.gravity
+        self.physicsWorld.speed = scene.physicsWorld.speed
+    }
+
     /// Creates a new scene object with the specified size.
     ///
     /// - Parameter size: The size of the scene in points.

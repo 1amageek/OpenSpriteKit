@@ -56,6 +56,29 @@ open class SKAudioNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Copying
+
+    /// Creates a copy of this audio node.
+    open override func copy() -> SKNode {
+        let audioCopy = SKAudioNode()
+        audioCopy._copyNodeProperties(from: self)
+        return audioCopy
+    }
+
+    /// Internal helper to copy SKAudioNode properties.
+    internal override func _copyNodeProperties(from node: SKNode) {
+        super._copyNodeProperties(from: node)
+        guard let audioNode = node as? SKAudioNode else { return }
+
+        self.isPositional = audioNode.isPositional
+        self.autoplayLooped = audioNode.autoplayLooped
+        self.audioURL = audioNode.audioURL
+        self.audioFileName = audioNode.audioFileName
+        #if canImport(AVFAudio)
+        self.avAudioNode = audioNode.avAudioNode
+        #endif
+    }
+
     #if canImport(AVFAudio)
     /// Initializes an audio node from an AVFoundation audio node.
     ///

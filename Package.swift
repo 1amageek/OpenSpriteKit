@@ -19,10 +19,10 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/1amageek/OpenCoreGraphics.git", branch: "main"),
-        .package(url: "https://github.com/1amageek/OpenCoreImage.git", branch: "main"),
-        .package(url: "https://github.com/1amageek/OpenCoreAnimation.git", branch: "main"),
-        .package(url: "https://github.com/1amageek/OpenImageIO.git", branch: "main")
+        .package(path: "/Users/1amageek/Desktop/OpenCoreGraphics"),
+        .package(path: "/Users/1amageek/Desktop/OpenCoreImage"),
+        .package(path: "/Users/1amageek/Desktop/OpenCoreAnimation"),
+        .package(path: "/Users/1amageek/Desktop/OpenImageIO")
     ],
     targets: [
         .target(
