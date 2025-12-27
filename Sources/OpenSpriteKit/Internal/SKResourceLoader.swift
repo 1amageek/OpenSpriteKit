@@ -127,10 +127,28 @@ public final class SKResourceLoader {
     private func decodeImage(from data: Data) -> CGImage? {
         // CGImageSourceCreateWithData is available via OpenImageIO
         // Supports PNG, JPEG, GIF, BMP, TIFF, WebP
-        guard let source = CGImageSourceCreateWithData(data, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        guard let source = CGImageSourceCreateWithData(data, nil) else {
+            print("SKResourceLoader: Failed to create image source from \(data.count) bytes of data")
             return nil
         }
+
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            let status = CGImageSourceGetStatus(source)
+            print("SKResourceLoader: Failed to create image at index 0, status=\(status)")
+            return nil
+        }
+
+        // Verify the image has valid dimensions and data
+        if image.width == 0 || image.height == 0 {
+            print("SKResourceLoader: Decoded image has zero dimensions (\(image.width)x\(image.height))")
+            return nil
+        }
+
+        if image.data == nil {
+            print("SKResourceLoader: WARNING - Decoded image has nil data (\(image.width)x\(image.height))")
+            // Don't return nil here - the image might still be usable via dataProvider
+        }
+
         return image
     }
 

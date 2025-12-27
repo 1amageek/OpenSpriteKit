@@ -539,7 +539,7 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
                 if particleSize != .zero {
                     sprite.size = particleSize
                 } else {
-                    sprite.size = texture.size
+                    sprite.size = texture.size()
                 }
             } else {
                 // Use a default size for untextured particles
@@ -637,9 +637,9 @@ open class SKKeyframeSequence: @unchecked Sendable {
     /// - Parameters:
     ///   - values: The keyframe values.
     ///   - times: The keyframe times (must be sorted and in range 0.0 to 1.0).
-    public init(keyframeValues values: [Any], times: [CGFloat]) {
+    public init(keyframeValues values: [Any], times: [NSNumber]) {
         self.keyframeValues = values
-        self.keyframeTimes = times
+        self.keyframeTimes = times.map { CGFloat($0.doubleValue) }
     }
 
     /// Creates a keyframe sequence with a single keyframe.
@@ -655,7 +655,8 @@ open class SKKeyframeSequence: @unchecked Sendable {
     ///
     /// - Returns: A new keyframe sequence with the same properties.
     open func copy() -> SKKeyframeSequence {
-        let sequenceCopy = SKKeyframeSequence(keyframeValues: keyframeValues, times: keyframeTimes)
+        let timesAsNSNumber = keyframeTimes.map { NSNumber(value: Double($0)) }
+        let sequenceCopy = SKKeyframeSequence(keyframeValues: keyframeValues, times: timesAsNSNumber)
         sequenceCopy.interpolationMode = interpolationMode
         sequenceCopy.repeatMode = repeatMode
         return sequenceCopy

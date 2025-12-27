@@ -138,7 +138,7 @@ open class SKTileDefinition: @unchecked Sendable {
 
     public init(texture: SKTexture) {
         self.textures = [texture]
-        self.size = texture.size
+        self.size = texture.size()
     }
 
     public init(texture: SKTexture, size: CGSize) {
@@ -295,42 +295,56 @@ open class SKTileSet: @unchecked Sendable {
         self.type = tileSetType
     }
 
-    /// Creates a tile set by loading from registered resources or the app bundle.
+    /// Initializes a tile set by searching the app bundle for an archived .sks file by name.
     ///
     /// On WASM platforms, you must first register the tile set data with `SKResourceLoader`:
     /// ```swift
     /// SKResourceLoader.shared.registerTileSet(data: tileSetData, forName: "MyTileSet")
-    /// let tileSet = SKTileSet.tileSet(named: "MyTileSet")
+    /// let tileSet = SKTileSet(named: "MyTileSet")
     /// ```
     ///
     /// - Parameter name: The name of the tile set file (with or without `.sks` extension).
-    /// - Returns: A tile set, or nil if the file could not be loaded.
-    public class func tileSet(named name: String) -> SKTileSet? {
+    public convenience init?(named name: String) {
         // Try to load from registered tile set data (WASM)
         if let data = SKResourceLoader.shared.tileSetData(forName: name) {
-            return parseTileSet(from: data)
+            guard let parsed = Self.parseTileSet(from: data) else {
+                return nil
+            }
+            self.init(tileGroups: parsed.tileGroups, tileSetType: parsed.type)
+            self.name = parsed.name
+            self.defaultTileSize = parsed.defaultTileSize
+            self.defaultTileGroup = parsed.defaultTileGroup
+            return
         }
 
         // Try to load from bundle (native platforms)
         let nameWithoutExtension = name.hasSuffix(".sks") ? String(name.dropLast(4)) : name
 
         if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
-           let data = try? Data(contentsOf: url) {
-            return parseTileSet(from: data)
+           let data = try? Data(contentsOf: url),
+           let parsed = Self.parseTileSet(from: data) {
+            self.init(tileGroups: parsed.tileGroups, tileSetType: parsed.type)
+            self.name = parsed.name
+            self.defaultTileSize = parsed.defaultTileSize
+            self.defaultTileGroup = parsed.defaultTileGroup
+            return
         }
 
         return nil
     }
 
-    /// Creates a tile set by loading from a URL.
+    /// Initializes a tile set from a URL to an archived .sks file.
     ///
     /// - Parameter url: The URL to the tile set file.
-    /// - Returns: A tile set, or nil if the file could not be loaded.
-    public class func tileSet(from url: URL) -> SKTileSet? {
-        guard let data = try? Data(contentsOf: url) else {
+    public convenience init?(from url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let parsed = Self.parseTileSet(from: data) else {
             return nil
         }
-        return parseTileSet(from: data)
+        self.init(tileGroups: parsed.tileGroups, tileSetType: parsed.type)
+        self.name = parsed.name
+        self.defaultTileSize = parsed.defaultTileSize
+        self.defaultTileGroup = parsed.defaultTileGroup
     }
 
     /// Parses tile set data (property list format).

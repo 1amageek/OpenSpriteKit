@@ -150,21 +150,38 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
     /// 7. Constraint evaluation - Apply constraints
     /// 8. `didApplyConstraints()` - Post-constraint callback
     /// 9. `didFinishUpdate()` - Final frame callback
+    ///
+    /// - Note: If a delegate is set on the scene, the delegate's methods are called
+    ///   **instead of** the scene's methods (not in addition to).
     private func executeFrameCycle(scene: SKScene, currentTime: TimeInterval, deltaTime: TimeInterval) {
-        // 1. User update
-        scene.update(currentTime)
+        let delegate = scene.delegate
+
+        // 1. User update - delegate replaces scene method if set
+        if let delegate = delegate {
+            delegate.update(currentTime, for: scene)
+        } else {
+            scene.update(currentTime)
+        }
 
         // 2. Evaluate actions
         evaluateActions(for: scene, deltaTime: deltaTime)
 
-        // 3. Post-actions callback
-        scene.didEvaluateActions()
+        // 3. Post-actions callback - delegate replaces scene method if set
+        if let delegate = delegate {
+            delegate.didEvaluateActions(for: scene)
+        } else {
+            scene.didEvaluateActions()
+        }
 
         // 4. Physics simulation
         simulatePhysics(for: scene, deltaTime: deltaTime)
 
-        // 5. Post-physics callback
-        scene.didSimulatePhysics()
+        // 5. Post-physics callback - delegate replaces scene method if set
+        if let delegate = delegate {
+            delegate.didSimulatePhysics(for: scene)
+        } else {
+            scene.didSimulatePhysics()
+        }
 
         // 6. Update particle systems
         updateParticleSystems(for: scene, deltaTime: deltaTime)
@@ -172,8 +189,12 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         // 7. Apply constraints
         applyConstraints(for: scene)
 
-        // 8. Post-constraints callback
-        scene.didApplyConstraints()
+        // 8. Post-constraints callback - delegate replaces scene method if set
+        if let delegate = delegate {
+            delegate.didApplyConstraints(for: scene)
+        } else {
+            scene.didApplyConstraints()
+        }
 
         // 9. Process effect nodes (apply CIFilters)
         processEffectNodes(for: scene)
@@ -181,8 +202,12 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         // 10. Apply lighting
         applyLighting(for: scene)
 
-        // 11. Final callback
-        scene.didFinishUpdate()
+        // 11. Final callback - delegate replaces scene method if set
+        if let delegate = delegate {
+            delegate.didFinishUpdate(for: scene)
+        } else {
+            scene.didFinishUpdate()
+        }
     }
 
     // MARK: - Action Evaluation

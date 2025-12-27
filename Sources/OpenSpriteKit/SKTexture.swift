@@ -71,17 +71,31 @@ open class SKTexture: @unchecked Sendable {
 
     // MARK: - Properties
 
-    /// The size of the texture in points.
-    open var size: CGSize {
-        return _size
-    }
+    /// Internal storage for size.
     internal var _size: CGSize = .zero
 
-    /// The rectangle within the texture that defines the visible region.
-    open var textureRect: CGRect {
+    /// Internal storage for textureRect.
+    internal var _textureRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+
+    // MARK: - Size and TextureRect Methods
+
+    /// Gets the size of the texture.
+    ///
+    /// - Returns: The dimensions of the texture, measured in points.
+    open func size() -> CGSize {
+        return _size
+    }
+
+    /// Gets a rectangle that defines the portion of the texture used to render its image.
+    ///
+    /// The default value is a rectangle that covers the entire texture (0,0)-(1,1).
+    /// You cannot set this value directly; to use only a portion of a texture,
+    /// use the `init(rect:in:)` method to create a new texture.
+    ///
+    /// - Returns: A rectangle in the unit coordinate space.
+    open func textureRect() -> CGRect {
         return _textureRect
     }
-    private var _textureRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
 
     /// The filtering mode used when the texture is drawn in a size other than its native size.
     open var filteringMode: SKTextureFilteringMode = .linear
@@ -89,13 +103,62 @@ open class SKTexture: @unchecked Sendable {
     /// A Boolean value that indicates whether mipmaps are generated for the texture.
     open var usesMipmaps: Bool = false
 
-    /// The underlying CGImage if available.
-    open internal(set) var cgImage: CGImage?
+    /// Internal storage for the CGImage.
+    internal var _cgImage: CGImage?
+
+    /// Reference to parent texture for subtextures created with init(rect:in:).
+    /// This ensures the parent stays alive and we can crop from it.
+    internal var _parentTexture: SKTexture?
+
+    /// Cached cropped CGImage for subtextures (computed lazily on first access).
+    internal var _cachedCroppedImage: CGImage?
 
     // MARK: - Initializers
 
     /// Creates an empty texture.
     public init() {
+    }
+
+    // MARK: - CGImage Access
+
+    /// Returns the texture's image data as a Quartz 2D image.
+    ///
+    /// For subtextures created with `init(rect:in:)`, this returns the cropped
+    /// portion of the parent texture's image. The cropped image is cached for
+    /// subsequent calls to avoid repeated cropping operations.
+    ///
+    /// - Returns: A CGImage representing this texture's content, or nil if unavailable.
+    open func cgImage() -> CGImage? {
+        // For subtextures, crop from parent (with caching)
+        if let parent = _parentTexture {
+            // Return cached cropped image if available
+            if let cached = _cachedCroppedImage {
+                return cached
+            }
+
+            guard let parentImage = parent.cgImage() else {
+                print("SKTexture: WARNING - parent texture has nil cgImage")
+                return nil
+            }
+
+            // Calculate pixel rect from normalized textureRect
+            let pixelX = Int(CGFloat(parentImage.width) * _textureRect.origin.x)
+            let pixelY = Int(CGFloat(parentImage.height) * _textureRect.origin.y)
+            let pixelWidth = Int(CGFloat(parentImage.width) * _textureRect.width)
+            let pixelHeight = Int(CGFloat(parentImage.height) * _textureRect.height)
+
+            let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelWidth, height: pixelHeight)
+            guard let croppedImage = parentImage.cropping(to: cropRect) else {
+                print("SKTexture: WARNING - cropping failed for rect \(cropRect), parent size: \(parentImage.width)x\(parentImage.height)")
+                return nil
+            }
+
+            // Cache the cropped image for future use
+            _cachedCroppedImage = croppedImage
+            return croppedImage
+        }
+
+        return _cgImage
     }
 
     /// The name of the image used to create this texture (for caching purposes).
@@ -126,7 +189,7 @@ open class SKTexture: @unchecked Sendable {
         }) {
             // Return cached texture's data by copying
             self.init()
-            self.cgImage = cached.cgImage
+            self._cgImage = cached.cgImage()
             self._size = cached._size
             self.imageName = name
         } else {
@@ -139,7 +202,7 @@ open class SKTexture: @unchecked Sendable {
     ///
     /// - Parameter cgImage: The Core Graphics image to use as the texture source.
     public init(cgImage: CGImage) {
-        self.cgImage = cgImage
+        self._cgImage = cgImage
         self._size = CGSize(width: cgImage.width, height: cgImage.height)
     }
 
@@ -150,7 +213,7 @@ open class SKTexture: @unchecked Sendable {
     ///   - size: The size of the texture in pixels.
     public init(data: Data, size: CGSize) {
         self._size = size
-        self.cgImage = Self.createCGImage(from: data, size: size, flipped: false)
+        self._cgImage = Self.createCGImage(from: data, size: size, flipped: false)
     }
 
     /// Creates a texture from raw RGBA image data with optional vertical flip.
@@ -161,7 +224,7 @@ open class SKTexture: @unchecked Sendable {
     ///   - flipped: Whether the image should be flipped vertically.
     public init(data: Data, size: CGSize, flipped: Bool) {
         self._size = size
-        self.cgImage = Self.createCGImage(from: data, size: size, flipped: flipped)
+        self._cgImage = Self.createCGImage(from: data, size: size, flipped: flipped)
     }
 
     /// Creates a texture from raw image data with a specific row alignment.
@@ -173,7 +236,7 @@ open class SKTexture: @unchecked Sendable {
     ///   - alignment: The byte alignment of each row.
     public init(data: Data, size: CGSize, rowLength: UInt32, alignment: UInt32) {
         self._size = size
-        self.cgImage = Self.createCGImage(from: data, size: size, rowLength: Int(rowLength), alignment: Int(alignment))
+        self._cgImage = Self.createCGImage(from: data, size: size, rowLength: Int(rowLength), alignment: Int(alignment))
     }
 
     /// Creates a CGImage from raw RGBA data.
@@ -250,10 +313,13 @@ open class SKTexture: @unchecked Sendable {
     ///   - texture: The source texture.
     public init(rect: CGRect, in texture: SKTexture) {
         self._textureRect = rect
+        let parentSize = texture.size()
         self._size = CGSize(
-            width: texture.size.width * rect.width,
-            height: texture.size.height * rect.height
+            width: parentSize.width * rect.width,
+            height: parentSize.height * rect.height
         )
+        // Store reference to parent texture for cgImage() to crop from
+        self._parentTexture = texture
     }
 
     /// Creates a texture from a CIImage.
@@ -264,7 +330,7 @@ open class SKTexture: @unchecked Sendable {
         // Render CIImage to CGImage
         let context = CIContext()
         if let cgImage = context.createCGImage(image, from: image.extent) {
-            self.cgImage = cgImage
+            self._cgImage = cgImage
         }
     }
 
@@ -322,7 +388,7 @@ open class SKTexture: @unchecked Sendable {
             }
         }
 
-        texture.cgImage = createCGImage(from: pixelData, size: size, flipped: false)
+        texture._cgImage = createCGImage(from: pixelData, size: size, flipped: false)
         return texture
     }
 
@@ -375,7 +441,7 @@ open class SKTexture: @unchecked Sendable {
             }
         }
 
-        texture.cgImage = createCGImage(from: pixelData, size: size, flipped: false)
+        texture._cgImage = createCGImage(from: pixelData, size: size, flipped: false)
         return texture
     }
 
@@ -445,7 +511,9 @@ open class SKTexture: @unchecked Sendable {
         textureCopy._textureRect = _textureRect
         textureCopy.filteringMode = filteringMode
         textureCopy.usesMipmaps = usesMipmaps
-        textureCopy.cgImage = cgImage
+        textureCopy._cgImage = _cgImage
+        textureCopy._parentTexture = _parentTexture
+        textureCopy._cachedCroppedImage = _cachedCroppedImage
         return textureCopy
     }
 
@@ -472,7 +540,7 @@ open class SKTexture: @unchecked Sendable {
         }
 
         // Capture cgImage before async block
-        guard let cgImage = self.cgImage else {
+        guard let cgImage = self.cgImage() else {
             completionHandler()
             return
         }
@@ -595,7 +663,7 @@ open class SKTexture: @unchecked Sendable {
     /// - Parameter filter: The filter to apply.
     /// - Returns: A new texture with the filter applied.
     open func applying(_ filter: CIFilter) -> SKTexture {
-        guard let cgImage = self.cgImage else {
+        guard let cgImage = self.cgImage() else {
             return self.copy()
         }
 
@@ -625,8 +693,9 @@ open class SKTexture: @unchecked Sendable {
     /// Returns the CGImage representation of this texture.
     ///
     /// - Returns: A CGImage, or nil if the texture cannot be converted.
+    @available(*, deprecated, renamed: "cgImage()")
     open func getCGImage() -> CGImage? {
-        return cgImage
+        return cgImage()
     }
 
     // MARK: - Image File Loading
@@ -758,156 +827,4 @@ public enum SKTextureFilteringMode: Int, Sendable, Hashable {
     case linear = 1
 }
 
-// MARK: - SKTextureAtlas
-
-/// A collection of related textures stored together for efficient access.
-///
-/// An `SKTextureAtlas` object lets you store multiple textures together as a single
-/// resource. Using a texture atlas can improve rendering performance.
-open class SKTextureAtlas: @unchecked Sendable {
-
-    // MARK: - Properties
-
-    /// The names of all textures in the atlas.
-    open var textureNames: [String] = []
-
-    private var textures: [String: SKTexture] = [:]
-
-    // MARK: - Initializers
-
-    /// Creates an empty texture atlas.
-    public init() {
-    }
-
-    /// Creates a texture atlas from a dictionary of textures.
-    ///
-    /// - Parameter dictionary: A dictionary mapping texture names to CGImages or SKTextures.
-    public init(dictionary: [String: Any]) {
-        for (name, value) in dictionary {
-            if let texture = value as? SKTexture {
-                textures[name] = texture
-                textureNames.append(name)
-            } else if let cgImage = value as? CGImage {
-                // Handle CGImage
-                let texture = SKTexture(cgImage: cgImage)
-                textures[name] = texture
-                textureNames.append(name)
-            } else if value is Data {
-                if let image = SKResourceLoader.shared.image(forName: name) {
-                    let texture = SKTexture(cgImage: image)
-                    textures[name] = texture
-                    textureNames.append(name)
-                }
-            }
-        }
-    }
-
-    /// Creates a texture atlas from a named atlas in the app bundle.
-    ///
-    /// On WASM platforms, the atlas must be pre-registered with `SKResourceLoader`:
-    /// ```swift
-    /// let atlasData = SKResourceLoader.AtlasData(
-    ///     image: cgImage,
-    ///     frames: ["frame1": CGRect(x: 0, y: 0, width: 0.5, height: 0.5), ...]
-    /// )
-    /// SKResourceLoader.shared.registerAtlas(atlasData, forName: "myAtlas")
-    /// let atlas = SKTextureAtlas(named: "myAtlas")
-    /// ```
-    ///
-    /// - Parameter name: The name of the texture atlas.
-    public init(named name: String) {
-        if let atlasData = SKResourceLoader.shared.atlas(forName: name) {
-            loadFromAtlasData(atlasData)
-        }
-    }
-
-    /// Loads textures from atlas data.
-    private func loadFromAtlasData(_ data: SKResourceLoader.AtlasData) {
-        let atlasTexture = SKTexture(cgImage: data.image)
-
-        for (frameName, normalizedRect) in data.frames {
-            // Create sub-texture using normalized coordinates
-            let subTexture = SKTexture(rect: normalizedRect, in: atlasTexture)
-            textures[frameName] = subTexture
-            textureNames.append(frameName)
-        }
-    }
-
-    // MARK: - Texture Access
-
-    /// Returns a texture with the specified name.
-    ///
-    /// - Parameter name: The name of the texture.
-    /// - Returns: The texture, or a placeholder if not found.
-    open func textureNamed(_ name: String) -> SKTexture {
-        if let texture = textures[name] {
-            return texture
-        }
-        // Return a placeholder texture
-        return SKTexture()
-    }
-
-    // MARK: - Preloading
-
-    /// Preloads the texture atlas into memory.
-    ///
-    /// - Parameter completionHandler: A block called when preloading is complete.
-    open func preload(completionHandler: @escaping @Sendable () -> Void) {
-        // Preload all textures in the atlas
-        let allTextures = textures.values.map { $0 }
-        SKTexture.preload(allTextures, withCompletionHandler: completionHandler)
-    }
-
-    /// Preloads multiple texture atlases into memory.
-    ///
-    /// - Parameters:
-    ///   - atlases: The atlases to preload.
-    ///   - completionHandler: A block called when preloading is complete.
-    public class func preloadTextureAtlases(_ atlases: [SKTextureAtlas], withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
-        #if canImport(Dispatch)
-        let group = DispatchGroup()
-        for atlas in atlases {
-            group.enter()
-            atlas.preload {
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            completionHandler()
-        }
-        #else
-        // WASM: Preload synchronously (each preload is sync on WASM)
-        for atlas in atlases {
-            atlas.preload {}
-        }
-        completionHandler()
-        #endif
-    }
-
-    /// Preloads multiple named texture atlases into memory.
-    ///
-    /// - Parameters:
-    ///   - atlasNames: The names of the atlases to preload.
-    ///   - completionHandler: A block called with the loaded atlases.
-    public class func preloadTextureAtlasesNamed(_ atlasNames: [String], withCompletionHandler completionHandler: @escaping @Sendable (Error?, [SKTextureAtlas]) -> Void) {
-        var atlases: [SKTextureAtlas] = []
-        var loadError: Error? = nil
-
-        for name in atlasNames {
-            let atlas = SKTextureAtlas(named: name)
-            if atlas.textureNames.isEmpty {
-                loadError = SKResourceError.notFound
-            }
-            atlases.append(atlas)
-        }
-
-        // Create immutable copies for @Sendable closure
-        let finalAtlases = atlases
-        let finalError = loadError
-
-        // Preload all atlases
-        preloadTextureAtlases(finalAtlases) {
-            completionHandler(finalError, finalAtlases)
-        }
-    }
-}
+// Note: SKTextureAtlas is defined in SKTextureAtlas.swift

@@ -54,8 +54,10 @@ This library exists so that cross-platform Swift code can use SpriteKit APIs eve
 
 ## Build Commands
 
+### Native Build (macOS - for testing only)
+
 ```bash
-# Build the package
+# Build the package (native)
 swift build
 
 # Run tests
@@ -63,10 +65,49 @@ swift test
 
 # Run a specific test
 swift test --filter <TestName>
-
-# Build for WASM (requires SwiftWasm toolchain)
-swift build --triple wasm32-unknown-wasi
 ```
+
+### WASM Build (Primary Target)
+
+This library targets WASM. Follow these steps to build for WebAssembly:
+
+#### 1. Install Swift 6.2+ with swiftly
+
+```bash
+# Install swiftly (if not already installed)
+# See: https://www.swift.org/install/
+
+# Install Swift 6.2.3
+swiftly install 6.2.3
+
+# Select the toolchain
+swiftly use 6.2.3
+```
+
+#### 2. Install the WASM SDK
+
+```bash
+swift sdk install https://download.swift.org/swift-6.2.3-release/wasm-sdk/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE_wasm.artifactbundle.tar.gz --checksum 394040ecd5260e68bb02f6c20aeede733b9b90702c2204e178f3e42413edad2a
+```
+
+#### 3. Verify SDK installation
+
+```bash
+swift sdk list
+# Should show: swift-6.2.3-RELEASE_wasm
+```
+
+#### 4. Build for WASM
+
+```bash
+# Standard WASM build
+swift build --swift-sdk swift-6.2.3-RELEASE_wasm
+
+# Embedded Swift mode (smaller binaries)
+swift build --swift-sdk swift-6.2.3-RELEASE_wasm-embedded
+```
+
+**Reference**: https://www.swift.org/documentation/articles/wasm-getting-started.html
 
 ## Architecture
 

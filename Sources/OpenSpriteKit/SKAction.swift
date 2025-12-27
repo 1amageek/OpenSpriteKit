@@ -105,7 +105,7 @@ open class SKAction: @unchecked Sendable {
         case reach(target: CGPoint, rootNode: SKNode, velocity: CGFloat?)
         case reachToNode(target: SKNode, rootNode: SKNode, velocity: CGFloat?)
         case warp(geometry: SKWarpGeometry)
-        case animateWarps(geometries: [SKWarpGeometry], times: [TimeInterval], restore: Bool)
+        case animateWarps(geometries: [SKWarpGeometry], times: [NSNumber], restore: Bool)
         case stereopan(to: Float?, by: Float?)
         case changeObstruction(to: Float?, by: Float?)
         case changeOcclusion(to: Float?, by: Float?)
@@ -1103,15 +1103,26 @@ open class SKAction: @unchecked Sendable {
     }
 
     /// Creates an action to distort a node through a sequence of SKWarpGeometry objects.
-    public class func animate(withWarps warps: [SKWarpGeometry], times: [TimeInterval]) -> SKAction? {
+    ///
+    /// - Parameters:
+    ///   - warps: The sequence of warps to apply to the node.
+    ///   - times: The times at which each warp distortion in the sequence should complete.
+    /// - Returns: A new action object.
+    public class func animate(withWarps warps: [SKWarpGeometry], times: [NSNumber]) -> SKAction? {
         return animate(withWarps: warps, times: times, restore: false)
     }
 
     /// Creates an action to distort a node through a sequence of SKWarpGeometry objects.
-    public class func animate(withWarps warps: [SKWarpGeometry], times: [TimeInterval], restore: Bool) -> SKAction? {
+    ///
+    /// - Parameters:
+    ///   - warps: The sequence of warps to apply to the node.
+    ///   - times: The times at which each warp distortion in the sequence should complete.
+    ///   - restore: Whether to restore the original warp geometry when the action completes.
+    /// - Returns: A new action object.
+    public class func animate(withWarps warps: [SKWarpGeometry], times: [NSNumber], restore: Bool) -> SKAction? {
         guard warps.count == times.count else { return nil }
         let action = SKAction()
-        action.duration = times.last ?? 0
+        action.duration = times.last?.doubleValue ?? 0
         action.actionType = .animateWarps(geometries: warps, times: times, restore: restore)
         return action
     }

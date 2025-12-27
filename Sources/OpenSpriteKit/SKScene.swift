@@ -184,37 +184,47 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
     /// This method is called exactly once per frame, before any actions are evaluated or any physics simulations
     /// are performed. Override this method to implement per-frame game logic.
     ///
+    /// - Note: If a delegate is set, the delegate's `update(_:for:)` method is called instead of this method.
+    ///
     /// - Parameter currentTime: The current system time.
     open func update(_ currentTime: TimeInterval) {
-        delegate?.update(currentTime, for: self)
+        // Subclasses can override. Delegate handling is done in SKViewRenderer.
     }
 
     /// Tells your app to perform any necessary logic after scene actions are evaluated.
     ///
     /// This method is called exactly once per frame, after any actions have been evaluated.
+    ///
+    /// - Note: If a delegate is set, the delegate's `didEvaluateActions(for:)` method is called instead of this method.
     open func didEvaluateActions() {
-        delegate?.didEvaluateActions(for: self)
+        // Subclasses can override. Delegate handling is done in SKViewRenderer.
     }
 
     /// Tells your app to perform any necessary logic after physics simulations are performed.
     ///
     /// This method is called exactly once per frame, after physics simulations have been processed.
+    ///
+    /// - Note: If a delegate is set, the delegate's `didSimulatePhysics(for:)` method is called instead of this method.
     open func didSimulatePhysics() {
-        delegate?.didSimulatePhysics(for: self)
+        // Subclasses can override. Delegate handling is done in SKViewRenderer.
     }
 
     /// Tells your app to perform any necessary logic after constraints are applied.
     ///
     /// This method is called exactly once per frame, after all constraints have been applied.
+    ///
+    /// - Note: If a delegate is set, the delegate's `didApplyConstraints(for:)` method is called instead of this method.
     open func didApplyConstraints() {
-        delegate?.didApplyConstraints(for: self)
+        // Subclasses can override. Delegate handling is done in SKViewRenderer.
     }
 
     /// Tells your app to perform any necessary logic after the scene has finished all of the steps required to process animations.
     ///
     /// This method is called exactly once per frame, after all other frame processing is complete.
+    ///
+    /// - Note: If a delegate is set, the delegate's `didFinishUpdate(for:)` method is called instead of this method.
     open func didFinishUpdate() {
-        delegate?.didFinishUpdate(for: self)
+        // Subclasses can override. Delegate handling is done in SKViewRenderer.
     }
 
     // MARK: - Coordinate Conversion
@@ -371,7 +381,7 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
             )
         }
 
-        guard let view = view else {
+        guard view != nil else {
             // Calculate visible rect without view (use provided viewSize)
             let effectiveScale = CGPoint(x: camera.xScale, y: camera.yScale)
             let scaledWidth = viewSize.width / (effectiveScale.x != 0 ? effectiveScale.x : 1)
@@ -385,6 +395,6 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
             )
         }
 
-        return camera.calculateVisibleRect(in: view)
+        return camera.calculateVisibleRect()
     }
 }

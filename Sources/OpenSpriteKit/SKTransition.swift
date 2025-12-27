@@ -60,6 +60,16 @@ open class SKTransition: @unchecked Sendable {
         self.duration = duration
     }
 
+    /// Creates a transition that uses a Core Image filter to perform the transition.
+    ///
+    /// - Parameters:
+    ///   - ciFilter: A Core Image filter object.
+    ///   - duration: The duration, in seconds, over which to perform the transition.
+    public init(ciFilter: CIFilter, duration: TimeInterval) {
+        self.transitionType = .ciFilter(filter: ciFilter)
+        self.duration = duration
+    }
+
     // MARK: - Factory Methods
 
     /// Creates a cross-fade transition.

@@ -260,25 +260,96 @@ open class SKRenderer: @unchecked Sendable {
         context.setFillColor(bgColor)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
 
-        // Render nodes recursively
-        renderNodeToContext(scene, context: context, parentAlpha: 1.0)
+        // Collect all nodes with their accumulated transforms and zPositions
+        var renderItems: [NodeRenderItem] = []
+        collectNodesForRendering(
+            node: scene,
+            accumulatedZ: 0,
+            accumulatedAlpha: 1.0,
+            accumulatedTransform: .identity,
+            siblingIndex: 0,
+            items: &renderItems
+        )
+
+        // Sort by accumulated zPosition, then by tree order (depth + sibling index)
+        renderItems.sort { a, b in
+            if a.accumulatedZ != b.accumulatedZ {
+                return a.accumulatedZ < b.accumulatedZ
+            }
+            // Same zPosition: use tree order (parent before children, siblings in order)
+            return a.treeOrder < b.treeOrder
+        }
+
+        // Render each node with its accumulated transform
+        for item in renderItems {
+            renderNodeWithTransform(item, to: context)
+        }
 
         return context.makeImage()
     }
 
-    /// Recursively renders a node and its children to the context.
-    private func renderNodeToContext(_ node: SKNode, context: CGContext, parentAlpha: CGFloat) {
+    /// Information needed to render a node with proper z-ordering.
+    private struct NodeRenderItem {
+        let node: SKNode
+        let accumulatedZ: CGFloat
+        let accumulatedAlpha: CGFloat
+        let accumulatedTransform: CGAffineTransform
+        let treeOrder: Int  // For deterministic ordering of nodes with same zPosition
+    }
+
+    /// Collects all visible nodes with their accumulated properties for sorted rendering.
+    private func collectNodesForRendering(
+        node: SKNode,
+        accumulatedZ: CGFloat,
+        accumulatedAlpha: CGFloat,
+        accumulatedTransform: CGAffineTransform,
+        siblingIndex: Int,
+        items: inout [NodeRenderItem]
+    ) {
         guard !node.isHidden && node.alpha > 0 else { return }
 
-        let effectiveAlpha = parentAlpha * node.alpha
+        let nodeZ = accumulatedZ + node.zPosition
+        let nodeAlpha = accumulatedAlpha * node.alpha
+
+        // Build the transform for this node
+        var nodeTransform = accumulatedTransform
+        nodeTransform = nodeTransform.translatedBy(x: node.position.x, y: node.position.y)
+        nodeTransform = nodeTransform.rotated(by: node.zRotation)
+        nodeTransform = nodeTransform.scaledBy(x: node.xScale, y: node.yScale)
+
+        // Add this node to the list with current tree order
+        let treeOrder = items.count
+        items.append(NodeRenderItem(
+            node: node,
+            accumulatedZ: nodeZ,
+            accumulatedAlpha: nodeAlpha,
+            accumulatedTransform: nodeTransform,
+            treeOrder: treeOrder
+        ))
+
+        // Collect children sorted by local zPosition (for deterministic sibling order)
+        let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
+        for (index, child) in sortedChildren.enumerated() {
+            collectNodesForRendering(
+                node: child,
+                accumulatedZ: nodeZ,
+                accumulatedAlpha: nodeAlpha,
+                accumulatedTransform: nodeTransform,
+                siblingIndex: index,
+                items: &items
+            )
+        }
+    }
+
+    /// Renders a single node with its pre-calculated accumulated transform.
+    private func renderNodeWithTransform(_ item: NodeRenderItem, to context: CGContext) {
+        let node = item.node
 
         context.saveGState()
 
-        // Apply node transform
-        context.translateBy(x: node.position.x, y: node.position.y)
-        context.rotate(by: node.zRotation)
-        context.scaleBy(x: node.xScale, y: node.yScale)
-        context.setAlpha(effectiveAlpha)
+        // Apply the accumulated transform
+        context.concatenate(item.accumulatedTransform)
+        context.setAlpha(item.accumulatedAlpha)
 
         // Render based on node type
         if let sprite = node as? SKSpriteNode {
@@ -289,18 +360,13 @@ open class SKRenderer: @unchecked Sendable {
             renderLabelNode(label, to: context)
         }
 
-        // Render children sorted by zPosition
-        let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
-        for child in sortedChildren {
-            renderNodeToContext(child, context: context, parentAlpha: effectiveAlpha)
-        }
-
         context.restoreGState()
     }
 
     /// Renders a sprite node to the context.
     private func renderSpriteNode(_ sprite: SKSpriteNode, to context: CGContext) {
-        guard let cgImage = sprite.texture?.cgImage else { return }
+        guard let texture = sprite.texture,
+              let cgImage = texture.cgImage() else { return }
 
         let size = sprite.size
         let anchorPoint = sprite.anchorPoint
@@ -312,18 +378,45 @@ open class SKRenderer: @unchecked Sendable {
             height: size.height
         )
 
+        // Get the image to draw (possibly cropped for subtextures)
+        let imageToDraw: CGImage
+        let textureRect = texture.textureRect()
+
+        // Check if this is a subtexture (non-default textureRect)
+        if textureRect != CGRect(x: 0, y: 0, width: 1, height: 1) {
+            // Calculate the pixel region to crop
+            let imageWidth = CGFloat(cgImage.width)
+            let imageHeight = CGFloat(cgImage.height)
+
+            let cropRect = CGRect(
+                x: textureRect.origin.x * imageWidth,
+                y: textureRect.origin.y * imageHeight,
+                width: textureRect.width * imageWidth,
+                height: textureRect.height * imageHeight
+            )
+
+            // Crop the image
+            if let croppedImage = cgImage.cropping(to: cropRect) {
+                imageToDraw = croppedImage
+            } else {
+                imageToDraw = cgImage
+            }
+        } else {
+            imageToDraw = cgImage
+        }
+
         // Apply color blending if needed
         if sprite.colorBlendFactor > 0 {
             // Draw with color blend
             context.saveGState()
             context.clip(to: rect)
-            context.draw(cgImage, in: rect)
+            context.draw(imageToDraw, in: rect)
             context.setBlendMode(.multiply)
             context.setFillColor(sprite.color.cgColor)
             context.fill(rect)
             context.restoreGState()
         } else {
-            context.draw(cgImage, in: rect)
+            context.draw(imageToDraw, in: rect)
         }
     }
 

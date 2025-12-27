@@ -538,24 +538,132 @@ open class SKNode: @unchecked Sendable {
     /// - Parameter name: The name to search for.
     /// - Returns: The first child node with the specified name, or `nil` if not found.
     open func childNode(withName name: String) -> SKNode? {
-        // Simple search (non-path based)
-        if !name.contains("/") && !name.contains("*") && !name.contains(".") {
+        // Simple search (non-path based, no special characters)
+        if !name.contains("/") && !name.contains("*") && !name.contains(".") && !name.contains("[") {
             return children.first { $0.name == name }
         }
-        // For path-based searches, use the subscript operator
+        // For pattern-based searches, use the subscript operator
         return self[name].first
+    }
+
+    // MARK: - Pattern Matching Helpers
+
+    /// Checks if a pattern contains character class syntax (e.g., `[0-9]` or `[a,b,c]`).
+    private func containsCharacterClass(_ pattern: String) -> Bool {
+        return pattern.contains("[") && pattern.contains("]")
+    }
+
+    /// Matches a node name against a pattern that may contain character classes.
+    ///
+    /// Character class syntax:
+    /// - `[0-9]` matches any single digit (range)
+    /// - `[a,b,c]` matches 'a', 'b', or 'c' (comma-separated)
+    /// - `[a-z]` matches any lowercase letter (range)
+    ///
+    /// - Parameters:
+    ///   - name: The node name to test.
+    ///   - pattern: The pattern to match against.
+    /// - Returns: `true` if the name matches the pattern.
+    private func matchesPattern(_ name: String?, pattern: String) -> Bool {
+        guard let name = name else { return false }
+
+        // Handle wildcard
+        if pattern == "*" {
+            return true
+        }
+
+        // No character class - exact match required
+        guard containsCharacterClass(pattern) else {
+            return name == pattern
+        }
+
+        // Parse and match pattern with character classes
+        return matchPatternWithCharacterClass(name: name, pattern: pattern)
+    }
+
+    /// Matches a name against a pattern containing character class syntax.
+    private func matchPatternWithCharacterClass(name: String, pattern: String) -> Bool {
+        var nameIndex = name.startIndex
+        var patternIndex = pattern.startIndex
+
+        while patternIndex < pattern.endIndex && nameIndex < name.endIndex {
+            let patternChar = pattern[patternIndex]
+
+            if patternChar == "[" {
+                // Find the closing bracket
+                guard let closeBracket = pattern[patternIndex...].firstIndex(of: "]") else {
+                    return false // Invalid pattern
+                }
+
+                // Extract the character class content
+                let classStart = pattern.index(after: patternIndex)
+                let classContent = String(pattern[classStart..<closeBracket])
+
+                // Get the character to match
+                let charToMatch = name[nameIndex]
+
+                // Check if the character matches the class
+                if !characterMatchesClass(charToMatch, classContent: classContent) {
+                    return false
+                }
+
+                // Move past the character class in pattern and one character in name
+                patternIndex = pattern.index(after: closeBracket)
+                nameIndex = name.index(after: nameIndex)
+            } else if patternChar == "*" {
+                // Wildcard matches any remaining characters
+                return true
+            } else {
+                // Exact character match
+                if patternChar != name[nameIndex] {
+                    return false
+                }
+                patternIndex = pattern.index(after: patternIndex)
+                nameIndex = name.index(after: nameIndex)
+            }
+        }
+
+        // Both must be exhausted for a full match
+        return patternIndex == pattern.endIndex && nameIndex == name.endIndex
+    }
+
+    /// Checks if a character matches a character class specification.
+    ///
+    /// - Parameters:
+    ///   - char: The character to test.
+    ///   - classContent: The content inside the brackets (e.g., "0-9" or "a,b,c").
+    /// - Returns: `true` if the character matches.
+    private func characterMatchesClass(_ char: Character, classContent: String) -> Bool {
+        // Handle comma-separated values
+        if classContent.contains(",") {
+            let values = classContent.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            return values.contains(String(char))
+        }
+
+        // Handle range syntax (e.g., "0-9", "a-z")
+        if classContent.contains("-") && classContent.count >= 3 {
+            let parts = classContent.split(separator: "-", maxSplits: 1)
+            if parts.count == 2,
+               let startChar = parts[0].first,
+               let endChar = parts[1].first {
+                return char >= startChar && char <= endChar
+            }
+        }
+
+        // Single character or list of characters without commas
+        return classContent.contains(char)
     }
 
     /// Searches the children of the receiving node to perform processing for nodes that share a name.
     ///
     /// - Parameters:
-    ///   - name: The name to search for (supports path notation).
+    ///   - name: The name to search for (supports path notation and character classes).
     ///   - block: A block to execute for each found node. Set `stop` to `true` to stop enumeration.
     open func enumerateChildNodes(withName name: String, using block: (SKNode, UnsafeMutablePointer<ObjCBool>) -> Void) {
         var stop = ObjCBool(false)
 
         // Optimize for simple name search (most common case)
-        if !name.contains("/") && !name.contains("*") && !name.contains(".") {
+        if !name.contains("/") && !name.contains("*") && !name.contains(".") && !name.contains("[") {
             for child in children {
                 if child.name == name {
                     block(child, &stop)
@@ -605,7 +713,7 @@ open class SKNode: @unchecked Sendable {
         for child in root.children {
             if stop.boolValue { return }
 
-            if pattern == "*" || child.name == pattern {
+            if matchesPattern(child.name, pattern: pattern) {
                 block(child, &stop)
                 if stop.boolValue { return }
             }
@@ -634,7 +742,7 @@ open class SKNode: @unchecked Sendable {
             } else {
                 for child in node.children {
                     if stop.boolValue { return }
-                    if child.name == first {
+                    if matchesPattern(child.name, pattern: first) {
                         block(child, &stop)
                     }
                 }
@@ -653,7 +761,7 @@ open class SKNode: @unchecked Sendable {
             } else {
                 for child in node.children {
                     if stop.boolValue { return }
-                    if child.name == first {
+                    if matchesPattern(child.name, pattern: first) {
                         enumerateWithComponents(remaining, from: child, stop: &stop, block: block)
                     }
                 }
@@ -670,6 +778,8 @@ open class SKNode: @unchecked Sendable {
     /// - `*`: Wildcard for any name
     /// - `.`: Current node
     /// - `..`: Parent node
+    /// - `[0-9]`: Character class matching a range
+    /// - `[a,b,c]`: Character class matching specific characters
     ///
     /// - Parameter name: The search string.
     /// - Returns: An array of matching nodes.
@@ -714,7 +824,7 @@ open class SKNode: @unchecked Sendable {
                 matches = [parent]
             }
         } else {
-            matches = node.children.filter { $0.name == first }
+            matches = node.children.filter { matchesPattern($0.name, pattern: first) }
         }
 
         if current.isEmpty {
@@ -728,7 +838,7 @@ open class SKNode: @unchecked Sendable {
         var results: [SKNode] = []
 
         func search(node: SKNode) {
-            if pattern == "*" || node.name == pattern {
+            if matchesPattern(node.name, pattern: pattern) {
                 results.append(node)
             }
             for child in node.children {
@@ -822,12 +932,39 @@ open class SKNode: @unchecked Sendable {
         // Search children in reverse order (top-most first)
         for child in children.reversed() {
             if child.isHidden { continue }
-            let childPoint = CGPoint(x: p.x - child.position.x, y: p.y - child.position.y)
+            let childPoint = convertPointToChild(p, child: child)
             if child.contains(childPoint) {
                 return child.atPoint(childPoint)
             }
         }
         return self
+    }
+
+    /// Converts a point from this node's coordinate system to a child's coordinate system.
+    /// Applies inverse transforms (position, rotation, scale) in the correct order.
+    private func convertPointToChild(_ point: CGPoint, child: SKNode) -> CGPoint {
+        // First, translate to child's local origin
+        var result = CGPoint(x: point.x - child.position.x, y: point.y - child.position.y)
+
+        // Apply inverse rotation
+        if child.zRotation != 0 {
+            let cosAngle = cos(-child.zRotation)
+            let sinAngle = sin(-child.zRotation)
+            let rotatedX = result.x * cosAngle - result.y * sinAngle
+            let rotatedY = result.x * sinAngle + result.y * cosAngle
+            result.x = rotatedX
+            result.y = rotatedY
+        }
+
+        // Apply inverse scale
+        if child.xScale != 0 {
+            result.x /= child.xScale
+        }
+        if child.yScale != 0 {
+            result.y /= child.yScale
+        }
+
+        return result
     }
 
     /// Returns an array of all visible descendants that intersect a point.
@@ -857,7 +994,7 @@ open class SKNode: @unchecked Sendable {
 
             // Add children in reverse order so they're processed in correct order
             for child in node.children.reversed() {
-                let childPoint = CGPoint(x: point.x - child.position.x, y: point.y - child.position.y)
+                let childPoint = node.convertPointToChild(point, child: child)
                 stack.append((child, childPoint, nodeZ, 0))
             }
         }
@@ -1036,5 +1173,21 @@ open class SKNode: @unchecked Sendable {
         }
 
         return result
+    }
+}
+
+// MARK: - Equatable
+
+extension SKNode: Equatable {
+    public static func == (lhs: SKNode, rhs: SKNode) -> Bool {
+        return lhs === rhs
+    }
+}
+
+// MARK: - Hashable
+
+extension SKNode: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(self))
     }
 }

@@ -629,7 +629,7 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
 
     /// Updates the fill color with a pattern from the fill texture.
     private func updateFillWithTexture() {
-        guard let texture = fillTexture, let cgImage = texture.cgImage else {
+        guard let texture = fillTexture, let cgImage = texture.cgImage() else {
             // If no texture, revert to solid color and remove texture layer
             shapeLayer.fillColor = fillColor.cgColor
             removeFillTextureLayer()
@@ -642,7 +642,7 @@ open class SKShapeNode: SKNode, @unchecked Sendable {
 
     /// Updates the stroke color with a pattern from the stroke texture.
     private func updateStrokeWithTexture() {
-        guard let texture = strokeTexture, let cgImage = texture.cgImage else {
+        guard let texture = strokeTexture, let cgImage = texture.cgImage() else {
             // If no texture, revert to solid color and remove texture layer
             shapeLayer.strokeColor = strokeColor.cgColor
             removeStrokeTextureLayer()

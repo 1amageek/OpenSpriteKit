@@ -213,7 +213,7 @@ open class SKUniform: @unchecked Sendable {
     public init(name: String, vectorFloat2 value: SIMD2<Float>) {
         self.name = name
         self.vectorFloat2Value = value
-        self.uniformType = .vectorFloat2
+        self.uniformType = .floatVector2
     }
 
     /// Creates a uniform with a 3-component vector value.
@@ -224,7 +224,7 @@ open class SKUniform: @unchecked Sendable {
     public init(name: String, vectorFloat3 value: SIMD3<Float>) {
         self.name = name
         self.vectorFloat3Value = value
-        self.uniformType = .vectorFloat3
+        self.uniformType = .floatVector3
     }
 
     /// Creates a uniform with a 4-component vector value.
@@ -235,7 +235,40 @@ open class SKUniform: @unchecked Sendable {
     public init(name: String, vectorFloat4 value: SIMD4<Float>) {
         self.name = name
         self.vectorFloat4Value = value
-        self.uniformType = .vectorFloat4
+        self.uniformType = .floatVector4
+    }
+
+    /// Creates a uniform with a 2x2 matrix value.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the uniform variable.
+    ///   - value: The matrix value.
+    public init(name: String, matrixFloat2x2 value: simd_float2x2) {
+        self.name = name
+        self.matrixFloat2x2Value = value
+        self.uniformType = .floatMatrix2
+    }
+
+    /// Creates a uniform with a 3x3 matrix value.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the uniform variable.
+    ///   - value: The matrix value.
+    public init(name: String, matrixFloat3x3 value: simd_float3x3) {
+        self.name = name
+        self.matrixFloat3x3Value = value
+        self.uniformType = .floatMatrix3
+    }
+
+    /// Creates a uniform with a 4x4 matrix value.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the uniform variable.
+    ///   - value: The matrix value.
+    public init(name: String, matrixFloat4x4 value: simd_float4x4) {
+        self.name = name
+        self.matrixFloat4x4Value = value
+        self.uniformType = .floatMatrix4
     }
 
     // MARK: - Copying
@@ -262,14 +295,23 @@ open class SKUniform: @unchecked Sendable {
 
 /// An enumerated type to identify the type of a uniform object.
 public enum SKUniformType: Int, Sendable, Hashable {
+    /// The uniform variable does not currently hold any data.
     case none = 0
+    /// The uniform variable holds a 32-bit floating-point value.
     case float = 1
-    case vectorFloat2 = 2
-    case vectorFloat3 = 3
-    case vectorFloat4 = 4
-    case matrixFloat2x2 = 5
-    case matrixFloat3x3 = 6
-    case matrixFloat4x4 = 7
+    /// The uniform variable holds a vector of two 32-bit floating-point values.
+    case floatVector2 = 2
+    /// The uniform variable holds a vector of three 32-bit floating-point values.
+    case floatVector3 = 3
+    /// The uniform variable holds a vector of four 32-bit floating-point values.
+    case floatVector4 = 4
+    /// The uniform variable holds a 2x2 matrix of 32-bit floating-point values.
+    case floatMatrix2 = 5
+    /// The uniform variable holds a 3x3 matrix of 32-bit floating-point values.
+    case floatMatrix3 = 6
+    /// The uniform variable holds a 4x4 matrix of 32-bit floating-point values.
+    case floatMatrix4 = 7
+    /// The uniform variable holds a reference to a SpriteKit texture.
     case texture = 8
 }
 

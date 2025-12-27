@@ -35,11 +35,11 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
 
     /// Sets the rotation using Euler angles.
     ///
-    /// - Parameter angles: A 3D vector containing rotation angles (x, y, z) in radians.
-    open func setEulerAngles(_ angles: simd_float3) {
-        xRotation = CGFloat(angles.x)
-        yRotation = CGFloat(angles.y)
-        zRotation = CGFloat(angles.z)
+    /// - Parameter euler: A 3D vector containing rotation angles (x, y, z) in radians.
+    open func setEulerAngles(_ euler: vector_float3) {
+        xRotation = CGFloat(euler.x)
+        yRotation = CGFloat(euler.y)
+        zRotation = CGFloat(euler.z)
     }
 
     /// Sets the rotation using a quaternion.
@@ -54,10 +54,10 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
     /// Sets the rotation using a rotation matrix.
     ///
     /// - Parameter matrix: A 3x3 rotation matrix.
-    open func setRotationMatrix(_ matrix: simd_float3x3) {
+    open func setRotationMatrix(_ matrix: matrix_float3x3) {
         // Convert rotation matrix to Euler angles
-        let angles = rotationMatrixToEulerAngles(matrix)
-        setEulerAngles(angles)
+        let euler = rotationMatrixToEulerAngles(matrix)
+        setEulerAngles(euler)
     }
 
     // MARK: - Reading Rotation
@@ -65,30 +65,30 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
     /// Returns the current rotation as Euler angles.
     ///
     /// - Returns: A 3D vector containing rotation angles (x, y, z) in radians.
-    open func eulerAngles() -> simd_float3 {
-        return simd_float3(Float(xRotation), Float(yRotation), Float(zRotation))
+    open func eulerAngles() -> vector_float3 {
+        return vector_float3(Float(xRotation), Float(yRotation), Float(zRotation))
     }
 
     /// Returns the current rotation as a quaternion.
     ///
     /// - Returns: A quaternion representing the current rotation.
     open func quaternion() -> simd_quatf {
-        let angles = eulerAngles()
-        return eulerAnglesToQuaternion(angles)
+        let euler = eulerAngles()
+        return eulerAnglesToQuaternion(euler)
     }
 
     /// Returns the current rotation as a rotation matrix.
     ///
     /// - Returns: A 3x3 rotation matrix representing the current rotation.
-    open func rotationMatrix() -> simd_float3x3 {
-        let angles = eulerAngles()
-        return eulerAnglesToRotationMatrix(angles)
+    open func rotationMatrix() -> matrix_float3x3 {
+        let euler = eulerAngles()
+        return eulerAnglesToRotationMatrix(euler)
     }
 
     // MARK: - Private Conversion Methods
 
     /// Converts a quaternion to Euler angles.
-    private func quaternionToEulerAngles(_ q: simd_quatf) -> simd_float3 {
+    private func quaternionToEulerAngles(_ q: simd_quatf) -> vector_float3 {
         let sinr_cosp = 2 * (q.real * q.imag.x + q.imag.y * q.imag.z)
         let cosr_cosp = 1 - 2 * (q.imag.x * q.imag.x + q.imag.y * q.imag.y)
         let roll = atan2(sinr_cosp, cosr_cosp)
@@ -105,17 +105,17 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
         let cosy_cosp = 1 - 2 * (q.imag.y * q.imag.y + q.imag.z * q.imag.z)
         let yaw = atan2(siny_cosp, cosy_cosp)
 
-        return simd_float3(roll, pitch, yaw)
+        return vector_float3(roll, pitch, yaw)
     }
 
     /// Converts Euler angles to a quaternion.
-    private func eulerAnglesToQuaternion(_ angles: simd_float3) -> simd_quatf {
-        let cx = cos(angles.x * 0.5)
-        let sx = sin(angles.x * 0.5)
-        let cy = cos(angles.y * 0.5)
-        let sy = sin(angles.y * 0.5)
-        let cz = cos(angles.z * 0.5)
-        let sz = sin(angles.z * 0.5)
+    private func eulerAnglesToQuaternion(_ euler: vector_float3) -> simd_quatf {
+        let cx = cos(euler.x * 0.5)
+        let sx = sin(euler.x * 0.5)
+        let cy = cos(euler.y * 0.5)
+        let sy = sin(euler.y * 0.5)
+        let cz = cos(euler.z * 0.5)
+        let sz = sin(euler.z * 0.5)
 
         let w = cx * cy * cz + sx * sy * sz
         let x = sx * cy * cz - cx * sy * sz
@@ -126,7 +126,7 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
     }
 
     /// Converts a rotation matrix to Euler angles.
-    private func rotationMatrixToEulerAngles(_ matrix: simd_float3x3) -> simd_float3 {
+    private func rotationMatrixToEulerAngles(_ matrix: matrix_float3x3) -> vector_float3 {
         let sy = sqrt(matrix[0][0] * matrix[0][0] + matrix[1][0] * matrix[1][0])
 
         let singular = sy < 1e-6
@@ -145,17 +145,17 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
             z = 0
         }
 
-        return simd_float3(x, y, z)
+        return vector_float3(x, y, z)
     }
 
     /// Converts Euler angles to a rotation matrix.
-    private func eulerAnglesToRotationMatrix(_ angles: simd_float3) -> simd_float3x3 {
-        let cx = cos(angles.x)
-        let sx = sin(angles.x)
-        let cy = cos(angles.y)
-        let sy = sin(angles.y)
-        let cz = cos(angles.z)
-        let sz = sin(angles.z)
+    private func eulerAnglesToRotationMatrix(_ euler: vector_float3) -> matrix_float3x3 {
+        let cx = cos(euler.x)
+        let sx = sin(euler.x)
+        let cy = cos(euler.y)
+        let sy = sin(euler.y)
+        let cz = cos(euler.z)
+        let sz = sin(euler.z)
 
         // Rotation matrix = Rz * Ry * Rx
         let r00 = cy * cz
@@ -170,10 +170,10 @@ open class SKTransformNode: SKNode, @unchecked Sendable {
         let r21 = sx * cy
         let r22 = cx * cy
 
-        return simd_float3x3(columns: (
-            simd_float3(r00, r10, r20),
-            simd_float3(r01, r11, r21),
-            simd_float3(r02, r12, r22)
+        return matrix_float3x3(columns: (
+            SIMD3<Float>(r00, r10, r20),
+            SIMD3<Float>(r01, r11, r21),
+            SIMD3<Float>(r02, r12, r22)
         ))
     }
 }

@@ -18,7 +18,7 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
     open var texture: SKTexture? {
         didSet {
             if let texture = texture, size == .zero {
-                size = texture.size
+                size = texture.size()
             }
             updateLayerContents()
         }
@@ -65,7 +65,19 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
 
     /// Updates the layer's contents based on the texture.
     private func updateLayerContents() {
-        layer.contents = texture?.cgImage
+        let cgImage = texture?.cgImage()
+        layer.contents = cgImage
+        // For subtextures, cgImage() returns the cropped image, so use full rect
+        // For regular textures, also use full rect
+        layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+
+        // Debug: track if contents are properly set
+        if let tex = texture {
+            let textureSize = tex.size()
+            if cgImage == nil {
+                print("SKSpriteNode: WARNING - texture has nil cgImage, size=\(textureSize)")
+            }
+        }
     }
 
     // MARK: - Color Properties
@@ -230,7 +242,7 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
     /// - Parameter texture: The source texture to generate a normal map from.
     /// - Returns: A new texture containing the generated normal map, or nil if generation failed.
     private static func generateNormalMap(from texture: SKTexture) -> SKTexture? {
-        guard let cgImage = texture.cgImage else { return nil }
+        guard let cgImage = texture.cgImage() else { return nil }
 
         let width = cgImage.width
         let height = cgImage.height
@@ -349,7 +361,7 @@ open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
     ///
     /// - Parameter texture: The texture to use for the sprite.
     public convenience init(texture: SKTexture?) {
-        self.init(texture: texture, color: .white, size: texture?.size ?? .zero)
+        self.init(texture: texture, color: .white, size: texture?.size() ?? .zero)
     }
 
     /// Initializes a textured sprite using an existing texture object but with a specified size.

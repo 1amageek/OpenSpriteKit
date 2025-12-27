@@ -342,8 +342,28 @@ open class SKView: SKViewBase {
         // Set up the context
         context.translateBy(x: -crop.origin.x, y: -crop.origin.y)
 
-        // Render the node hierarchy to the context
-        renderNode(node, to: context)
+        // Collect all nodes with their accumulated transforms and zPositions
+        var renderItems: [NodeRenderItem] = []
+        collectNodesForRendering(
+            node: node,
+            accumulatedZ: 0,
+            accumulatedAlpha: 1.0,
+            accumulatedTransform: .identity,
+            items: &renderItems
+        )
+
+        // Sort by accumulated zPosition, then by tree order
+        renderItems.sort { a, b in
+            if a.accumulatedZ != b.accumulatedZ {
+                return a.accumulatedZ < b.accumulatedZ
+            }
+            return a.treeOrder < b.treeOrder
+        }
+
+        // Render each node with its accumulated transform
+        for item in renderItems {
+            renderNodeWithTransform(item, to: context)
+        }
 
         // Create CGImage from the rendered data
         guard let cgImage = context.makeImage() else {
@@ -364,17 +384,66 @@ open class SKView: SKViewBase {
         return texture(from: node, crop: frame)
     }
 
-    /// Renders a node and its children to a Core Graphics context.
-    private func renderNode(_ node: SKNode, to context: CGContext) {
+    /// Information needed to render a node with proper z-ordering.
+    private struct NodeRenderItem {
+        let node: SKNode
+        let accumulatedZ: CGFloat
+        let accumulatedAlpha: CGFloat
+        let accumulatedTransform: CGAffineTransform
+        let treeOrder: Int
+    }
+
+    /// Collects all visible nodes with their accumulated properties for sorted rendering.
+    private func collectNodesForRendering(
+        node: SKNode,
+        accumulatedZ: CGFloat,
+        accumulatedAlpha: CGFloat,
+        accumulatedTransform: CGAffineTransform,
+        items: inout [NodeRenderItem]
+    ) {
         guard !node.isHidden && node.alpha > 0 else { return }
+
+        let nodeZ = accumulatedZ + node.zPosition
+        let nodeAlpha = accumulatedAlpha * node.alpha
+
+        // Build the transform for this node
+        var nodeTransform = accumulatedTransform
+        nodeTransform = nodeTransform.translatedBy(x: node.position.x, y: node.position.y)
+        nodeTransform = nodeTransform.rotated(by: node.zRotation)
+        nodeTransform = nodeTransform.scaledBy(x: node.xScale, y: node.yScale)
+
+        // Add this node to the list
+        let treeOrder = items.count
+        items.append(NodeRenderItem(
+            node: node,
+            accumulatedZ: nodeZ,
+            accumulatedAlpha: nodeAlpha,
+            accumulatedTransform: nodeTransform,
+            treeOrder: treeOrder
+        ))
+
+        // Collect children sorted by local zPosition (for deterministic sibling order)
+        let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
+        for child in sortedChildren {
+            collectNodesForRendering(
+                node: child,
+                accumulatedZ: nodeZ,
+                accumulatedAlpha: nodeAlpha,
+                accumulatedTransform: nodeTransform,
+                items: &items
+            )
+        }
+    }
+
+    /// Renders a single node with its pre-calculated accumulated transform.
+    private func renderNodeWithTransform(_ item: NodeRenderItem, to context: CGContext) {
+        let node = item.node
 
         context.saveGState()
 
-        // Apply node's transform
-        context.translateBy(x: node.position.x, y: node.position.y)
-        context.rotate(by: node.zRotation)
-        context.scaleBy(x: node.xScale, y: node.yScale)
-        context.setAlpha(node.alpha)
+        // Apply the accumulated transform
+        context.concatenate(item.accumulatedTransform)
+        context.setAlpha(item.accumulatedAlpha)
 
         // Render based on node type
         if let sprite = node as? SKSpriteNode {
@@ -385,18 +454,12 @@ open class SKView: SKViewBase {
             renderLabelNode(label, to: context)
         }
 
-        // Render children (sorted by zPosition)
-        let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
-        for child in sortedChildren {
-            renderNode(child, to: context)
-        }
-
         context.restoreGState()
     }
 
     /// Renders a sprite node to a Core Graphics context.
     private func renderSpriteNode(_ sprite: SKSpriteNode, to context: CGContext) {
-        guard let cgImage = sprite.texture?.cgImage else { return }
+        guard let cgImage = sprite.texture?.cgImage() else { return }
 
         let size = sprite.size
         let anchorPoint = sprite.anchorPoint

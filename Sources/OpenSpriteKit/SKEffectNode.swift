@@ -162,10 +162,29 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
         let bytesPerRow = width * bytesPerPixel
         var pixelData = [UInt8](repeating: 0, count: bytesPerRow * height)
 
-        // Collect and composite all child nodes
-        let sortedChildren = children.sorted { $0.zPosition < $1.zPosition }
-        for child in sortedChildren {
-            compositeNode(child, into: &pixelData, width: width, height: height, bytesPerRow: bytesPerRow)
+        // Collect all nodes with their accumulated transforms and zPositions
+        var renderItems: [EffectNodeRenderItem] = []
+        for child in children {
+            collectNodesForEffectRendering(
+                node: child,
+                accumulatedZ: 0,
+                accumulatedAlpha: 1.0,
+                accumulatedTransform: .identity,
+                items: &renderItems
+            )
+        }
+
+        // Sort by accumulated zPosition, then by tree order
+        renderItems.sort { a, b in
+            if a.accumulatedZ != b.accumulatedZ {
+                return a.accumulatedZ < b.accumulatedZ
+            }
+            return a.treeOrder < b.treeOrder
+        }
+
+        // Composite each node in sorted order
+        for item in renderItems {
+            compositeNodeWithTransform(item, into: &pixelData, width: width, height: height, bytesPerRow: bytesPerRow)
         }
 
         // Create CGImage from pixel data
@@ -190,41 +209,75 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
         )
     }
 
-    /// Composites a node and its children into the pixel buffer.
-    private func compositeNode(_ node: SKNode, into pixelData: inout [UInt8],
-                               width: Int, height: Int, bytesPerRow: Int,
-                               parentTransform: CGAffineTransform = .identity,
-                               parentAlpha: CGFloat = 1.0) {
+    /// Information needed to render a node with proper z-ordering.
+    private struct EffectNodeRenderItem {
+        let node: SKNode
+        let accumulatedZ: CGFloat
+        let accumulatedAlpha: CGFloat
+        let accumulatedTransform: CGAffineTransform
+        let treeOrder: Int
+    }
+
+    /// Collects all visible nodes with their accumulated properties for sorted rendering.
+    private func collectNodesForEffectRendering(
+        node: SKNode,
+        accumulatedZ: CGFloat,
+        accumulatedAlpha: CGFloat,
+        accumulatedTransform: CGAffineTransform,
+        items: inout [EffectNodeRenderItem]
+    ) {
         guard !node.isHidden && node.alpha > 0 else { return }
 
-        // Calculate accumulated transform
-        var transform = parentTransform
-        transform = transform.translatedBy(x: node.position.x, y: node.position.y)
-        transform = transform.rotated(by: node.zRotation)
-        transform = transform.scaledBy(x: node.xScale, y: node.yScale)
+        let nodeZ = accumulatedZ + node.zPosition
+        let nodeAlpha = accumulatedAlpha * node.alpha
 
-        let alpha = parentAlpha * node.alpha
+        // Build the transform for this node
+        var nodeTransform = accumulatedTransform
+        nodeTransform = nodeTransform.translatedBy(x: node.position.x, y: node.position.y)
+        nodeTransform = nodeTransform.rotated(by: node.zRotation)
+        nodeTransform = nodeTransform.scaledBy(x: node.xScale, y: node.yScale)
+
+        // Add this node to the list
+        let treeOrder = items.count
+        items.append(EffectNodeRenderItem(
+            node: node,
+            accumulatedZ: nodeZ,
+            accumulatedAlpha: nodeAlpha,
+            accumulatedTransform: nodeTransform,
+            treeOrder: treeOrder
+        ))
+
+        // Collect children sorted by local zPosition (for deterministic sibling order)
+        let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
+        for child in sortedChildren {
+            collectNodesForEffectRendering(
+                node: child,
+                accumulatedZ: nodeZ,
+                accumulatedAlpha: nodeAlpha,
+                accumulatedTransform: nodeTransform,
+                items: &items
+            )
+        }
+    }
+
+    /// Composites a single node with its pre-calculated accumulated transform.
+    private func compositeNodeWithTransform(_ item: EffectNodeRenderItem, into pixelData: inout [UInt8],
+                                            width: Int, height: Int, bytesPerRow: Int) {
+        let node = item.node
 
         // Composite based on node type
         if let sprite = node as? SKSpriteNode {
             compositeSprite(sprite, into: &pixelData, width: width, height: height,
-                           bytesPerRow: bytesPerRow, transform: transform, alpha: alpha)
+                           bytesPerRow: bytesPerRow, transform: item.accumulatedTransform, alpha: item.accumulatedAlpha)
         }
         // Shape nodes would require path rasterization - skip for now
-
-        // Composite children
-        let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
-        for child in sortedChildren {
-            compositeNode(child, into: &pixelData, width: width, height: height,
-                         bytesPerRow: bytesPerRow, parentTransform: transform, parentAlpha: alpha)
-        }
     }
 
     /// Composites a sprite node into the pixel buffer using software rendering.
     private func compositeSprite(_ sprite: SKSpriteNode, into pixelData: inout [UInt8],
                                  width: Int, height: Int, bytesPerRow: Int,
                                  transform: CGAffineTransform, alpha: CGFloat) {
-        guard let cgImage = sprite.texture?.cgImage else { return }
+        guard let cgImage = sprite.texture?.cgImage() else { return }
 
         // Get source image data
         let srcWidth = cgImage.width

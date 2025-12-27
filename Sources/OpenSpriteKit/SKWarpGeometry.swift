@@ -12,7 +12,7 @@ import simd
 ///
 /// `SKWarpGeometry` is the abstract base class for warp transformation definitions.
 /// Use the `SKWarpGeometryGrid` subclass to create grid-based warping effects.
-open class SKWarpGeometry: @unchecked Sendable {
+open class SKWarpGeometry: @unchecked Sendable, Equatable, Hashable {
 
     // MARK: - Initializers
 
@@ -26,6 +26,26 @@ open class SKWarpGeometry: @unchecked Sendable {
     /// - Returns: A new warp geometry with the same properties.
     open func copy() -> SKWarpGeometry {
         return SKWarpGeometry()
+    }
+
+    // MARK: - Equatable & Hashable
+
+    public static func == (lhs: SKWarpGeometry, rhs: SKWarpGeometry) -> Bool {
+        return lhs.isEqual(to: rhs)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        computeHash(into: &hasher)
+    }
+
+    /// Override in subclasses to provide equality comparison.
+    open func isEqual(to other: SKWarpGeometry) -> Bool {
+        return type(of: self) == type(of: other) && type(of: self) == SKWarpGeometry.self
+    }
+
+    /// Override in subclasses to provide hash computation.
+    open func computeHash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(type(of: self)))
     }
 }
 
@@ -66,6 +86,16 @@ open class SKWarpGeometryGrid: SKWarpGeometry, @unchecked Sendable {
     }
 
     // MARK: - Initializers
+
+    /// Creates a warp geometry grid of a specified size with identity transformation.
+    ///
+    /// - Parameters:
+    ///   - columns: The number of horizontal divisions.
+    ///   - rows: The number of vertical divisions.
+    public convenience init(columns: Int, rows: Int) {
+        let positions = SKWarpGeometryGrid.generateUnitPositions(columns: columns, rows: rows)
+        self.init(columns: columns, rows: rows, sourcePositions: positions, destinationPositions: positions)
+    }
 
     /// Creates a warp geometry grid with the specified parameters.
     ///
@@ -114,6 +144,29 @@ open class SKWarpGeometryGrid: SKWarpGeometry, @unchecked Sendable {
             sourcePositions: sourcePositions,
             destinationPositions: destinationPositions
         )
+    }
+
+    // MARK: - Equatable & Hashable
+
+    open override func isEqual(to other: SKWarpGeometry) -> Bool {
+        guard let otherGrid = other as? SKWarpGeometryGrid else { return false }
+        return numberOfColumns == otherGrid.numberOfColumns &&
+               numberOfRows == otherGrid.numberOfRows &&
+               sourcePositions == otherGrid.sourcePositions &&
+               destinationPositions == otherGrid.destinationPositions
+    }
+
+    open override func computeHash(into hasher: inout Hasher) {
+        hasher.combine(numberOfColumns)
+        hasher.combine(numberOfRows)
+        for pos in sourcePositions {
+            hasher.combine(pos.x)
+            hasher.combine(pos.y)
+        }
+        for pos in destinationPositions {
+            hasher.combine(pos.x)
+            hasher.combine(pos.y)
+        }
     }
 
     // MARK: - Factory Methods
@@ -212,3 +265,4 @@ open class SKWarpGeometryGrid: SKWarpGeometry, @unchecked Sendable {
         return positions
     }
 }
+

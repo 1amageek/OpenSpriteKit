@@ -76,8 +76,9 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
     // MARK: - Private Setup
 
     private func setupPixelData() {
-        let width = Int(size.width)
-        let height = Int(size.height)
+        let textureSize = size()
+        let width = Int(textureSize.width)
+        let height = Int(textureSize.height)
         let bytesPerPixel = 4 // RGBA8
         bytesPerRow = width * bytesPerPixel
         let dataSize = bytesPerRow * height
@@ -124,8 +125,9 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
     private func updateCGImage() {
         guard let data = pixelData else { return }
 
-        let width = Int(size.width)
-        let height = Int(size.height)
+        let textureSize = size()
+        let width = Int(textureSize.width)
+        let height = Int(textureSize.height)
         guard width > 0 && height > 0 else { return }
 
         // Create a CGImage from the pixel data
@@ -147,17 +149,17 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
             intent: .defaultIntent
         )
 
-        // Update the base class cgImage property
-        self.cgImage = image
+        // Update the base class cgImage storage
+        self._cgImage = image
     }
 
     /// Returns the current CGImage, updating it first if necessary.
-    public override func getCGImage() -> CGImage? {
-        if cgImage == nil || needsGPUUpdate {
+    public override func cgImage() -> CGImage? {
+        if _cgImage == nil || needsGPUUpdate {
             updateCGImage()
             needsGPUUpdate = false
         }
-        return cgImage
+        return _cgImage
     }
 
     // MARK: - Convenience Methods
@@ -169,8 +171,9 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
         modifyPixelData { data, bytesPerRow in
             guard let pixels = data?.assumingMemoryBound(to: UInt8.self) else { return }
 
-            let width = Int(self.size.width)
-            let height = Int(self.size.height)
+            let textureSize = self.size()
+            let width = Int(textureSize.width)
+            let height = Int(textureSize.height)
 
             // Extract color components
             let (r, g, b, a) = extractColorComponents(from: color)
@@ -194,7 +197,8 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
     ///   - y: The y coordinate of the pixel.
     ///   - color: The color to set.
     open func setPixel(at x: Int, y: Int, color: SKColor) {
-        guard x >= 0 && x < Int(size.width) && y >= 0 && y < Int(size.height) else { return }
+        let textureSize = size()
+        guard x >= 0 && x < Int(textureSize.width) && y >= 0 && y < Int(textureSize.height) else { return }
 
         modifyPixelData { data, bytesPerRow in
             guard let pixels = data?.assumingMemoryBound(to: UInt8.self) else { return }
@@ -213,7 +217,7 @@ open class SKMutableTexture: SKTexture, @unchecked Sendable {
     open func clear() {
         modifyPixelData { data, bytesPerRow in
             guard let pixels = data else { return }
-            let totalBytes = bytesPerRow * Int(self.size.height)
+            let totalBytes = bytesPerRow * Int(self.size().height)
             memset(pixels, 0, totalBytes)
         }
     }

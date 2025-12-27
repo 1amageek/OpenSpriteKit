@@ -23,23 +23,21 @@ open class SKCameraNode: SKNode, @unchecked Sendable {
 
     // MARK: - Visibility Methods
 
-    /// Determines whether a node is visible when viewed from this camera.
+    /// Checks to see if a node is visible in the camera's viewport.
     ///
-    /// - Parameters:
-    ///   - node: The node to test.
-    ///   - view: The view in which the scene is rendered.
+    /// - Parameter node: The node to test for visibility.
     /// - Returns: `true` if the node is visible; otherwise, `false`.
-    open func contains(_ node: SKNode, in view: SKView) -> Bool {
+    open func contains(_ node: SKNode) -> Bool {
         // Hidden nodes are never visible
         guard !node.isHidden && node.alpha > 0 else { return false }
-
-        // Calculate visible rect in scene coordinates
-        let visibleRect = calculateVisibleRect(in: view)
 
         // Get the node's frame in scene coordinates
         guard let scene = self.scene, let nodeScene = node.scene, scene === nodeScene else {
             return false
         }
+
+        // Calculate visible rect in scene coordinates
+        let visibleRect = calculateVisibleRect()
 
         let nodeFrame = node.calculateAccumulatedFrame()
 
@@ -47,15 +45,14 @@ open class SKCameraNode: SKNode, @unchecked Sendable {
         return visibleRect.intersects(nodeFrame)
     }
 
-    /// Returns all nodes that are visible when viewed from this camera.
+    /// Finds nodes that are visible in the camera's viewport.
     ///
-    /// - Parameter view: The view in which the scene is rendered.
-    /// - Returns: An array of all visible nodes.
-    open func containedNodeSet(in view: SKView) -> [SKNode] {
+    /// - Returns: A set of all visible nodes.
+    open func containedNodeSet() -> Set<SKNode> {
         guard let scene = self.scene else { return [] }
 
-        var visibleNodes: [SKNode] = []
-        let visibleRect = calculateVisibleRect(in: view)
+        var visibleNodes = Set<SKNode>()
+        let visibleRect = calculateVisibleRect()
 
         // Recursively check all nodes
         collectVisibleNodes(from: scene, visibleRect: visibleRect, into: &visibleNodes)
@@ -65,9 +62,12 @@ open class SKCameraNode: SKNode, @unchecked Sendable {
 
     /// Calculates the visible rectangle in scene coordinates based on camera transform.
     ///
-    /// - Parameter view: The view displaying the scene.
     /// - Returns: The rectangle representing the visible area in scene coordinates.
-    public func calculateVisibleRect(in view: SKView) -> CGRect {
+    public func calculateVisibleRect() -> CGRect {
+        // Get view size from the scene's view
+        guard let scene = self.scene, let view = scene.view else {
+            return .zero
+        }
         let viewSize = view.viewSize
 
         // Base visible size (accounting for camera scale)
@@ -123,14 +123,14 @@ open class SKCameraNode: SKNode, @unchecked Sendable {
     }
 
     /// Recursively collects visible nodes.
-    private func collectVisibleNodes(from node: SKNode, visibleRect: CGRect, into result: inout [SKNode]) {
+    private func collectVisibleNodes(from node: SKNode, visibleRect: CGRect, into result: inout Set<SKNode>) {
         // Skip hidden nodes and their children
         guard !node.isHidden && node.alpha > 0 else { return }
 
         // Check if this node is visible
         let nodeFrame = node.calculateAccumulatedFrame()
         if visibleRect.intersects(nodeFrame) {
-            result.append(node)
+            result.insert(node)
         }
 
         // Check children
