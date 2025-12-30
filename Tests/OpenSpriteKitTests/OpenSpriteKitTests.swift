@@ -388,7 +388,8 @@ import Testing
 // MARK: - SKNodeFocusBehavior Tests
 
 @Test func testSKNodeFocusBehaviorValues() {
+    // Order matches Apple's documentation: none, occluding, focusable
     #expect(SKNodeFocusBehavior.none.rawValue == 0)
-    #expect(SKNodeFocusBehavior.focusable.rawValue == 1)
-    #expect(SKNodeFocusBehavior.occluding.rawValue == 2)
+    #expect(SKNodeFocusBehavior.occluding.rawValue == 1)
+    #expect(SKNodeFocusBehavior.focusable.rawValue == 2)
 }

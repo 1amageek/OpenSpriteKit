@@ -930,7 +930,11 @@ open class SKNode: @unchecked Sendable {
     /// - Parameter action: The action to run.
     open func run(_ action: SKAction) {
         anonymousActions.append(action)
-        SKActionRunner.shared.runAction(action, on: self)
+        SKActionRunner.shared.runAction(action, on: self) { [weak self] in
+            if let idx = self?.anonymousActions.firstIndex(where: { $0 === action }) {
+                self?.anonymousActions.remove(at: idx)
+            }
+        }
     }
 
     /// Adds an action to the list of actions executed by the node and schedules
@@ -941,7 +945,12 @@ open class SKNode: @unchecked Sendable {
     ///   - completion: A block to execute when the action completes.
     open func run(_ action: SKAction, completion: @escaping () -> Void) {
         anonymousActions.append(action)
-        SKActionRunner.shared.runAction(action, on: self, completion: completion)
+        SKActionRunner.shared.runAction(action, on: self) { [weak self] in
+            if let idx = self?.anonymousActions.firstIndex(where: { $0 === action }) {
+                self?.anonymousActions.remove(at: idx)
+            }
+            completion()
+        }
     }
 
     /// Adds an identifiable action to the list of actions executed by the node.
@@ -951,7 +960,12 @@ open class SKNode: @unchecked Sendable {
     ///   - key: A unique key used to identify the action.
     open func run(_ action: SKAction, withKey key: String) {
         actionsByKey[key] = action
-        SKActionRunner.shared.runAction(action, on: self, withKey: key)
+        SKActionRunner.shared.runAction(action, on: self, withKey: key) { [weak self] in
+            // Only remove if it's still the same action (not replaced)
+            if self?.actionsByKey[key] === action {
+                self?.actionsByKey.removeValue(forKey: key)
+            }
+        }
     }
 
     /// Returns an action associated with a specific key.

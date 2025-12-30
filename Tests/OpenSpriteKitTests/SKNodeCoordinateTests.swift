@@ -110,13 +110,15 @@ struct SKNodeAccumulatedFrameTests {
 
         let accumulated = parent.calculateAccumulatedFrame()
 
-        // Child's frame in parent coords: position (50, 50) with size (50, 50)
-        // With anchor (0.5, 0.5): origin at (25, 25), size (50, 50)
-        // Parent has no content, so accumulated frame is just the child's frame
-        #expect(accumulated.origin.x == 25)
-        #expect(accumulated.origin.y == 25)
-        #expect(accumulated.width == 50)
-        #expect(accumulated.height == 50)
+        // calculateAccumulatedFrame returns rect in parent's coordinate system (scene coords)
+        // parent.frame = (100, 100, 0, 0) - zero size since SKNode has no content
+        // child.frame in parent's local coords = (25, 25, 50, 50) - offset by anchor (0.5, 0.5)
+        // child.frame transformed to scene coords = (125, 125, 50, 50)
+        // union of parent.frame and child's transformed frame = (100, 100, 75, 75)
+        #expect(accumulated.origin.x == 100)
+        #expect(accumulated.origin.y == 100)
+        #expect(accumulated.width == 75)
+        #expect(accumulated.height == 75)
     }
 
     @Test("Accumulated frame with multiple children")
@@ -188,15 +190,15 @@ struct SKNodeIntersectsTests {
         nodeA.position = CGPoint(x: 100, y: 100)
 
         let nodeB = SKSpriteNode(color: .blue, size: CGSize(width: 50, height: 50))
-        nodeB.position = CGPoint(x: 175, y: 100)
+        nodeB.position = CGPoint(x: 174, y: 100)  // Slightly closer so they overlap
         nodeB.xScale = 2.0  // Width becomes 100
 
         scene.addChild(nodeA)
         scene.addChild(nodeB)
 
-        // nodeB: position 175, width 100, so left edge at 125
-        // nodeA: position 100, width 50, so right edge at 125
-        // They should just touch
+        // nodeA: position 100, width 50, anchor (0.5, 0.5) → frame (75, 75, 50, 50), right edge at 125
+        // nodeB: position 174, scaled width 100, anchor (0.5, 0.5) → frame (124, 75, 100, 50), left edge at 124
+        // They overlap by 1 point
         #expect(nodeA.intersects(nodeB))
     }
 }

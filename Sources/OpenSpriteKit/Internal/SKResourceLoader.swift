@@ -11,7 +11,7 @@ import OpenImageIO
 import JavaScriptKit
 #endif
 
-/// Manages resource loading for OpenSpriteKit in WASM environments.
+/// Internal resource loader for OpenSpriteKit in WASM environments.
 ///
 /// Since WASM cannot directly access bundle resources like native platforms,
 /// this class provides a registry-based approach where resources can be:
@@ -19,20 +19,14 @@ import JavaScriptKit
 /// 2. Loaded from URLs (async)
 /// 3. Generated procedurally
 ///
-/// ## Usage
-/// ```swift
-/// // Pre-register a texture
-/// SKResourceLoader.shared.registerImage(data: pngData, forName: "player")
-///
-/// // Later, create texture using the name
-/// let texture = SKTexture(imageNamed: "player")
-/// ```
-public final class SKResourceLoader {
+/// This class is used internally by SKTexture(imageNamed:) and related APIs.
+/// External code should use SKTexture(imageData:) for direct texture creation.
+internal final class SKResourceLoader {
 
     // MARK: - Singleton
 
     /// The shared resource loader instance.
-    nonisolated(unsafe) public static let shared = SKResourceLoader()
+    nonisolated(unsafe) static let shared = SKResourceLoader()
 
     // MARK: - Properties
 
@@ -61,11 +55,11 @@ public final class SKResourceLoader {
     private var emitterRegistry: [String: Data] = [:]
 
     /// Atlas data structure.
-    public struct AtlasData {
-        public let image: CGImage
-        public let frames: [String: CGRect]  // Frame name -> rect in normalized coordinates (0-1)
+    struct AtlasData {
+        let image: CGImage
+        let frames: [String: CGRect]  // Frame name -> rect in normalized coordinates (0-1)
 
-        public init(image: CGImage, frames: [String: CGRect]) {
+        init(image: CGImage, frames: [String: CGRect]) {
             self.image = image
             self.frames = frames
         }
@@ -82,7 +76,7 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - data: PNG or JPEG image data.
     ///   - name: The name to associate with the image.
-    public func registerImage(data: Data, forName name: String) {
+    func registerImage(data: Data, forName name: String) {
         imageRegistry[name] = data
     }
 
@@ -91,7 +85,7 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - image: The CGImage to register.
     ///   - name: The name to associate with the image.
-    public func registerImage(_ image: CGImage, forName name: String) {
+    func registerImage(_ image: CGImage, forName name: String) {
         cgImageRegistry[name] = image
     }
 
@@ -99,7 +93,7 @@ public final class SKResourceLoader {
     ///
     /// - Parameter name: The name of the registered image.
     /// - Returns: The CGImage, or nil if not found.
-    public func image(forName name: String) -> CGImage? {
+    func image(forName name: String) -> CGImage? {
         // First check direct CGImage registry
         if let image = cgImageRegistry[name] {
             return image
@@ -159,7 +153,7 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - atlas: The atlas data containing the image and frame definitions.
     ///   - name: The name to associate with the atlas.
-    public func registerAtlas(_ atlas: AtlasData, forName name: String) {
+    func registerAtlas(_ atlas: AtlasData, forName name: String) {
         atlasRegistry[name] = atlas
     }
 
@@ -169,7 +163,7 @@ public final class SKResourceLoader {
     ///   - imageData: PNG or JPEG data for the atlas image.
     ///   - frames: Dictionary mapping frame names to their rects in normalized coordinates.
     ///   - name: The name to associate with the atlas.
-    public func registerAtlas(imageData: Data, frames: [String: CGRect], forName name: String) {
+    func registerAtlas(imageData: Data, frames: [String: CGRect], forName name: String) {
         if let image = decodeImage(from: imageData) {
             let atlas = AtlasData(image: image, frames: frames)
             atlasRegistry[name] = atlas
@@ -180,7 +174,7 @@ public final class SKResourceLoader {
     ///
     /// - Parameter name: The name of the registered atlas.
     /// - Returns: The atlas data, or nil if not found.
-    public func atlas(forName name: String) -> AtlasData? {
+    func atlas(forName name: String) -> AtlasData? {
         return atlasRegistry[name] ?? atlasRegistry["\(name).atlas"]
     }
 
@@ -191,12 +185,12 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - data: The action file data (property list format).
     ///   - name: The name to associate with the action.
-    public func registerAction(data: Data, forName name: String) {
+    func registerAction(data: Data, forName name: String) {
         actionRegistry[name] = data
     }
 
     /// Retrieves action data for a given name.
-    public func actionData(forName name: String) -> Data? {
+    func actionData(forName name: String) -> Data? {
         return actionRegistry[name]
     }
 
@@ -207,12 +201,12 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - data: The scene file data (.sks format).
     ///   - name: The name to associate with the scene.
-    public func registerScene(data: Data, forName name: String) {
+    func registerScene(data: Data, forName name: String) {
         sceneRegistry[name] = data
     }
 
     /// Retrieves scene data for a given name.
-    public func sceneData(forName name: String) -> Data? {
+    func sceneData(forName name: String) -> Data? {
         return sceneRegistry[name] ?? sceneRegistry["\(name).sks"]
     }
 
@@ -223,7 +217,7 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - source: The shader source code.
     ///   - name: The name to associate with the shader.
-    public func registerShader(source: String, forName name: String) {
+    func registerShader(source: String, forName name: String) {
         shaderRegistry[name] = source
     }
 
@@ -231,7 +225,7 @@ public final class SKResourceLoader {
     ///
     /// - Parameter name: The name of the registered shader.
     /// - Returns: The shader source code, or nil if not found.
-    public func shaderSource(forName name: String) -> String? {
+    func shaderSource(forName name: String) -> String? {
         // Try exact name
         if let source = shaderRegistry[name] {
             return source
@@ -253,7 +247,7 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - data: The tile set file data (.sks format).
     ///   - name: The name to associate with the tile set.
-    public func registerTileSet(data: Data, forName name: String) {
+    func registerTileSet(data: Data, forName name: String) {
         tileSetRegistry[name] = data
     }
 
@@ -261,7 +255,7 @@ public final class SKResourceLoader {
     ///
     /// - Parameter name: The name of the registered tile set.
     /// - Returns: The tile set data, or nil if not found.
-    public func tileSetData(forName name: String) -> Data? {
+    func tileSetData(forName name: String) -> Data? {
         return tileSetRegistry[name] ?? tileSetRegistry["\(name).sks"]
     }
 
@@ -272,7 +266,7 @@ public final class SKResourceLoader {
     /// - Parameters:
     ///   - data: The emitter file data (.sks format).
     ///   - name: The name to associate with the emitter.
-    public func registerEmitter(data: Data, forName name: String) {
+    func registerEmitter(data: Data, forName name: String) {
         emitterRegistry[name] = data
     }
 
@@ -280,14 +274,14 @@ public final class SKResourceLoader {
     ///
     /// - Parameter name: The name of the registered emitter.
     /// - Returns: The emitter data, or nil if not found.
-    public func emitterData(forName name: String) -> Data? {
+    func emitterData(forName name: String) -> Data? {
         return emitterRegistry[name] ?? emitterRegistry["\(name).sks"]
     }
 
     // MARK: - Cache Management
 
     /// Clears all registered resources.
-    public func clearAll() {
+    func clearAll() {
         imageRegistry.removeAll()
         cgImageRegistry.removeAll()
         atlasRegistry.removeAll()
@@ -299,19 +293,19 @@ public final class SKResourceLoader {
     }
 
     /// Clears only image resources.
-    public func clearImages() {
+    func clearImages() {
         imageRegistry.removeAll()
         cgImageRegistry.removeAll()
     }
 
     /// Removes a specific image by name.
-    public func removeImage(forName name: String) {
+    func removeImage(forName name: String) {
         imageRegistry.removeValue(forKey: name)
         cgImageRegistry.removeValue(forKey: name)
     }
 
     /// Removes a specific atlas by name.
-    public func removeAtlas(forName name: String) {
+    func removeAtlas(forName name: String) {
         atlasRegistry.removeValue(forKey: name)
     }
 
@@ -324,7 +318,7 @@ public final class SKResourceLoader {
     ///   - url: The URL to load from.
     ///   - name: The name to register the loaded image under.
     /// - Returns: The loaded CGImage.
-    public func loadImage(from url: String, as name: String) async throws -> CGImage {
+    func loadImage(from url: String, as name: String) async throws -> CGImage {
         let response = try await fetch(url: url)
         guard let image = decodeImage(from: response) else {
             throw SKResourceError.decodingFailed
@@ -369,7 +363,7 @@ public final class SKResourceLoader {
 // MARK: - Error Types
 
 /// Errors that can occur during resource loading.
-public enum SKResourceError: Error {
+enum SKResourceError: Error {
     case notFound
     case decodingFailed
     case networkFailed

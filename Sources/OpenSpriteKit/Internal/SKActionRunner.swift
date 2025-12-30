@@ -93,7 +93,6 @@ internal final class SKActionRunner {
     ///   - key: Optional key to identify the action.
     ///   - completion: Optional completion block.
     func runAction(_ action: SKAction, on node: SKNode, withKey key: String? = nil, completion: (() -> Void)? = nil) {
-        print("SKActionRunner: runAction called on node '\(node.name ?? "unnamed")' with key '\(key ?? "nil")', actionType=\(action.actionType)")
         let nodeId = ObjectIdentifier(node)
         let initialState = captureInitialState(for: action, from: node)
 
@@ -164,11 +163,6 @@ internal final class SKActionRunner {
     ///   - scene: The scene containing the nodes.
     ///   - deltaTime: The time elapsed since the last update.
     func update(scene: SKScene, deltaTime: TimeInterval) {
-        let totalKeyedCount = runningActions.values.reduce(0) { $0 + $1.count }
-        let totalAnonCount = anonymousActions.values.reduce(0) { $0 + $1.count }
-        if totalKeyedCount > 0 || totalAnonCount > 0 {
-            print("SKActionRunner: update() - keyed=\(totalKeyedCount), anon=\(totalAnonCount), dt=\(String(format: "%.4f", deltaTime))")
-        }
         updateActionsRecursively(node: scene, deltaTime: deltaTime)
     }
 
@@ -482,9 +476,6 @@ internal final class SKActionRunner {
         // MARK: Texture Actions
         case .setTexture(let texture, let resize):
             if progress >= 1.0, let sprite = node as? SKSpriteNode {
-                let texSize = texture.size()
-                let hasCGImage = texture.cgImage() != nil
-                print("SKActionRunner: setTexture executing on '\(node.name ?? "unnamed")' - size=\(texSize), hasCGImage=\(hasCGImage), resize=\(resize)")
                 sprite.texture = texture
                 if resize {
                     sprite.size = texture.size()
