@@ -46,6 +46,17 @@ internal final class SKTextureManager {
     // MARK: - Texture Creation
 
     #if arch(wasm32)
+    /// Clears all cached GPU textures.
+    func clearCache() {
+        textureCache.removeAll()
+        metadataCache.removeAll()
+    }
+
+    /// Returns count of cached GPU textures (for diagnostics).
+    func cachedTextureCount() -> Int {
+        return textureCache.count
+    }
+
     /// Creates or retrieves a cached GPU texture from a CGImage.
     ///
     /// - Parameters:
@@ -381,12 +392,6 @@ internal final class SKTextureManager {
         let key = ObjectIdentifier(cgImage)
         textureCache.removeValue(forKey: key)
         metadataCache.removeValue(forKey: key)
-    }
-
-    /// Clears all cached textures.
-    func clearCache() {
-        textureCache.removeAll()
-        metadataCache.removeAll()
     }
 
     /// Returns metadata for a cached texture.

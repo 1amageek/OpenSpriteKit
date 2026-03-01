@@ -465,6 +465,8 @@ open class SKNode: @unchecked Sendable {
     open func removeFromParent() {
         guard let parent = parent else { return }
         parent.children.removeAll { $0 === self }
+        // Clean up actions to prevent memory leaks
+        removeAllActionsRecursively()
         // Sync layer hierarchy
         layer.removeFromSuperlayer()
         self.parent = nil
@@ -472,9 +474,24 @@ open class SKNode: @unchecked Sendable {
         clearSceneFromChildren()
     }
 
+    /// Recursively removes all actions from this node and its descendants.
+    private func removeAllActionsRecursively() {
+        removeAllActions()
+        for child in children {
+            child.removeAllActionsRecursively()
+        }
+    }
+
+    /// Internal cleanup helper for scene transitions or teardown.
+    internal func _removeAllActionsRecursivelyForCleanup() {
+        removeAllActionsRecursively()
+    }
+
     /// Removes all of the node's children.
     open func removeAllChildren() {
         for child in children {
+            // Clean up actions to prevent memory leaks
+            child.removeAllActionsRecursively()
             child.parent = nil
             child.scene = nil
             // Sync layer hierarchy

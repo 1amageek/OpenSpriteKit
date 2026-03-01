@@ -16,6 +16,9 @@ import OpenCoreImage
 /// contents of a static subtree for faster rendering performance.
 open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
 
+    /// Shared Core Image context to avoid per-frame allocations.
+    private static let sharedCIContext = CIContext(options: nil)
+
     // MARK: - Filter Properties
 
     /// The Core Image filter to apply.
@@ -152,11 +155,8 @@ open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
             return inputImage
         }
 
-        // Create a CIContext to render the filtered image
-        let context = CIContext(options: nil)
-
         // Render to CGImage
-        guard let outputCGImage = context.createCGImage(
+        guard let outputCGImage = Self.sharedCIContext.createCGImage(
             outputCIImage,
             from: outputCIImage.extent
         ) else {

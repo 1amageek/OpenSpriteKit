@@ -69,6 +69,61 @@ internal final class SKResourceLoader {
 
     private init() {}
 
+    // MARK: - Cache Management
+
+    /// Clears all registered resources.
+    func clearAll() {
+        imageRegistry.removeAll()
+        cgImageRegistry.removeAll()
+        atlasRegistry.removeAll()
+        actionRegistry.removeAll()
+        sceneRegistry.removeAll()
+        shaderRegistry.removeAll()
+        tileSetRegistry.removeAll()
+        emitterRegistry.removeAll()
+    }
+
+    /// Clears all registered images.
+    func clearImages() {
+        imageRegistry.removeAll()
+        cgImageRegistry.removeAll()
+    }
+
+    /// Clears all registered texture atlases.
+    func clearAtlases() {
+        atlasRegistry.removeAll()
+    }
+
+    /// Clears all registered actions.
+    func clearActions() {
+        actionRegistry.removeAll()
+    }
+
+    /// Clears all registered scenes.
+    func clearScenes() {
+        sceneRegistry.removeAll()
+    }
+
+    /// Clears all registered shaders.
+    func clearShaders() {
+        shaderRegistry.removeAll()
+    }
+
+    /// Clears all registered tile sets.
+    func clearTileSets() {
+        tileSetRegistry.removeAll()
+    }
+
+    /// Clears all registered emitters.
+    func clearEmitters() {
+        emitterRegistry.removeAll()
+    }
+
+    /// Returns counts of registered resource types (for diagnostics).
+    func resourceCounts() -> String {
+        return "images=\(imageRegistry.count + cgImageRegistry.count) atlases=\(atlasRegistry.count) actions=\(actionRegistry.count) scenes=\(sceneRegistry.count) shaders=\(shaderRegistry.count) tilesets=\(tileSetRegistry.count) emitters=\(emitterRegistry.count)"
+    }
+
     // MARK: - Image Registration
 
     /// Registers image data for a given name.
@@ -278,37 +333,6 @@ internal final class SKResourceLoader {
         return emitterRegistry[name] ?? emitterRegistry["\(name).sks"]
     }
 
-    // MARK: - Cache Management
-
-    /// Clears all registered resources.
-    func clearAll() {
-        imageRegistry.removeAll()
-        cgImageRegistry.removeAll()
-        atlasRegistry.removeAll()
-        actionRegistry.removeAll()
-        sceneRegistry.removeAll()
-        shaderRegistry.removeAll()
-        tileSetRegistry.removeAll()
-        emitterRegistry.removeAll()
-    }
-
-    /// Clears only image resources.
-    func clearImages() {
-        imageRegistry.removeAll()
-        cgImageRegistry.removeAll()
-    }
-
-    /// Removes a specific image by name.
-    func removeImage(forName name: String) {
-        imageRegistry.removeValue(forKey: name)
-        cgImageRegistry.removeValue(forKey: name)
-    }
-
-    /// Removes a specific atlas by name.
-    func removeAtlas(forName name: String) {
-        atlasRegistry.removeValue(forKey: name)
-    }
-
     // MARK: - WASM URL Loading
 
     #if arch(wasm32)
@@ -369,4 +393,3 @@ enum SKResourceError: Error {
     case networkFailed
     case invalidFormat
 }
-

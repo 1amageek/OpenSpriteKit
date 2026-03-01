@@ -30,7 +30,7 @@ open class SKView: SKViewBase {
     open private(set) var scene: SKScene?
 
     /// The internal renderer that manages the render loop.
-    private var viewRenderer: SKViewRenderer?
+    private nonisolated(unsafe) var viewRenderer: SKViewRenderer?
 
     /// A Boolean value that indicates whether the view pauses the scene when the app becomes inactive.
     open var pauseWhenInactive: Bool = true
@@ -88,6 +88,10 @@ open class SKView: SKViewBase {
         super.init()
     }
 
+    deinit {
+        stopRenderLoop()
+    }
+
     // MARK: - Scene Presentation
 
     /// Presents a scene in the view.
@@ -96,6 +100,8 @@ open class SKView: SKViewBase {
     open func presentScene(_ scene: SKScene?) {
         if let oldScene = self.scene {
             oldScene.willMove(from: self)
+            // Clean up actions to prevent lingering action state.
+            oldScene._removeAllActionsRecursivelyForCleanup()
             // Reset physics state for the old scene
             SKPhysicsEngine.shared.reset(for: oldScene)
         }
@@ -523,7 +529,7 @@ open class SKView: SKViewBase {
     }
 
     /// Stops the render loop.
-    internal func stopRenderLoop() {
+    internal nonisolated func stopRenderLoop() {
         viewRenderer?.stop()
         viewRenderer = nil
     }
@@ -599,5 +605,3 @@ public extension SKViewDelegate {
         return true
     }
 }
-
-

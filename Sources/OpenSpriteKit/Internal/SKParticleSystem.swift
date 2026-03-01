@@ -116,6 +116,11 @@ internal final class SKParticleSystem {
     /// All active particles.
     private(set) var particles: [SKParticle] = []
 
+    /// Current particle count (for diagnostics).
+    var particlesCount: Int {
+        return particles.count
+    }
+
     /// Time since last particle emission.
     private var timeSinceLastEmission: TimeInterval = 0
 

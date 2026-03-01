@@ -32,6 +32,18 @@ internal final class SKActionRunner {
         anonymousActions.removeAll()
     }
 
+    /// Returns total number of running actions (for diagnostics).
+    func totalRunningActionsCount() -> Int {
+        var total = 0
+        for (_, actions) in runningActions {
+            total += actions.count
+        }
+        for (_, actions) in anonymousActions {
+            total += actions.count
+        }
+        return total
+    }
+
     // MARK: - Running Action State
 
     /// Stores the state of a running action.

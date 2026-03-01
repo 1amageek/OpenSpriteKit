@@ -26,6 +26,7 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
             let oldSize = _size
             _size = newValue
             if oldSize != newValue {
+                layer.bounds = CGRect(origin: .zero, size: newValue)
                 didChangeSize(oldSize)
             }
         }

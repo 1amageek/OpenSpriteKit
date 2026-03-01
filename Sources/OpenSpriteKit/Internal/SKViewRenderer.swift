@@ -21,14 +21,14 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
 
     // MARK: - Properties
 
-    private var displayLink: CADisplayLink?
+    private nonisolated(unsafe) var displayLink: CADisplayLink?
     private weak var view: SKView?
     private var lastUpdateTime: TimeInterval = 0
-    private var isRunning: Bool = false
+    private nonisolated(unsafe) var isRunning: Bool = false
 
     /// The internal scene renderer delegate.
     /// Starts with null renderer and is replaced with the appropriate implementation in start().
-    private var rendererDelegate: SKSceneRendererDelegate
+    private nonisolated(unsafe) var rendererDelegate: SKSceneRendererDelegate
 
     // MARK: - Initialization
 
@@ -72,7 +72,7 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
     }
 
     /// Stops the render loop and releases resources.
-    func stop() {
+    nonisolated func stop() {
         isRunning = false
         displayLink?.invalidate()
         displayLink = nil
@@ -111,6 +111,10 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
             let isTransitioning = SKTransitionManager.shared.update(currentTime: currentTime)
 
             guard let scene = view.scene else { return }
+
+            #if arch(wasm32)
+            SKDiagnostics.shared.tick(scene: scene)
+            #endif
 
             // Execute the frame cycle (scene may be different during transition)
             executeFrameCycle(scene: scene, currentTime: currentTime, deltaTime: deltaTime)

@@ -19,6 +19,12 @@ internal final class SKTextureCache: @unchecked Sendable {
     /// Cache of loaded textures keyed by image name.
     private var cache: [String: SKTexture] = [:]
 
+    /// Access order for simple LRU eviction (oldest at front).
+    private var accessOrder: [String] = []
+
+    /// Optional maximum number of cached textures.
+    private var maxEntries: Int?
+
     /// Lock for thread-safe access.
     private let lock = NSLock()
 
@@ -30,11 +36,14 @@ internal final class SKTextureCache: @unchecked Sendable {
         defer { lock.unlock() }
 
         if let cached = cache[name] {
+            touch(name)
             return cached
         }
 
         if let texture = create() {
             cache[name] = texture
+            touch(name)
+            evictIfNeeded()
             return texture
         }
 
@@ -46,6 +55,7 @@ internal final class SKTextureCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         cache.removeValue(forKey: name)
+        accessOrder.removeAll { $0 == name }
     }
 
     /// Clears all cached textures.
@@ -53,6 +63,7 @@ internal final class SKTextureCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         cache.removeAll()
+        accessOrder.removeAll()
     }
 
     /// Returns whether a texture is cached.
@@ -60,6 +71,34 @@ internal final class SKTextureCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return cache[name] != nil
+    }
+
+    /// Current cache size (for diagnostics).
+    func cachedCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache.count
+    }
+
+    /// Sets a maximum number of cached textures (nil for unlimited).
+    func setMaxEntries(_ maxEntries: Int?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.maxEntries = maxEntries
+        evictIfNeeded()
+    }
+
+    private func touch(_ name: String) {
+        accessOrder.removeAll { $0 == name }
+        accessOrder.append(name)
+    }
+
+    private func evictIfNeeded() {
+        guard let maxEntries = maxEntries, maxEntries >= 0 else { return }
+        while cache.count > maxEntries, let oldest = accessOrder.first {
+            accessOrder.removeFirst()
+            cache.removeValue(forKey: oldest)
+        }
     }
 }
 
@@ -92,8 +131,17 @@ open class SKTexture: @unchecked Sendable {
     /// You cannot set this value directly; to use only a portion of a texture,
     /// use the `init(rect:in:)` method to create a new texture.
     ///
+    /// - Note: For subtextures created with `init(rect:in:)`, this returns (0,0,1,1)
+    ///   because `cgImage()` already returns the cropped image. The internal `_textureRect`
+    ///   is only used by `cgImage()` for the initial cropping.
+    ///
     /// - Returns: A rectangle in the unit coordinate space.
     open func textureRect() -> CGRect {
+        // For subtextures, cgImage() already returns the cropped image,
+        // so return full rect to avoid double-cropping in renderers
+        if _parentTexture != nil {
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
         return _textureRect
     }
 
@@ -656,6 +704,13 @@ open class SKTexture: @unchecked Sendable {
     /// Clears all textures from the shared cache.
     public class func clearCache() {
         SKTextureCache.shared.clearCache()
+    }
+
+    /// Sets a maximum number of textures to keep in the shared cache.
+    ///
+    /// - Parameter maxEntries: Maximum cached textures, or nil for unlimited.
+    public class func setCacheLimit(_ maxEntries: Int?) {
+        SKTextureCache.shared.setMaxEntries(maxEntries)
     }
 
     /// Returns a new texture by applying a Core Image filter.

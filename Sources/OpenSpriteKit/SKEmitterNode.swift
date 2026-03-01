@@ -67,7 +67,13 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
     // MARK: - Target Node
 
     /// The target node that renders the emitter's particles.
-    open weak var targetNode: SKNode?
+    open weak var targetNode: SKNode? {
+        didSet {
+            if oldValue !== targetNode {
+                updateParticleSpriteParents(oldTarget: oldValue)
+            }
+        }
+    }
 
     // MARK: - Particle Creation Properties
 
@@ -261,6 +267,41 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
     /// Creates a new emitter node.
     public override init() {
         super.init()
+    }
+
+    deinit {
+        cleanupParticleSprites()
+    }
+
+    /// Ensures particle sprite nodes are removed even when targetNode != self.
+    private func cleanupParticleSprites() {
+        resetSimulation()
+    }
+
+    /// Moves existing particle sprites to the new target node.
+    private func updateParticleSpriteParents(oldTarget: SKNode?) {
+        let newTarget = targetNode ?? self
+        for sprite in particleSprites {
+            if sprite.parent == nil || sprite.parent === newTarget {
+                continue
+            }
+            sprite.removeFromParent()
+            newTarget.addChild(sprite)
+        }
+        // If old target exists and new target is self, ensure sprites are attached to self.
+        if oldTarget != nil && targetNode == nil {
+            for sprite in particleSprites {
+                if sprite.parent == nil {
+                    addChild(sprite)
+                }
+            }
+        }
+    }
+
+    /// Removes the node from its parent and cleans up any emitted particle sprites.
+    open override func removeFromParent() {
+        cleanupParticleSprites()
+        super.removeFromParent()
     }
 
     // MARK: - Copying
@@ -512,6 +553,11 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
     open func advanceSimulationTime(_ sec: TimeInterval) {
         particleSystem.advanceSimulation(by: sec)
         updateParticleSprites()
+    }
+
+    /// Current number of active particles.
+    internal var activeParticleCount: Int {
+        return particleSystem.particlesCount
     }
 
     /// Removes all existing particles and restarts the simulation.

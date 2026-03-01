@@ -250,6 +250,7 @@ internal final class SKTransitionManager {
     private func completeTransition(view: SKView, fromScene: SKScene, toScene: SKScene, transition: SKTransition) {
         // Clean up outgoing scene
         fromScene.willMove(from: view)
+        fromScene._removeAllActionsRecursivelyForCleanup()
         fromScene._view = nil
         fromScene.position = .zero
         fromScene.alpha = 1
