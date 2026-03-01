@@ -316,7 +316,14 @@ extension SKTextureAtlas {
     ///   - texture: The source sprite sheet texture.
     /// - Returns: A configured texture atlas, or nil if parsing fails.
     public static func atlas(fromJSON jsonData: Data, texture: SKTexture) -> SKTextureAtlas? {
-        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+        let rawJSON: Any
+        do {
+            rawJSON = try JSONSerialization.jsonObject(with: jsonData)
+        } catch {
+            SKDiagnostics.logWarning("Failed to parse texture atlas JSON: \(error)")
+            return nil
+        }
+        guard let json = rawJSON as? [String: Any],
               let framesData = json["frames"] as? [[String: Any]] else {
             return nil
         }

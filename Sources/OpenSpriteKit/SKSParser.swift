@@ -84,11 +84,18 @@ public final class SKSParser: @unchecked Sendable {
     /// - Throws: `SKSParserError` if parsing fails.
     public static func parseScene(from data: Data) throws -> SKScene {
         // Step 1: Parse the Binary Plist
-        guard let plist = try? PropertyListSerialization.propertyList(
-            from: data,
-            options: [],
-            format: nil
-        ) as? [String: Any] else {
+        let rawPlist: Any
+        do {
+            rawPlist = try PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+            )
+        } catch {
+            SKDiagnostics.logWarning("Failed to parse .sks property list: \(error)")
+            throw SKSParserError.invalidPlist
+        }
+        guard let plist = rawPlist as? [String: Any] else {
             throw SKSParserError.invalidPlist
         }
 
@@ -120,8 +127,11 @@ public final class SKSParser: @unchecked Sendable {
         guard let scene = try context.reconstructNode(from: rootObject) as? SKScene else {
             // If root is not a scene, wrap it in a scene
             let scene = SKScene()
-            if let node = try? context.reconstructNode(from: rootObject) {
+            do {
+                let node = try context.reconstructNode(from: rootObject)
                 scene.addChild(node)
+            } catch {
+                SKDiagnostics.logWarning("Failed to reconstruct root node: \(error)")
             }
             return scene
         }

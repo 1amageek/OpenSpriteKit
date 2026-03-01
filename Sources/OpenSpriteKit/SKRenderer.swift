@@ -27,6 +27,7 @@ import JavaScriptKit
 /// renderer.update(atTime: currentTime)
 /// renderer.render()
 /// ```
+@MainActor
 open class SKRenderer: @unchecked Sendable {
 
     // MARK: - Properties

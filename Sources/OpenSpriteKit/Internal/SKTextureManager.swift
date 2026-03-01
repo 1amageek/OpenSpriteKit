@@ -15,6 +15,8 @@ import SwiftWebGPU
 ///
 /// This class handles the conversion of CGImage data to GPU textures
 /// and provides caching to avoid redundant texture uploads.
+/// - Note: `nonisolated(unsafe)` is used because callers are not yet @MainActor.
+///   When the rendering pipeline is fully @MainActor, this should be migrated.
 internal final class SKTextureManager {
 
     // MARK: - Singleton

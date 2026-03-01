@@ -39,17 +39,17 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
         emitterCell.birthRate = Float(particleBirthRate)
         emitterCell.lifetime = Float(particleLifetime)
         emitterCell.lifetimeRange = Float(particleLifetimeRange)
-        emitterCell.velocity = particleSpeed
-        emitterCell.velocityRange = particleSpeedRange
+        emitterCell.velocity = Float(particleSpeed)
+        emitterCell.velocityRange = Float(particleSpeedRange)
         emitterCell.emissionLongitude = emissionAngle
         emitterCell.emissionRange = emissionAngleRange
         emitterCell.xAcceleration = xAcceleration
         emitterCell.yAcceleration = yAcceleration
-        emitterCell.spin = particleRotationSpeed
-        emitterCell.spinRange = particleRotationRange
-        emitterCell.scale = particleScale
-        emitterCell.scaleRange = particleScaleRange
-        emitterCell.scaleSpeed = particleScaleSpeed
+        emitterCell.spin = Float(particleRotationSpeed)
+        emitterCell.spinRange = Float(particleRotationRange)
+        emitterCell.scale = Float(particleScale)
+        emitterCell.scaleRange = Float(particleScaleRange)
+        emitterCell.scaleSpeed = Float(particleScaleSpeed)
         emitterCell.alphaSpeed = Float(particleAlphaSpeed)
         emitterCell.alphaRange = Float(particleAlphaRange)
         emitterCell.color = particleColor.cgColor
@@ -341,10 +341,10 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
         self.particleScale = emitter.particleScale
         self.particleScaleRange = emitter.particleScaleRange
         self.particleScaleSpeed = emitter.particleScaleSpeed
-        self.particleScaleSequence = emitter.particleScaleSequence
+        self.particleScaleSequence = emitter.particleScaleSequence?.copy()
         self.particleTexture = emitter.particleTexture
         self.particleSize = emitter.particleSize
-        self.particleColorSequence = emitter.particleColorSequence
+        self.particleColorSequence = emitter.particleColorSequence?.copy()
         self.particleColor = emitter.particleColor
         self.particleColorAlphaRange = emitter.particleColorAlphaRange
         self.particleColorBlueRange = emitter.particleColorBlueRange
@@ -354,16 +354,16 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
         self.particleColorBlueSpeed = emitter.particleColorBlueSpeed
         self.particleColorGreenSpeed = emitter.particleColorGreenSpeed
         self.particleColorRedSpeed = emitter.particleColorRedSpeed
-        self.particleColorBlendFactorSequence = emitter.particleColorBlendFactorSequence
+        self.particleColorBlendFactorSequence = emitter.particleColorBlendFactorSequence?.copy()
         self.particleColorBlendFactor = emitter.particleColorBlendFactor
         self.particleColorBlendFactorRange = emitter.particleColorBlendFactorRange
         self.particleColorBlendFactorSpeed = emitter.particleColorBlendFactorSpeed
         self.particleBlendMode = emitter.particleBlendMode
-        self.particleAlphaSequence = emitter.particleAlphaSequence
+        self.particleAlphaSequence = emitter.particleAlphaSequence?.copy()
         self.particleAlpha = emitter.particleAlpha
         self.particleAlphaRange = emitter.particleAlphaRange
         self.particleAlphaSpeed = emitter.particleAlphaSpeed
-        self.particleAction = emitter.particleAction
+        self.particleAction = emitter.particleAction?.copy()
         self.fieldBitMask = emitter.fieldBitMask
         self.shader = emitter.shader
         self.attributeValues = emitter.attributeValues
@@ -388,8 +388,14 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
         // Try to load from bundle (native platforms)
         let nameWithoutExtension = name.hasSuffix(".sks") ? String(name.dropLast(4)) : name
 
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
-           let data = try? Data(contentsOf: url) {
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
+            let data: Data
+            do {
+                data = try Data(contentsOf: url)
+            } catch {
+                SKDiagnostics.logWarning("Failed to load emitter data from \(url): \(error)")
+                return nil
+            }
             return parseEmitter(from: data)
         }
 
@@ -419,8 +425,12 @@ open class SKEmitterNode: SKNode, @unchecked Sendable {
         }
 
         // Fallback: try to parse directly as a property list
-        if let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
-            return parseEmitterFromPlist(plist)
+        do {
+            if let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+                return parseEmitterFromPlist(plist)
+            }
+        } catch {
+            SKDiagnostics.logWarning("Failed to parse emitter property list: \(error)")
         }
 
         return nil

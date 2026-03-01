@@ -320,14 +320,21 @@ open class SKTileSet: @unchecked Sendable {
         // Try to load from bundle (native platforms)
         let nameWithoutExtension = name.hasSuffix(".sks") ? String(name.dropLast(4)) : name
 
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
-           let data = try? Data(contentsOf: url),
-           let parsed = Self.parseTileSet(from: data) {
-            self.init(tileGroups: parsed.tileGroups, tileSetType: parsed.type)
-            self.name = parsed.name
-            self.defaultTileSize = parsed.defaultTileSize
-            self.defaultTileGroup = parsed.defaultTileGroup
-            return
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
+            let data: Data
+            do {
+                data = try Data(contentsOf: url)
+            } catch {
+                SKDiagnostics.logWarning("Failed to load tile set data from \(url): \(error)")
+                return nil
+            }
+            if let parsed = Self.parseTileSet(from: data) {
+                self.init(tileGroups: parsed.tileGroups, tileSetType: parsed.type)
+                self.name = parsed.name
+                self.defaultTileSize = parsed.defaultTileSize
+                self.defaultTileGroup = parsed.defaultTileGroup
+                return
+            }
         }
 
         return nil
@@ -337,8 +344,14 @@ open class SKTileSet: @unchecked Sendable {
     ///
     /// - Parameter url: The URL to the tile set file.
     public convenience init?(from url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let parsed = Self.parseTileSet(from: data) else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            SKDiagnostics.logWarning("Failed to load tile set data from \(url): \(error)")
+            return nil
+        }
+        guard let parsed = Self.parseTileSet(from: data) else {
             return nil
         }
         self.init(tileGroups: parsed.tileGroups, tileSetType: parsed.type)
@@ -350,7 +363,14 @@ open class SKTileSet: @unchecked Sendable {
     /// Parses tile set data (property list format).
     private class func parseTileSet(from data: Data) -> SKTileSet? {
         // Parse as property list
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+        let rawPlist: Any
+        do {
+            rawPlist = try PropertyListSerialization.propertyList(from: data, format: nil)
+        } catch {
+            SKDiagnostics.logWarning("Failed to parse tile set property list: \(error)")
+            return nil
+        }
+        guard let plist = rawPlist as? [String: Any] else {
             return nil
         }
 

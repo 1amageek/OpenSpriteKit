@@ -444,3 +444,330 @@ struct SKPhysicsContactTests {
         #expect(contact.contactNormal.dy == 0)
     }
 }
+
+// MARK: - SKPhysicsBody Mass/Density Linkage Tests
+
+@Suite("SKPhysicsBody Mass Density Linkage")
+struct SKPhysicsBodyMassDensityLinkageTests {
+
+    @Test("Setting density recalculates mass")
+    func testDensitySetRecalculatesMass() {
+        let body = SKPhysicsBody.circleOfRadius(10)
+        let area = body.area
+        body.density = 2.0
+
+        #expect(body.density == 2.0)
+        #expect(abs(body.mass - 2.0 * area) < 0.001)
+    }
+
+    @Test("Setting mass recalculates density")
+    func testMassSetRecalculatesDensity() {
+        let body = SKPhysicsBody.rectangleOf(size: CGSize(width: 10, height: 10))
+        let area = body.area // 100
+        body.mass = 200.0
+
+        #expect(body.mass == 200.0)
+        #expect(abs(body.density - 200.0 / area) < 0.001)
+    }
+
+    @Test("Factory body mass equals density times area")
+    func testFactoryBodyMassEqualsDensityTimesArea() {
+        let body = SKPhysicsBody.circleOfRadius(5)
+
+        #expect(abs(body.mass - body.density * body.area) < 0.001)
+    }
+
+    @Test("Zero area body allows mass set without crash")
+    func testZeroAreaMassSet() {
+        let body = SKPhysicsBody()
+        // area is 0, should not crash or produce NaN
+        body.mass = 5.0
+        body.density = 3.0
+
+        #expect(body.mass == 5.0)
+        #expect(body.density == 3.0)
+    }
+
+    @Test("Copy preserves mass and density independently")
+    func testCopyPreservesMassDensity() {
+        let body = SKPhysicsBody.rectangleOf(size: CGSize(width: 20, height: 20))
+        body.mass = 10.0
+
+        let copy = body.copy()
+
+        #expect(copy.mass == body.mass)
+        #expect(copy.density == body.density)
+        #expect(copy.area == body.area)
+
+        // Modifying copy should not affect original
+        copy.mass = 99.0
+        #expect(body.mass == 10.0)
+    }
+}
+
+// MARK: - SKPhysicsBody Edge Body Tests
+
+@Suite("SKPhysicsBody Edge Body")
+struct SKPhysicsBodyEdgeBodyTests {
+
+    @Test("Edge body isDynamic stays false when set to true")
+    func testEdgeBodyCannotBeDynamic() {
+        let body = SKPhysicsBody.edgeLoopFrom(rect: CGRect(x: 0, y: 0, width: 100, height: 100))
+        #expect(body.isDynamic == false)
+
+        body.isDynamic = true
+        #expect(body.isDynamic == false)
+    }
+
+    @Test("Edge from points cannot be made dynamic")
+    func testEdgeFromPointsCannotBeDynamic() {
+        let body = SKPhysicsBody.edgeFrom(CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 0))
+        body.isDynamic = true
+
+        #expect(body.isDynamic == false)
+    }
+
+    @Test("Edge chain cannot be made dynamic")
+    func testEdgeChainCannotBeDynamic() {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: 100, y: 0))
+        path.addLine(to: CGPoint(x: 100, y: 100))
+        let body = SKPhysicsBody.edgeChainFrom(path: path)
+        #expect(body.isDynamic == false)
+
+        body.isDynamic = true
+        #expect(body.isDynamic == false)
+    }
+
+    @Test("Edge loop from path cannot be made dynamic")
+    func testEdgeLoopFromPathCannotBeDynamic() {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: 100, y: 0))
+        path.addLine(to: CGPoint(x: 100, y: 100))
+        path.closeSubpath()
+        let body = SKPhysicsBody.edgeLoopFrom(path: path)
+        #expect(body.isDynamic == false)
+
+        body.isDynamic = true
+        #expect(body.isDynamic == false)
+    }
+
+    @Test("Volume body can be made non-dynamic and back")
+    func testVolumeBodyCanToggleDynamic() {
+        let body = SKPhysicsBody.circleOfRadius(10)
+        #expect(body.isDynamic == true)
+
+        body.isDynamic = false
+        #expect(body.isDynamic == false)
+
+        body.isDynamic = true
+        #expect(body.isDynamic == true)
+    }
+}
+
+// MARK: - SKPhysicsEngine Zero Mass Safety Tests
+
+@Suite("SKPhysicsEngine Zero Mass Safety")
+struct SKPhysicsEngineZeroMassSafetyTests {
+
+    @Test("Force on zero-mass body produces finite velocity")
+    @MainActor func testForceOnZeroMassBody() {
+        let scene = SKScene(size: CGSize(width: 400, height: 400))
+        let node = SKNode()
+        let body = SKPhysicsBody.circleOfRadius(10)
+        body.mass = 0
+        body.affectedByGravity = false
+        node.physicsBody = body
+        node.position = CGPoint(x: 200, y: 200)
+        scene.addChild(node)
+
+        body.applyForce(CGVector(dx: 100, dy: 100))
+
+        // Simulate one step
+        SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: 1.0 / 60.0)
+
+        #expect(body.velocity.dx.isFinite)
+        #expect(body.velocity.dy.isFinite)
+    }
+
+    @Test("Area change recalculates mass from density")
+    func testAreaChangeRecalculatesMass() {
+        let body = SKPhysicsBody()
+        body.density = 2.0
+
+        // Simulate a factory method setting area
+        body.area = 100.0
+
+        #expect(body.mass == 2.0 * 100.0)
+        #expect(body.density == 2.0)
+    }
+
+    @Test("Collision between two zero-mass bodies produces no NaN")
+    @MainActor func testZeroMassCollision() {
+        let scene = SKScene(size: CGSize(width: 400, height: 400))
+        scene.physicsWorld.gravity = .zero
+
+        let nodeA = SKNode()
+        let bodyA = SKPhysicsBody.circleOfRadius(20)
+        bodyA.mass = 0
+        bodyA.affectedByGravity = false
+        bodyA.velocity = CGVector(dx: 100, dy: 0)
+        nodeA.physicsBody = bodyA
+        nodeA.position = CGPoint(x: 100, y: 200)
+        scene.addChild(nodeA)
+
+        let nodeB = SKNode()
+        let bodyB = SKPhysicsBody.circleOfRadius(20)
+        bodyB.mass = 0
+        bodyB.affectedByGravity = false
+        bodyB.velocity = CGVector(dx: -100, dy: 0)
+        nodeB.physicsBody = bodyB
+        nodeB.position = CGPoint(x: 120, y: 200)
+        scene.addChild(nodeB)
+
+        // Simulate — should not crash or produce NaN
+        SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: 1.0 / 60.0)
+
+        #expect(bodyA.velocity.dx.isFinite)
+        #expect(bodyA.velocity.dy.isFinite)
+        #expect(bodyB.velocity.dx.isFinite)
+        #expect(bodyB.velocity.dy.isFinite)
+        #expect(nodeA.position.x.isFinite)
+        #expect(nodeB.position.x.isFinite)
+    }
+}
+
+// MARK: - SKPhysicsJoint Zero Mass Safety Tests
+
+@Suite("SKPhysicsJoint Zero Mass Safety")
+struct SKPhysicsJointZeroMassSafetyTests {
+
+    /// Helper to create a scene with two connected nodes for joint testing.
+    @MainActor private func makeJointTestScene(
+        massA: CGFloat = 0,
+        massB: CGFloat = 0
+    ) -> (scene: SKScene, nodeA: SKNode, nodeB: SKNode, bodyA: SKPhysicsBody, bodyB: SKPhysicsBody) {
+        let scene = SKScene(size: CGSize(width: 400, height: 400))
+        scene.physicsWorld.gravity = .zero
+
+        let nodeA = SKNode()
+        let bodyA = SKPhysicsBody.circleOfRadius(10)
+        bodyA.mass = massA
+        bodyA.affectedByGravity = false
+        nodeA.physicsBody = bodyA
+        nodeA.position = CGPoint(x: 100, y: 200)
+        scene.addChild(nodeA)
+
+        let nodeB = SKNode()
+        let bodyB = SKPhysicsBody.circleOfRadius(10)
+        bodyB.mass = massB
+        bodyB.affectedByGravity = false
+        nodeB.physicsBody = bodyB
+        nodeB.position = CGPoint(x: 200, y: 200)
+        scene.addChild(nodeB)
+
+        return (scene, nodeA, nodeB, bodyA, bodyB)
+    }
+
+    @Test("Spring joint with zero-mass bodies produces no NaN")
+    @MainActor func testSpringJointZeroMass() {
+        let (scene, nodeA, nodeB, bodyA, bodyB) = makeJointTestScene()
+        bodyA.velocity = CGVector(dx: 50, dy: 0)
+
+        let joint = SKPhysicsJointSpring.joint(
+            withBodyA: bodyA, bodyB: bodyB,
+            anchorA: nodeA.position, anchorB: nodeB.position
+        )
+        scene.physicsWorld.add(joint)
+
+        SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: 1.0 / 60.0)
+
+        #expect(bodyA.velocity.dx.isFinite)
+        #expect(bodyA.velocity.dy.isFinite)
+        #expect(bodyB.velocity.dx.isFinite)
+        #expect(bodyB.velocity.dy.isFinite)
+        #expect(nodeA.position.x.isFinite)
+        #expect(nodeB.position.x.isFinite)
+    }
+
+    @Test("Fixed joint with zero-mass bodies produces no NaN")
+    @MainActor func testFixedJointZeroMass() {
+        let (scene, nodeA, nodeB, bodyA, bodyB) = makeJointTestScene()
+        bodyA.velocity = CGVector(dx: 30, dy: 0)
+        bodyB.velocity = CGVector(dx: -30, dy: 0)
+
+        let anchor = CGPoint(x: 150, y: 200)
+        let joint = SKPhysicsJointFixed.joint(withBodyA: bodyA, bodyB: bodyB, anchor: anchor)
+        scene.physicsWorld.add(joint)
+
+        SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: 1.0 / 60.0)
+
+        #expect(bodyA.velocity.dx.isFinite)
+        #expect(bodyA.velocity.dy.isFinite)
+        #expect(bodyB.velocity.dx.isFinite)
+        #expect(bodyB.velocity.dy.isFinite)
+        #expect(nodeA.position.x.isFinite)
+        #expect(nodeB.position.x.isFinite)
+    }
+
+    @Test("Limit joint with zero-mass bodies produces no NaN")
+    @MainActor func testLimitJointZeroMass() {
+        let (scene, nodeA, nodeB, bodyA, bodyB) = makeJointTestScene()
+        bodyA.velocity = CGVector(dx: 100, dy: 0)
+
+        let joint = SKPhysicsJointLimit.joint(
+            withBodyA: bodyA, bodyB: bodyB,
+            anchorA: nodeA.position, anchorB: nodeB.position
+        )
+        scene.physicsWorld.add(joint)
+
+        SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: 1.0 / 60.0)
+
+        #expect(bodyA.velocity.dx.isFinite)
+        #expect(bodyA.velocity.dy.isFinite)
+        #expect(bodyB.velocity.dx.isFinite)
+        #expect(bodyB.velocity.dy.isFinite)
+        #expect(nodeA.position.x.isFinite)
+        #expect(nodeB.position.x.isFinite)
+    }
+
+    @Test("Pin joint with zero-mass bodies produces no NaN")
+    @MainActor func testPinJointZeroMass() {
+        let (scene, nodeA, nodeB, bodyA, bodyB) = makeJointTestScene()
+
+        let anchor = CGPoint(x: 150, y: 200)
+        let joint = SKPhysicsJointPin.joint(withBodyA: bodyA, bodyB: bodyB, anchor: anchor)
+        scene.physicsWorld.add(joint)
+
+        SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: 1.0 / 60.0)
+
+        #expect(bodyA.velocity.dx.isFinite)
+        #expect(bodyA.velocity.dy.isFinite)
+        #expect(nodeA.position.x.isFinite)
+        #expect(nodeB.position.x.isFinite)
+    }
+
+    @Test("Sliding joint with zero-mass bodies produces no NaN")
+    @MainActor func testSlidingJointZeroMass() {
+        let (scene, nodeA, nodeB, bodyA, bodyB) = makeJointTestScene()
+        bodyA.velocity = CGVector(dx: 50, dy: 50)
+
+        let joint = SKPhysicsJointSliding.joint(
+            withBodyA: bodyA, bodyB: bodyB,
+            anchor: CGPoint(x: 150, y: 200),
+            axis: CGVector(dx: 1, dy: 0)
+        )
+        scene.physicsWorld.add(joint)
+
+        SKPhysicsEngine.shared.simulate(scene: scene, deltaTime: 1.0 / 60.0)
+
+        #expect(bodyA.velocity.dx.isFinite)
+        #expect(bodyA.velocity.dy.isFinite)
+        #expect(bodyB.velocity.dx.isFinite)
+        #expect(bodyB.velocity.dy.isFinite)
+        #expect(nodeA.position.x.isFinite)
+        #expect(nodeB.position.x.isFinite)
+    }
+}

@@ -130,7 +130,23 @@ open class SKAction: @unchecked Sendable {
         actionCopy.timingMode = timingMode
         actionCopy.timingFunction = timingFunction
         actionCopy.speed = speed
-        actionCopy.actionType = actionType
+        // Deep-copy compound action types that hold SKAction references
+        switch actionType {
+        case .sequence(let actions):
+            actionCopy.actionType = .sequence(actions: actions.map { $0.copy() })
+        case .group(let actions):
+            actionCopy.actionType = .group(actions: actions.map { $0.copy() })
+        case .repeatAction(let action, let count):
+            actionCopy.actionType = .repeatAction(action: action.copy(), count: count)
+        case .repeatForever(let action):
+            actionCopy.actionType = .repeatForever(action: action.copy())
+        case .runOnChild(let action, let name):
+            actionCopy.actionType = .runOnChild(action: action.copy(), name: name)
+        default:
+            // All other cases contain only value types, closures, or
+            // flyweight objects (SKTexture, CGPath) — direct assignment is correct
+            actionCopy.actionType = actionType
+        }
         return actionCopy
     }
 
@@ -144,26 +160,117 @@ open class SKAction: @unchecked Sendable {
         reversed.speed = speed
 
         switch actionType {
+        // MARK: Additive "by" actions — negate the delta
         case .moveBy(let dx, let dy):
             reversed.actionType = .moveBy(dx: -dx, dy: -dy)
         case .rotateBy(let angle):
             reversed.actionType = .rotateBy(angle: -angle)
-        case .scaleBy(let xScale, let yScale):
-            // Multiplicative reverse: if we multiplied by x, reverse is divide by x (multiply by 1/x)
-            let reverseX = xScale != 0 ? 1.0 / xScale : 1.0
-            let reverseY = yScale != 0 ? 1.0 / yScale : 1.0
-            reversed.actionType = .scaleBy(xScale: reverseX, yScale: reverseY)
         case .scaleXYBy(let dx, let dy):
-            // Additive reverse: simply negate
             reversed.actionType = .scaleXYBy(dx: -dx, dy: -dy)
         case .fadeAlphaBy(let delta):
             reversed.actionType = .fadeAlphaBy(delta: -delta)
+        case .resizeBy(let width, let height):
+            reversed.actionType = .resizeBy(width: -width, height: -height)
+        case .speedBy(let delta):
+            reversed.actionType = .speedBy(delta: -delta)
+
+        // MARK: Multiplicative "by" actions — use reciprocal
+        case .scaleBy(let xScale, let yScale):
+            let reverseX = xScale != 0 ? 1.0 / xScale : 1.0
+            let reverseY = yScale != 0 ? 1.0 / yScale : 1.0
+            reversed.actionType = .scaleBy(xScale: reverseX, yScale: reverseY)
+
+        // MARK: Toggle actions — swap to opposite
+        case .hide:
+            reversed.actionType = .unhide
+        case .unhide:
+            reversed.actionType = .hide
+
+        // MARK: Compound actions — reverse recursively
         case .sequence(let actions):
             reversed.actionType = .sequence(actions: actions.reversed().map { $0.reversed() })
         case .group(let actions):
             reversed.actionType = .group(actions: actions.map { $0.reversed() })
+        case .repeatAction(let action, let count):
+            reversed.actionType = .repeatAction(action: action.reversed(), count: count)
+        case .repeatForever(let action):
+            reversed.actionType = .repeatForever(action: action.reversed())
+
+        // MARK: Physics force/impulse — negate vector/value
+        case .applyForce(let force, let point):
+            reversed.actionType = .applyForce(force: CGVector(dx: -force.dx, dy: -force.dy), point: point)
+        case .applyTorque(let torque):
+            reversed.actionType = .applyTorque(torque: -torque)
+        case .applyImpulse(let impulse, let point):
+            reversed.actionType = .applyImpulse(impulse: CGVector(dx: -impulse.dx, dy: -impulse.dy), point: point)
+        case .applyAngularImpulse(let impulse):
+            reversed.actionType = .applyAngularImpulse(impulse: -impulse)
+
+        // MARK: "by" variants of physics/audio — negate only when "by" is set
+        case .changeCharge(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .changeCharge(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .changeMass(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .changeMass(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .strength(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .strength(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .falloff(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .falloff(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .changeVolume(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .changeVolume(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .changePlaybackRate(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .changePlaybackRate(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .stereopan(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .stereopan(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .changeObstruction(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .changeObstruction(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .changeOcclusion(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .changeOcclusion(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+        case .changeReverb(let to, let by):
+            if let by = by, to == nil {
+                reversed.actionType = .changeReverb(to: nil, by: -by)
+            } else {
+                reversed.actionType = .wait(duration: duration, range: 0)
+            }
+
+        // MARK: Non-reversible — return wait with same duration (SpriteKit behavior)
         default:
-            reversed.actionType = actionType
+            reversed.actionType = .wait(duration: duration, range: 0)
         }
 
         return reversed
@@ -197,12 +304,19 @@ open class SKAction: @unchecked Sendable {
         // Action files typically have extensions like .ska or are stored in .sks files
         let extensions = ["ska", "sks"]
         for ext in extensions {
-            if let url = Bundle.main.url(forResource: name, withExtension: ext),
-               let data = try? Data(contentsOf: url),
-               let action = SKAction.unarchiveAction(from: data) {
-                self.init()
-                self.copyProperties(from: action)
-                return
+            if let url = Bundle.main.url(forResource: name, withExtension: ext) {
+                let data: Data
+                do {
+                    data = try Data(contentsOf: url)
+                } catch {
+                    SKDiagnostics.logWarning("Failed to load action data from \(url): \(error)")
+                    continue
+                }
+                if let action = SKAction.unarchiveAction(from: data) {
+                    self.init()
+                    self.copyProperties(from: action)
+                    return
+                }
             }
         }
 
@@ -227,8 +341,14 @@ open class SKAction: @unchecked Sendable {
     ///   - url: The URL of the action file.
     /// - Returns: The loaded action, or nil if the action could not be found.
     public convenience init?(named name: String, fromURL url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let action = SKAction.unarchiveAction(from: data) else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            SKDiagnostics.logWarning("Failed to load action data from \(url): \(error)")
+            return nil
+        }
+        guard let action = SKAction.unarchiveAction(from: data) else {
             return nil
         }
         self.init()

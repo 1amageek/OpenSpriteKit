@@ -7,8 +7,15 @@
 import Foundation
 
 /// Lightweight diagnostics for tracking growth over time (WASM-friendly).
-internal final class SKDiagnostics: @unchecked Sendable {
-    @MainActor static let shared = SKDiagnostics()
+@MainActor
+internal final class SKDiagnostics {
+    static let shared = SKDiagnostics()
+
+    /// Logs a warning for non-fatal issues (failed file loads, parse errors, etc.).
+    /// Callable from any isolation context.
+    nonisolated static func logWarning(_ message: String, file: String = #fileID, line: Int = #line) {
+        print("[OpenSpriteKit WARNING] \(file):\(line) - \(message)")
+    }
 
     private init() {}
 

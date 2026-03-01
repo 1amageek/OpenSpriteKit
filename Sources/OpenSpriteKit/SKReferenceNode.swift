@@ -130,7 +130,11 @@ open class SKReferenceNode: SKNode, @unchecked Sendable {
     /// - Parameter url: The URL of the archived file.
     /// - Returns: The loaded node, or nil if loading failed.
     private func loadNode(from url: URL) -> SKNode? {
-        guard let data = try? Data(contentsOf: url) else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            SKDiagnostics.logWarning("Failed to load reference node data from \(url): \(error)")
             return nil
         }
         return unarchiveNode(from: data)

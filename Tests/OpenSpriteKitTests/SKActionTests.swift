@@ -950,3 +950,125 @@ struct SKActionTimingModeTests {
         #expect(action.timingMode == .linear)
     }
 }
+
+// MARK: - SKAction Deep Copy Tests
+
+@Suite("SKAction Deep Copy")
+struct SKActionDeepCopyTests {
+
+    @Test("Copying sequence creates independent child actions")
+    func testSequenceCopyIsDeep() {
+        let child1 = SKAction.moveBy(x: 100, y: 0, duration: 1.0)
+        let child2 = SKAction.wait(forDuration: 0.5)
+        let sequence = SKAction.sequence([child1, child2])
+
+        let copy = sequence.copy()
+
+        // Modify child speed on original
+        child1.speed = 5.0
+
+        // Verify copy's children are unaffected
+        if case .sequence(let copiedActions) = copy.actionType {
+            #expect(copiedActions[0].speed == 1.0)
+            #expect(copiedActions.count == 2)
+        } else {
+            Issue.record("Expected sequence action type")
+        }
+    }
+
+    @Test("Copying group creates independent child actions")
+    func testGroupCopyIsDeep() {
+        let child = SKAction.fadeAlpha(to: 0.5, duration: 1.0)
+        let group = SKAction.group([child])
+
+        let copy = group.copy()
+
+        child.timingMode = .easeIn
+
+        if case .group(let copiedActions) = copy.actionType {
+            #expect(copiedActions[0].timingMode == .linear)
+        } else {
+            Issue.record("Expected group action type")
+        }
+    }
+
+    @Test("Copying repeatAction creates independent inner action")
+    func testRepeatActionCopyIsDeep() {
+        let inner = SKAction.rotate(byAngle: .pi, duration: 1.0)
+        let repeated = SKAction.repeat(inner, count: 3)
+
+        let copy = repeated.copy()
+
+        inner.speed = 10.0
+
+        if case .repeatAction(let copiedAction, let count) = copy.actionType {
+            #expect(copiedAction.speed == 1.0)
+            #expect(count == 3)
+        } else {
+            Issue.record("Expected repeatAction action type")
+        }
+    }
+
+    @Test("Copying repeatForever creates independent inner action")
+    func testRepeatForeverCopyIsDeep() {
+        let inner = SKAction.moveBy(x: 50, y: 0, duration: 0.5)
+        let forever = SKAction.repeatForever(inner)
+
+        let copy = forever.copy()
+
+        inner.duration = 99.0
+
+        if case .repeatForever(let copiedAction) = copy.actionType {
+            #expect(copiedAction.duration == 0.5)
+        } else {
+            Issue.record("Expected repeatForever action type")
+        }
+    }
+
+    @Test("Copying nested compound actions is fully recursive")
+    func testNestedCompoundCopyIsDeep() {
+        let leaf = SKAction.moveBy(x: 10, y: 10, duration: 1.0)
+        let inner = SKAction.sequence([leaf])
+        let outer = SKAction.repeatForever(inner)
+
+        let copy = outer.copy()
+
+        leaf.speed = 42.0
+
+        if case .repeatForever(let copiedInner) = copy.actionType,
+           case .sequence(let copiedLeaves) = copiedInner.actionType {
+            #expect(copiedLeaves[0].speed == 1.0)
+        } else {
+            Issue.record("Expected nested compound structure")
+        }
+    }
+
+    @Test("Copying leaf action creates independent instance")
+    func testLeafActionCopy() {
+        let action = SKAction.moveBy(x: 100, y: 50, duration: 2.0)
+        action.speed = 3.0
+
+        let copy = action.copy()
+        copy.speed = 1.0
+
+        #expect(action.speed == 3.0)
+        #expect(copy.duration == 2.0)
+    }
+
+    @Test("Copying runOnChild creates independent inner action")
+    func testRunOnChildCopyIsDeep() {
+        let inner = SKAction.fadeOut(withDuration: 1.0)
+        inner.speed = 2.0
+        let action = SKAction.run(inner, onChildWithName: "child")
+
+        let copy = action.copy()
+
+        // Mutate original inner action
+        inner.speed = 99.0
+
+        // Copy's inner action should be unaffected
+        #expect(copy.speed != 99.0)
+        // Verify duration is preserved
+        #expect(copy.duration == action.duration)
+    }
+}

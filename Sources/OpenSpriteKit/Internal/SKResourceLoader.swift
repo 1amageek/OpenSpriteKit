@@ -21,6 +21,8 @@ import JavaScriptKit
 ///
 /// This class is used internally by SKTexture(imageNamed:) and related APIs.
 /// External code should use SKTexture(imageData:) for direct texture creation.
+/// - Note: `nonisolated(unsafe)` is used because callers (convenience inits on SKNode, SKTexture, etc.)
+///   are not yet @MainActor. When public node classes are migrated, this should become @MainActor.
 internal final class SKResourceLoader {
 
     // MARK: - Singleton

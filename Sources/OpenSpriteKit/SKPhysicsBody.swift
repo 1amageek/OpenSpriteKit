@@ -63,16 +63,74 @@ open class SKPhysicsBody: @unchecked Sendable {
     open var allowsRotation: Bool = true
 
     /// A Boolean value that indicates whether this physics body moves in response to physics forces.
-    open var isDynamic: Bool = true
+    ///
+    /// Edge bodies are always non-dynamic. Setting this to `true` on an edge body has no effect.
+    open var isDynamic: Bool = true {
+        didSet {
+            if isDynamic && isEdgeShape {
+                isDynamic = false
+            }
+        }
+    }
+
+    /// Whether this body's shape is an edge type (non-volumetric).
+    internal var isEdgeShape: Bool {
+        switch shape {
+        case .edgeChain, .edgeLoop, .edgeLoopRect, .edge:
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: - Mass / Density / Area Linkage
+
+    private var _mass: CGFloat = 1.0
+    private var _density: CGFloat = 1.0
+    private var _updatingMass = false
 
     /// The mass of the body in kilograms.
-    open var mass: CGFloat = 1.0
+    ///
+    /// Setting mass automatically recalculates density based on the body's area.
+    /// The relationship is: `mass = density * area`.
+    open var mass: CGFloat {
+        get { _mass }
+        set {
+            _mass = newValue
+            if area > 0 && !_updatingMass {
+                _density = newValue / area
+            }
+        }
+    }
 
     /// The density of the object in kilograms per square meter.
-    open var density: CGFloat = 1.0
+    ///
+    /// Setting density automatically recalculates mass based on the body's area.
+    /// The relationship is: `mass = density * area`.
+    open var density: CGFloat {
+        get { _density }
+        set {
+            _density = newValue
+            if area > 0 {
+                _updatingMass = true
+                _mass = newValue * area
+                _updatingMass = false
+            }
+        }
+    }
 
     /// The area covered by the body.
-    open internal(set) var area: CGFloat = 0.0
+    ///
+    /// When area changes, mass is recalculated from the current density.
+    open internal(set) var area: CGFloat = 0.0 {
+        didSet {
+            if area > 0 {
+                _updatingMass = true
+                _mass = _density * area
+                _updatingMass = false
+            }
+        }
+    }
 
     /// The roughness of the body's surface.
     open var friction: CGFloat = 0.2
@@ -169,12 +227,16 @@ open class SKPhysicsBody: @unchecked Sendable {
     open func copy() -> SKPhysicsBody {
         let bodyCopy = SKPhysicsBody()
         bodyCopy.shape = shape
+        // Set backing storage directly to avoid re-computation cascades.
+        // area's didSet would overwrite _mass, so guard with _updatingMass.
+        bodyCopy._density = _density
+        bodyCopy._updatingMass = true
         bodyCopy.area = area
+        bodyCopy._updatingMass = false
+        bodyCopy._mass = _mass
         bodyCopy.affectedByGravity = affectedByGravity
         bodyCopy.allowsRotation = allowsRotation
         bodyCopy.isDynamic = isDynamic
-        bodyCopy.mass = mass
-        bodyCopy.density = density
         bodyCopy.friction = friction
         bodyCopy.restitution = restitution
         bodyCopy.linearDamping = linearDamping

@@ -16,12 +16,13 @@ import Foundation
 /// - Supporting compound actions (sequence, group, repeat)
 ///
 /// - Note: This class is accessed from the main thread only (display link callbacks and SKNode methods).
+///   `nonisolated(unsafe)` is used because callers (SKNode.run, etc.) are not yet @MainActor.
+///   When SKNode is migrated to @MainActor, this should become `@MainActor static let shared`.
 internal final class SKActionRunner {
 
     // MARK: - Singleton
 
     /// Shared instance of the action runner.
-    /// Using nonisolated(unsafe) since access is always from main thread.
     nonisolated(unsafe) static let shared = SKActionRunner()
 
     private init() {}
@@ -191,8 +192,8 @@ internal final class SKActionRunner {
             var keysToRemove: [String] = []
 
             for (key, var runningAction) in keyedActions {
-                if updateRunningAction(&runningAction, on: node, deltaTime: effectiveDelta) {
-                    // Action completed
+                if let _ = updateRunningAction(&runningAction, on: node, deltaTime: effectiveDelta) {
+                    // Action completed — overflow is discarded at top level
                     runningAction.completion?()
                     keysToRemove.append(key)
                 } else {
@@ -211,8 +212,8 @@ internal final class SKActionRunner {
             var indicesToRemove: [Int] = []
 
             for i in anons.indices {
-                if updateRunningAction(&anons[i], on: node, deltaTime: effectiveDelta) {
-                    // Action completed
+                if let _ = updateRunningAction(&anons[i], on: node, deltaTime: effectiveDelta) {
+                    // Action completed — overflow is discarded at top level
                     anons[i].completion?()
                     indicesToRemove.append(i)
                 }
@@ -235,8 +236,10 @@ internal final class SKActionRunner {
 
     /// Updates a single running action.
     ///
-    /// - Returns: `true` if the action is completed.
-    private func updateRunningAction(_ runningAction: inout RunningAction, on node: SKNode, deltaTime: TimeInterval) -> Bool {
+    /// - Returns: `nil` if the action is not yet completed.
+    ///   A `TimeInterval` >= 0 representing unconsumed overflow time if completed.
+    ///   Overflow is in the caller's time scale (action.speed is factored out).
+    private func updateRunningAction(_ runningAction: inout RunningAction, on node: SKNode, deltaTime: TimeInterval) -> TimeInterval? {
         let action = runningAction.action
         let effectiveDelta = deltaTime * Double(action.speed)
 
@@ -262,11 +265,16 @@ internal final class SKActionRunner {
         // Execute the action based on its type
         executeAction(action, on: node, progress: progress, initialState: runningAction.initialState, runningAction: &runningAction, deltaTime: effectiveDelta)
 
-        // Check if completed
+        // Check if completed and calculate overflow
         if duration <= 0 {
-            return true
+            return deltaTime  // Instant action: all time is overflow
         }
-        return runningAction.elapsedTime >= duration
+        if runningAction.elapsedTime >= duration {
+            let overflow = max(0, runningAction.elapsedTime - duration)
+            // Convert overflow back from action-speed space to caller's time scale
+            return action.speed != 0 ? overflow / Double(action.speed) : overflow
+        }
+        return nil  // Not completed
     }
 
     // MARK: - Timing Functions
@@ -525,13 +533,12 @@ internal final class SKActionRunner {
 
         // MARK: Compound Actions
         case .group(_):
-            // Execute all child actions in parallel
+            // Execute all child actions in parallel — overflow is discarded
             if var childStates = runningAction.childStates {
                 var allCompleted = true
                 for i in childStates.indices {
                     if !childStates[i].isCompleted {
-                        let completed = updateRunningAction(&childStates[i], on: node, deltaTime: deltaTime)
-                        if completed {
+                        if let _ = updateRunningAction(&childStates[i], on: node, deltaTime: deltaTime) {
                             childStates[i].isCompleted = true
                         } else {
                             allCompleted = false
@@ -545,14 +552,15 @@ internal final class SKActionRunner {
             }
 
         case .sequence(let actions):
-            // Execute actions one at a time
+            // Execute actions one at a time, carrying overflow to next child
             guard !actions.isEmpty else { break }
             if runningAction.childStates == nil {
                 runningAction.childStates = []
                 runningAction.currentIndex = 0
             }
 
-            while runningAction.currentIndex < actions.count {
+            var remainingDelta = deltaTime
+            while runningAction.currentIndex < actions.count && remainingDelta > 0 {
                 let currentAction = actions[runningAction.currentIndex]
 
                 // Initialize child state if needed
@@ -567,11 +575,10 @@ internal final class SKActionRunner {
 
                 // Update current action
                 if var childState = runningAction.childStates?.first {
-                    let completed = updateRunningAction(&childState, on: node, deltaTime: deltaTime)
-                    if completed {
+                    if let overflow = updateRunningAction(&childState, on: node, deltaTime: remainingDelta) {
                         runningAction.currentIndex += 1
                         runningAction.childStates = []
-                        // Continue to next action in same frame if time permits
+                        remainingDelta = overflow
                         continue
                     } else {
                         runningAction.childStates = [childState]
@@ -586,7 +593,7 @@ internal final class SKActionRunner {
             }
 
         case .repeatAction(let repeatedAction, let count):
-            // Handle repeat with count
+            // Handle repeat with count, carrying overflow between iterations
             if runningAction.childStates == nil {
                 runningAction.childStates = [RunningAction(
                     action: repeatedAction,
@@ -597,28 +604,35 @@ internal final class SKActionRunner {
                 runningAction.repeatCount = 0
             }
 
-            if var childState = runningAction.childStates?.first {
-                let completed = updateRunningAction(&childState, on: node, deltaTime: deltaTime)
-                if completed {
-                    runningAction.repeatCount += 1
-                    if runningAction.repeatCount < count {
-                        // Reset for next iteration
-                        runningAction.childStates = [RunningAction(
-                            action: repeatedAction,
-                            elapsedTime: 0,
-                            initialState: captureInitialState(for: repeatedAction, from: node),
-                            completion: nil
-                        )]
+            var remainingDelta = deltaTime
+            while remainingDelta > 0 {
+                if var childState = runningAction.childStates?.first {
+                    if let overflow = updateRunningAction(&childState, on: node, deltaTime: remainingDelta) {
+                        runningAction.repeatCount += 1
+                        if runningAction.repeatCount < count {
+                            // Reset for next iteration with overflow
+                            runningAction.childStates = [RunningAction(
+                                action: repeatedAction,
+                                elapsedTime: 0,
+                                initialState: captureInitialState(for: repeatedAction, from: node),
+                                completion: nil
+                            )]
+                            remainingDelta = overflow
+                            continue
+                        } else {
+                            runningAction.elapsedTime = runningAction.effectiveDuration
+                            break
+                        }
                     } else {
-                        runningAction.elapsedTime = runningAction.effectiveDuration
+                        runningAction.childStates = [childState]
+                        break
                     }
-                } else {
-                    runningAction.childStates = [childState]
                 }
+                break
             }
 
         case .repeatForever(let repeatedAction):
-            // Handle repeat forever
+            // Handle repeat forever, carrying overflow between iterations
             if runningAction.childStates == nil {
                 runningAction.childStates = [RunningAction(
                     action: repeatedAction,
@@ -628,19 +642,28 @@ internal final class SKActionRunner {
                 )]
             }
 
-            if var childState = runningAction.childStates?.first {
-                let completed = updateRunningAction(&childState, on: node, deltaTime: deltaTime)
-                if completed {
-                    // Reset for next iteration
-                    runningAction.childStates = [RunningAction(
-                        action: repeatedAction,
-                        elapsedTime: 0,
-                        initialState: captureInitialState(for: repeatedAction, from: node),
-                        completion: nil
-                    )]
-                } else {
-                    runningAction.childStates = [childState]
+            var remainingDelta = deltaTime
+            // Safety limit to prevent infinite loops with zero-duration actions
+            var iterationLimit = 1000
+            while remainingDelta > 0 && iterationLimit > 0 {
+                iterationLimit -= 1
+                if var childState = runningAction.childStates?.first {
+                    if let overflow = updateRunningAction(&childState, on: node, deltaTime: remainingDelta) {
+                        // Reset for next iteration with overflow
+                        runningAction.childStates = [RunningAction(
+                            action: repeatedAction,
+                            elapsedTime: 0,
+                            initialState: captureInitialState(for: repeatedAction, from: node),
+                            completion: nil
+                        )]
+                        remainingDelta = overflow
+                        continue
+                    } else {
+                        runningAction.childStates = [childState]
+                        break
+                    }
                 }
+                break
             }
             // repeatForever never completes
 
@@ -661,7 +684,9 @@ internal final class SKActionRunner {
         #endif
 
         case .customAction(let block):
-            block(node, CGFloat(progress) * CGFloat(runningAction.effectiveDuration))
+            // Pass linear elapsed time, unaffected by timing mode
+            let elapsedTime = min(runningAction.elapsedTime, runningAction.effectiveDuration)
+            block(node, CGFloat(elapsedTime))
 
         case .removeFromParent:
             if progress >= 1.0 {

@@ -17,12 +17,13 @@ import simd
 /// - Collision detection (AABB broad phase, shape narrow phase)
 /// - Collision resolution
 /// - Contact delegate callbacks
+@MainActor
 internal final class SKPhysicsEngine {
 
     // MARK: - Singleton
 
     /// The shared physics engine instance.
-    nonisolated(unsafe) static let shared = SKPhysicsEngine()
+    static let shared = SKPhysicsEngine()
 
     // MARK: - Initialization
 
@@ -110,9 +111,12 @@ internal final class SKPhysicsEngine {
             guard body.isDynamic && !body.pinned else { continue }
 
             // Apply accumulated linear force: F = ma, so dv = (F/m) * dt
+            // mass=0 means infinite mass (immovable) — force has no effect
             if body.accumulatedForce.dx != 0 || body.accumulatedForce.dy != 0 {
-                body.velocity.dx += (body.accumulatedForce.dx / body.mass) * CGFloat(deltaTime)
-                body.velocity.dy += (body.accumulatedForce.dy / body.mass) * CGFloat(deltaTime)
+                if body.mass > 0 {
+                    body.velocity.dx += (body.accumulatedForce.dx / body.mass) * CGFloat(deltaTime)
+                    body.velocity.dy += (body.accumulatedForce.dy / body.mass) * CGFloat(deltaTime)
+                }
                 body.accumulatedForce = .zero
             }
 
@@ -456,8 +460,8 @@ internal final class SKPhysicsEngine {
 
         // Calculate required correction to bring both bodies to anchor
         // The bodies should maintain their distance from the anchor
-        let invMassA = bodyA.isDynamic && !bodyA.pinned ? 1.0 / bodyA.mass : 0
-        let invMassB = bodyB.isDynamic && !bodyB.pinned ? 1.0 / bodyB.mass : 0
+        let invMassA = bodyA.isDynamic && !bodyA.pinned && bodyA.mass > 0 ? 1.0 / bodyA.mass : 0
+        let invMassB = bodyB.isDynamic && !bodyB.pinned && bodyB.mass > 0 ? 1.0 / bodyB.mass : 0
         let invMassSum = invMassA + invMassB
 
         if invMassSum > 0 {
@@ -565,11 +569,11 @@ internal final class SKPhysicsEngine {
         let forceX = totalForce * normalX
         let forceY = totalForce * normalY
 
-        if bodyA.isDynamic && !bodyA.pinned {
+        if bodyA.isDynamic && !bodyA.pinned && bodyA.mass > 0 {
             bodyA.velocity.dx += (forceX / bodyA.mass) * CGFloat(deltaTime)
             bodyA.velocity.dy += (forceY / bodyA.mass) * CGFloat(deltaTime)
         }
-        if bodyB.isDynamic && !bodyB.pinned {
+        if bodyB.isDynamic && !bodyB.pinned && bodyB.mass > 0 {
             bodyB.velocity.dx -= (forceX / bodyB.mass) * CGFloat(deltaTime)
             bodyB.velocity.dy -= (forceY / bodyB.mass) * CGFloat(deltaTime)
         }
@@ -581,8 +585,8 @@ internal final class SKPhysicsEngine {
     /// Applies a fixed joint constraint - rigid connection between bodies.
     private func applyFixedJoint(_ joint: SKPhysicsJointFixed, bodyA: SKPhysicsBody, bodyB: SKPhysicsBody,
                                   nodeA: SKNode, nodeB: SKNode, deltaTime: TimeInterval) {
-        let invMassA = bodyA.isDynamic && !bodyA.pinned ? 1.0 / bodyA.mass : 0
-        let invMassB = bodyB.isDynamic && !bodyB.pinned ? 1.0 / bodyB.mass : 0
+        let invMassA = bodyA.isDynamic && !bodyA.pinned && bodyA.mass > 0 ? 1.0 / bodyA.mass : 0
+        let invMassB = bodyB.isDynamic && !bodyB.pinned && bodyB.mass > 0 ? 1.0 / bodyB.mass : 0
         let invMassSum = invMassA + invMassB
 
         guard invMassSum > 0 else { return }
@@ -628,9 +632,17 @@ internal final class SKPhysicsEngine {
             joint._reactionTorque = rotError * correctionFactor / CGFloat(deltaTime)
         }
 
-        // Match velocities
-        let avgVelX = (bodyA.velocity.dx * bodyA.mass + bodyB.velocity.dx * bodyB.mass) / (bodyA.mass + bodyB.mass)
-        let avgVelY = (bodyA.velocity.dy * bodyA.mass + bodyB.velocity.dy * bodyB.mass) / (bodyA.mass + bodyB.mass)
+        // Match velocities — guard against zero total mass
+        let totalMass = bodyA.mass + bodyB.mass
+        let avgVelX: CGFloat
+        let avgVelY: CGFloat
+        if totalMass > 0 {
+            avgVelX = (bodyA.velocity.dx * bodyA.mass + bodyB.velocity.dx * bodyB.mass) / totalMass
+            avgVelY = (bodyA.velocity.dy * bodyA.mass + bodyB.velocity.dy * bodyB.mass) / totalMass
+        } else {
+            avgVelX = 0
+            avgVelY = 0
+        }
 
         if bodyA.isDynamic && !bodyA.pinned {
             bodyA.velocity.dx = avgVelX
@@ -656,8 +668,8 @@ internal final class SKPhysicsEngine {
     /// Applies a sliding joint constraint - movement restricted to an axis.
     private func applySlidingJoint(_ joint: SKPhysicsJointSliding, bodyA: SKPhysicsBody, bodyB: SKPhysicsBody,
                                     nodeA: SKNode, nodeB: SKNode, deltaTime: TimeInterval) {
-        let invMassA = bodyA.isDynamic && !bodyA.pinned ? 1.0 / bodyA.mass : 0
-        let invMassB = bodyB.isDynamic && !bodyB.pinned ? 1.0 / bodyB.mass : 0
+        let invMassA = bodyA.isDynamic && !bodyA.pinned && bodyA.mass > 0 ? 1.0 / bodyA.mass : 0
+        let invMassB = bodyB.isDynamic && !bodyB.pinned && bodyB.mass > 0 ? 1.0 / bodyB.mass : 0
         let invMassSum = invMassA + invMassB
 
         guard invMassSum > 0 else { return }
@@ -746,8 +758,8 @@ internal final class SKPhysicsEngine {
             return
         }
 
-        let invMassA = bodyA.isDynamic && !bodyA.pinned ? 1.0 / bodyA.mass : 0
-        let invMassB = bodyB.isDynamic && !bodyB.pinned ? 1.0 / bodyB.mass : 0
+        let invMassA = bodyA.isDynamic && !bodyA.pinned && bodyA.mass > 0 ? 1.0 / bodyA.mass : 0
+        let invMassB = bodyB.isDynamic && !bodyB.pinned && bodyB.mass > 0 ? 1.0 / bodyB.mass : 0
         let invMassSum = invMassA + invMassB
 
         guard invMassSum > 0 else { return }
@@ -1377,8 +1389,8 @@ internal final class SKPhysicsEngine {
             let restitution = min(bodyA.restitution, bodyB.restitution)
 
             // Calculate impulse scalar
-            let invMassA = bodyA.isDynamic && !bodyA.pinned ? 1.0 / bodyA.mass : 0
-            let invMassB = bodyB.isDynamic && !bodyB.pinned ? 1.0 / bodyB.mass : 0
+            let invMassA = bodyA.isDynamic && !bodyA.pinned && bodyA.mass > 0 ? 1.0 / bodyA.mass : 0
+            let invMassB = bodyB.isDynamic && !bodyB.pinned && bodyB.mass > 0 ? 1.0 / bodyB.mass : 0
             let invMassSum = invMassA + invMassB
 
             if invMassSum == 0 { continue }

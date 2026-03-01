@@ -373,4 +373,135 @@ struct SKActionRunnerTests {
         #expect(abs(node.position.x - positionAfterRemove) < 1.0)
         #expect(abs(node.alpha - 0.0) < 0.1)
     }
+
+    // MARK: - Sequence DeltaTime Carry-Over
+
+    @Test("sequence carries over overflow time to next action")
+    func testSequenceDeltaTimeCarryOver() {
+        resetRunner()
+        let node = SKNode()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        scene.addChild(node)
+
+        node.position = CGPoint(x: 0, y: 0)
+
+        // Sequence: move 100px over 0.3s, then move 200px over 0.7s
+        let action = SKAction.sequence([
+            SKAction.moveBy(x: 100, y: 0, duration: 0.3),
+            SKAction.moveBy(x: 200, y: 0, duration: 0.7)
+        ])
+        node.run(action)
+
+        // Update with 0.5s: first action completes at 0.3s, 0.2s overflows to second
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.5)
+
+        // First action contributes 100px. Second action gets 0.2s of 0.7s = ~57px
+        // Total should be ~157px
+        #expect(node.position.x > 140, "Expected >140 but got \(node.position.x)")
+        #expect(node.position.x < 175, "Expected <175 but got \(node.position.x)")
+
+        // Complete the rest (0.5s remaining in second action)
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.5)
+
+        // Total should be 300px
+        #expect(abs(node.position.x - 300) < 1.0, "Expected ~300 but got \(node.position.x)")
+    }
+
+    @Test("sequence of instant actions completes in single frame")
+    func testSequenceInstantActions() {
+        resetRunner()
+        let node = SKNode()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        scene.addChild(node)
+
+        node.isHidden = false
+        nonisolated(unsafe) var blockCalled = false
+
+        let action = SKAction.sequence([
+            SKAction.hide(),
+            SKAction.run { blockCalled = true },
+            SKAction.unhide()
+        ])
+        node.run(action)
+
+        // All instant actions should complete in one frame
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.016)
+
+        #expect(node.isHidden == false, "Node should be unhidden after sequence completes")
+        #expect(blockCalled == true, "Run block should have been called")
+    }
+
+    // MARK: - Repeat DeltaTime Carry-Over
+
+    @Test("repeat action carries over overflow between iterations")
+    func testRepeatDeltaTimeCarryOver() {
+        resetRunner()
+        let node = SKNode()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        scene.addChild(node)
+
+        node.position = CGPoint(x: 0, y: 0)
+
+        // Repeat moveBy(10, 0, 0.1) x 10 = total 100px over 1.0s
+        let moveAction = SKAction.moveBy(x: 10, y: 0, duration: 0.1)
+        let action = SKAction.repeat(moveAction, count: 10)
+        node.run(action)
+
+        // Single 1.0s update should complete all 10 iterations
+        SKActionRunner.shared.update(scene: scene, deltaTime: 1.0)
+
+        #expect(abs(node.position.x - 100) < 2.0, "Expected ~100 but got \(node.position.x)")
+    }
+
+    // MARK: - CustomAction Time Parameter
+
+    @Test("customAction receives linear elapsed time, not eased time")
+    func testCustomActionLinearTime() {
+        resetRunner()
+        let node = SKNode()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        scene.addChild(node)
+
+        var receivedTimes: [CGFloat] = []
+
+        let action = SKAction.customAction(withDuration: 1.0) { _, elapsedTime in
+            receivedTimes.append(elapsedTime)
+        }
+        action.timingMode = .easeIn
+        node.run(action)
+
+        // Update at 0.5s
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.5)
+
+        // The elapsed time should be 0.5 regardless of easeIn timing mode
+        #expect(receivedTimes.count == 1)
+        #expect(abs(receivedTimes[0] - 0.5) < 0.01,
+                "Expected elapsed time ~0.5 but got \(receivedTimes[0])")
+
+        // Update at 1.0s (completes)
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.5)
+
+        #expect(receivedTimes.count == 2)
+        #expect(abs(receivedTimes[1] - 1.0) < 0.01,
+                "Expected elapsed time ~1.0 but got \(receivedTimes[1])")
+    }
+
+    @Test("customAction with zero duration receives 0 elapsed time")
+    func testCustomActionZeroDuration() {
+        resetRunner()
+        let node = SKNode()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        scene.addChild(node)
+
+        var receivedTime: CGFloat = -1
+
+        let action = SKAction.customAction(withDuration: 0) { _, elapsedTime in
+            receivedTime = elapsedTime
+        }
+        node.run(action)
+
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.016)
+
+        #expect(receivedTime >= 0, "customAction should have been called")
+    }
 }

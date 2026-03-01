@@ -157,8 +157,14 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
         // Try to load from bundle (native platforms)
         let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
 
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
-           let data = try? Data(contentsOf: url) {
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
+            let data: Data
+            do {
+                data = try Data(contentsOf: url)
+            } catch {
+                SKDiagnostics.logWarning("Failed to load scene data from \(url): \(error)")
+                return nil
+            }
             return SKSParser.scene(from: data)
         }
 

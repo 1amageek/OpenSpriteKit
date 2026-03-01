@@ -374,3 +374,93 @@ struct SKKeyframeSequenceTests {
         #expect(keyframes.repeatMode == SKRepeatMode.clamp)
     }
 }
+
+// MARK: - SKEmitterNode Deep Copy Tests
+
+@Suite("SKEmitterNode Deep Copy")
+struct SKEmitterNodeDeepCopyTests {
+
+    @Test("Copy creates independent particleScaleSequence")
+    func testCopyScaleSequence() {
+        let emitter = SKEmitterNode()
+        let seq = SKKeyframeSequence(keyframeValues: [0.0, 1.0] as [NSNumber], times: [0.0, 1.0])
+        emitter.particleScaleSequence = seq
+
+        let copy = emitter.copy() as! SKEmitterNode
+
+        seq.addKeyframeValue(2.0 as NSNumber, time: 0.5)
+
+        #expect(copy.particleScaleSequence?.count() == 2)
+        #expect(emitter.particleScaleSequence?.count() == 3)
+    }
+
+    @Test("Copy creates independent particleColorSequence")
+    func testCopyColorSequence() {
+        let emitter = SKEmitterNode()
+        let seq = SKKeyframeSequence(keyframeValues: [SKColor.red, SKColor.blue], times: [0.0, 1.0])
+        emitter.particleColorSequence = seq
+
+        let copy = emitter.copy() as! SKEmitterNode
+
+        seq.removeLastKeyframe()
+
+        #expect(copy.particleColorSequence?.count() == 2)
+        #expect(emitter.particleColorSequence?.count() == 1)
+    }
+
+    @Test("Copy creates independent particleAlphaSequence")
+    func testCopyAlphaSequence() {
+        let emitter = SKEmitterNode()
+        let seq = SKKeyframeSequence(keyframeValues: [1.0, 0.0] as [NSNumber], times: [0.0, 1.0])
+        emitter.particleAlphaSequence = seq
+
+        let copy = emitter.copy() as! SKEmitterNode
+
+        seq.setKeyframeValue(0.5 as NSNumber, for: 0)
+
+        let val = copy.particleAlphaSequence?.getKeyframeValue(for: 0)
+        #expect((val as? NSNumber)?.doubleValue == 1.0)
+    }
+
+    @Test("Copy creates independent particleColorBlendFactorSequence")
+    func testCopyColorBlendFactorSequence() {
+        let emitter = SKEmitterNode()
+        let seq = SKKeyframeSequence(keyframeValues: [0.0, 1.0] as [NSNumber], times: [0.0, 1.0])
+        emitter.particleColorBlendFactorSequence = seq
+
+        let copy = emitter.copy() as! SKEmitterNode
+
+        seq.addKeyframeValue(0.5 as NSNumber, time: 0.5)
+
+        #expect(copy.particleColorBlendFactorSequence?.count() == 2)
+    }
+
+    @Test("Copy creates independent particleAction")
+    func testCopyParticleAction() {
+        let emitter = SKEmitterNode()
+        let action = SKAction.fadeOut(withDuration: 1.0)
+        action.speed = 2.0
+        emitter.particleAction = action
+
+        let copy = emitter.copy() as! SKEmitterNode
+
+        action.speed = 99.0
+
+        #expect(copy.particleAction?.speed == 2.0)
+    }
+
+    @Test("Copy without sequences results in nil sequences")
+    func testCopyWithNilSequences() {
+        let emitter = SKEmitterNode()
+        emitter.particleBirthRate = 50.0
+
+        let copy = emitter.copy() as! SKEmitterNode
+
+        #expect(copy.particleScaleSequence == nil)
+        #expect(copy.particleColorSequence == nil)
+        #expect(copy.particleAlphaSequence == nil)
+        #expect(copy.particleColorBlendFactorSequence == nil)
+        #expect(copy.particleAction == nil)
+        #expect(copy.particleBirthRate == 50.0)
+    }
+}

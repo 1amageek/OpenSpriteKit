@@ -81,18 +81,24 @@ open class SKShader: @unchecked Sendable {
         }
 
         // Try with specified or default extension
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: ext),
-           let source = try? String(contentsOf: url, encoding: .utf8) {
-            self.source = source
-            return
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: ext) {
+            do {
+                self.source = try String(contentsOf: url, encoding: .utf8)
+                return
+            } catch {
+                SKDiagnostics.logWarning("Failed to load shader source from \(url): \(error)")
+            }
         }
 
         // Try common shader extensions
         for shaderExt in ["fsh", "frag", "glsl", "metal"] where shaderExt != ext {
-            if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: shaderExt),
-               let source = try? String(contentsOf: url, encoding: .utf8) {
-                self.source = source
-                return
+            if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: shaderExt) {
+                do {
+                    self.source = try String(contentsOf: url, encoding: .utf8)
+                    return
+                } catch {
+                    SKDiagnostics.logWarning("Failed to load shader source from \(url): \(error)")
+                }
             }
         }
     }

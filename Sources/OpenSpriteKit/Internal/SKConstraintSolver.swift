@@ -10,11 +10,12 @@ import Foundation
 ///
 /// This solver is called during the frame cycle after physics simulation
 /// and before rendering.
+@MainActor
 internal final class SKConstraintSolver {
 
     // MARK: - Singleton
 
-    nonisolated(unsafe) static let shared = SKConstraintSolver()
+    static let shared = SKConstraintSolver()
 
     private init() {}
 

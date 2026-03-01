@@ -792,7 +792,11 @@ open class SKTexture: @unchecked Sendable {
     /// }
     /// ```
     public convenience init?(contentsOf url: URL) {
-        guard let data = try? Data(contentsOf: url) else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            SKDiagnostics.logWarning("Failed to load texture data from \(url): \(error)")
             return nil
         }
         self.init(imageData: data)

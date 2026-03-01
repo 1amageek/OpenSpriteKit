@@ -230,8 +230,15 @@ open class SKNode: @unchecked Sendable {
         let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
 
         if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
-            if let data = try? Data(contentsOf: url),
-               let node = Self.unarchive(from: data) as? Self {
+            let data: Data
+            do {
+                data = try Data(contentsOf: url)
+            } catch {
+                SKDiagnostics.logWarning("Failed to load node data from \(url): \(error)")
+                self.init()
+                return
+            }
+            if let node = Self.unarchive(from: data) as? Self {
                 self.init()
                 self.copyProperties(from: node)
                 return
@@ -261,8 +268,14 @@ open class SKNode: @unchecked Sendable {
         // Try to load from bundle (native platforms)
         let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
 
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks"),
-           let data = try? Data(contentsOf: url) {
+        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
+            let data: Data
+            do {
+                data = try Data(contentsOf: url)
+            } catch {
+                SKDiagnostics.logWarning("Failed to load node data from \(url): \(error)")
+                throw SKResourceError.notFound
+            }
             if let node = try Self.unarchiveSecurely(from: data, classes: classes) as? Self {
                 self.init()
                 self.copyProperties(from: node)
@@ -1366,12 +1379,18 @@ open class SKNode: @unchecked Sendable {
                 result.y = rotatedY
             }
 
-            // Inverse scale
+            // Inverse scale — IEEE 754: nonzero/0 = ±inf, 0/0 = nan
             if n.xScale != 0 {
                 result.x /= n.xScale
+            } else {
+                SKDiagnostics.logWarning("Coordinate conversion through node '\(n.name ?? "unnamed")' with xScale=0 produces undefined results")
+                result.x = result.x == 0 ? .nan : .infinity * (result.x > 0 ? 1 : -1)
             }
             if n.yScale != 0 {
                 result.y /= n.yScale
+            } else {
+                SKDiagnostics.logWarning("Coordinate conversion through node '\(n.name ?? "unnamed")' with yScale=0 produces undefined results")
+                result.y = result.y == 0 ? .nan : .infinity * (result.y > 0 ? 1 : -1)
             }
         }
 
