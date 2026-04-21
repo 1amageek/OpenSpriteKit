@@ -87,10 +87,21 @@ open class SKPhysicsWorld: @unchecked Sendable {
     /// - Parameter joint: The joint to add.
     open func add(_ joint: SKPhysicsJoint) {
         joints.append(joint)
+        // Mirror SpriteKit: both bodies expose the joint via `body.joints`.
+        if !joint.bodyA.joints.contains(where: { $0 === joint }) {
+            joint.bodyA.joints.append(joint)
+        }
+        if !joint.bodyB.joints.contains(where: { $0 === joint }) {
+            joint.bodyB.joints.append(joint)
+        }
     }
 
     /// Removes all joints from the physics world.
     open func removeAllJoints() {
+        for joint in joints {
+            joint.bodyA.joints.removeAll { $0 === joint }
+            joint.bodyB.joints.removeAll { $0 === joint }
+        }
         joints.removeAll()
     }
 
@@ -99,6 +110,8 @@ open class SKPhysicsWorld: @unchecked Sendable {
     /// - Parameter joint: The joint to remove.
     open func remove(_ joint: SKPhysicsJoint) {
         joints.removeAll { $0 === joint }
+        joint.bodyA.joints.removeAll { $0 === joint }
+        joint.bodyB.joints.removeAll { $0 === joint }
     }
 
     // MARK: - Body Searching

@@ -89,9 +89,9 @@ open class SKAction: @unchecked Sendable {
         case repeatAction(action: SKAction, count: Int)
         case repeatForever(action: SKAction)
         case wait(duration: TimeInterval, range: TimeInterval)
-        case runBlock(block: @Sendable () -> Void)
+        case runBlock(block: () -> Void)
         #if canImport(Dispatch)
-        case runBlockOnQueue(block: @Sendable () -> Void, queue: DispatchQueue)
+        case runBlockOnQueue(block: () -> Void, queue: DispatchQueue)
         #endif
         case customAction(block: (SKNode, CGFloat) -> Void)
         case applyForce(force: CGVector, point: CGPoint?)
@@ -340,7 +340,7 @@ open class SKAction: @unchecked Sendable {
     ///   - name: The name of the action within the file.
     ///   - url: The URL of the action file.
     /// - Returns: The loaded action, or nil if the action could not be found.
-    public convenience init?(named name: String, fromURL url: URL) {
+    public convenience init?(named name: String, from url: URL) {
         let data: Data
         do {
             data = try Data(contentsOf: url)
@@ -362,9 +362,25 @@ open class SKAction: @unchecked Sendable {
     ///   - url: The URL of the action file.
     ///   - duration: The new duration for the action.
     /// - Returns: The loaded action with the specified duration, or nil if the action could not be found.
-    public convenience init?(named name: String, fromURL url: URL, duration: TimeInterval) {
-        self.init(named: name, fromURL: url)
+    public convenience init?(named name: String, from url: URL, duration: TimeInterval) {
+        self.init(named: name, from: url)
         self.duration = duration
+    }
+
+    /// Creates an action of the given name from an action file.
+    ///
+    /// Apple SpriteKit exposes this initializer with the `fromURL:` argument label.
+    /// This overload preserves source compatibility for existing SpriteKit code.
+    public convenience init?(named name: String, fromURL url: URL) {
+        self.init(named: name, from: url)
+    }
+
+    /// Creates an action of the given name from an action file with a new duration.
+    ///
+    /// Apple SpriteKit exposes this initializer with the `fromURL:` argument label.
+    /// This overload preserves source compatibility for existing SpriteKit code.
+    public convenience init?(named name: String, fromURL url: URL, duration: TimeInterval) {
+        self.init(named: name, from: url, duration: duration)
     }
 
     /// Unarchives an action from data.
@@ -1152,7 +1168,7 @@ open class SKAction: @unchecked Sendable {
     }
 
     /// Creates an action that executes a block.
-    public class func run(_ block: @escaping @Sendable () -> Void) -> SKAction {
+    public class func run(_ block: @escaping () -> Void) -> SKAction {
         let action = SKAction()
         action.duration = 0
         action.actionType = .runBlock(block: block)
@@ -1161,7 +1177,7 @@ open class SKAction: @unchecked Sendable {
 
     #if canImport(Dispatch)
     /// Creates an action that executes a block on a specific dispatch queue.
-    public class func run(_ block: @escaping @Sendable () -> Void, queue: DispatchQueue) -> SKAction {
+    public class func run(_ block: @escaping () -> Void, queue: DispatchQueue) -> SKAction {
         let action = SKAction()
         action.duration = 0
         action.actionType = .runBlockOnQueue(block: block, queue: queue)

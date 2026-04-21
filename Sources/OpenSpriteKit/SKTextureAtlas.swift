@@ -118,20 +118,31 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// - Parameter name: The name of the texture to retrieve.
     /// - Returns: The texture with the specified name. If no texture exists with that name,
     ///   returns a placeholder texture.
+    ///
+    /// Matches `SpriteKit.SKTextureAtlas.textureNamed(_:)`: misses yield a
+    /// placeholder texture but must **not** be observable via `textureNames`,
+    /// `count`, `containsTexture(named:)`, or any other atlas-introspection
+    /// surface. Caching a miss would pollute those outputs and also prevent
+    /// the atlas from picking up late-registered resources (e.g. assets
+    /// registered with `SKResourceLoader` after the first miss), so on a miss
+    /// we return a fresh placeholder without mutating `textures` or
+    /// `textureNames`.
     open func textureNamed(_ name: String) -> SKTexture {
-        // Return cached texture if available
         if let texture = textures[name] {
             return texture
         }
 
-        // For named atlases, try to load the texture
-        if let atlasName = atlasName {
-            // Construct the full resource name
-            let resourceName = "\(atlasName)/\(name)"
-
-            // Try to load from resources
-            // In WASM environment, this would use SKResourceLoader
-            let texture = SKTexture(imageNamed: resourceName)
+        // For named atlases, first consult `SKResourceLoader`'s explicit atlas
+        // registration — this is how callers register packed atlases via
+        // `registerAtlas(...forName:)` with a frame dictionary. A matching
+        // registration carries normalized frame rects into a single backing
+        // image, so we derive the sub-texture from it.
+        if let atlasName = atlasName,
+           let atlasData = SKResourceLoader.shared.atlas(forName: atlasName),
+           let frame = atlasData.frames[name] {
+            let source = SKTexture(cgImage: atlasData.image)
+            source.imageName = atlasName
+            let texture = SKTexture(rect: frame, in: source)
             textures[name] = texture
             if !textureNames.contains(name) {
                 textureNames.append(name)
@@ -140,11 +151,28 @@ open class SKTextureAtlas: @unchecked Sendable {
             return texture
         }
 
-        // Return a placeholder texture if not found
-        // Create a small colored texture as placeholder
-        let placeholderTexture = SKTexture()
-        textures[name] = placeholderTexture
-        return placeholderTexture
+        // Fall back to image-path lookup ("<atlas>/<name>") for atlases whose
+        // frames were registered as individual images. We query
+        // `SKResourceLoader` directly so we can tell success from miss — the
+        // `SKTexture(imageNamed:)` convenience initializer returns a texture
+        // even when the resource is absent (with a nil backing image), and
+        // caching that would permanently mask the missing asset.
+        if let atlasName = atlasName {
+            let resourceName = "\(atlasName)/\(name)"
+            if let image = SKResourceLoader.shared.image(forName: resourceName) {
+                let texture = SKTexture(cgImage: image)
+                texture.imageName = resourceName
+                textures[name] = texture
+                if !textureNames.contains(name) {
+                    textureNames.append(name)
+                    textureNames.sort()
+                }
+                return texture
+            }
+        }
+
+        // Miss: return a fresh placeholder without caching.
+        return SKTexture()
     }
 
     // MARK: - Preloading

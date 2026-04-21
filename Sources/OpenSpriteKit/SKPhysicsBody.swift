@@ -7,7 +7,7 @@
 import Foundation
 
 /// The shape type for a physics body collision shape.
-public enum SKPhysicsBodyShape {
+internal enum SKPhysicsBodyShape {
     /// A circular shape centered at origin.
     case circle(radius: CGFloat)
 
@@ -54,7 +54,7 @@ open class SKPhysicsBody: @unchecked Sendable {
     // MARK: - Properties
 
     /// The node that this physics body is attached to.
-    open weak var node: SKNode?
+    open internal(set) weak var node: SKNode?
 
     /// A Boolean value that indicates whether this physics body is affected by the physics world's gravity.
     open var affectedByGravity: Bool = true
@@ -181,13 +181,13 @@ open class SKPhysicsBody: @unchecked Sendable {
     open var charge: CGFloat = 0.0
 
     /// The joints attached to this physics body.
-    open var joints: [SKPhysicsJoint] = []
+    open internal(set) var joints: [SKPhysicsJoint] = []
 
-    /// All bodies that this body is in contact with.
+    /// Returns all bodies that this body is in contact with.
     ///
-    /// This property returns an array of all physics bodies currently in contact with this body.
-    /// The contacts are tracked by the physics engine during simulation.
-    open var allContactedBodies: [SKPhysicsBody] {
+    /// - Returns: An array of all physics bodies currently in contact with this body.
+    ///   The contacts are tracked by the physics engine during simulation.
+    open func allContactedBodies() -> [SKPhysicsBody] {
         guard let node = node,
               let scene = node.scene else {
             return []
@@ -197,17 +197,17 @@ open class SKPhysicsBody: @unchecked Sendable {
         var contactedBodies: [SKPhysicsBody] = []
         let selfId = ObjectIdentifier(self)
 
+        // `ContactPair` sorts bodies by ObjectIdentifier for set-membership,
+        // so we cannot map `pair.bodyA`/`pair.bodyB` back onto
+        // `SKPhysicsContact.bodyA`/`bodyB`. Instead, look up the cached contact
+        // and return whichever side isn't self.
         for pair in world.activeContacts {
-            if pair.bodyA == selfId {
-                // Find the body for bodyB
-                if let contact = world.contactCache[pair] {
-                    contactedBodies.append(contact.bodyB)
-                }
-            } else if pair.bodyB == selfId {
-                // Find the body for bodyA
-                if let contact = world.contactCache[pair] {
-                    contactedBodies.append(contact.bodyA)
-                }
+            guard pair.bodyA == selfId || pair.bodyB == selfId else { continue }
+            guard let contact = world.contactCache[pair] else { continue }
+            if ObjectIdentifier(contact.bodyA) == selfId {
+                contactedBodies.append(contact.bodyB)
+            } else if ObjectIdentifier(contact.bodyB) == selfId {
+                contactedBodies.append(contact.bodyA)
             }
         }
 
@@ -217,6 +217,19 @@ open class SKPhysicsBody: @unchecked Sendable {
     // MARK: - Initializers
 
     public init() {
+    }
+
+    /// Sets the area and recomputes mass based on current density.
+    ///
+    /// This is used during convenience initializers because Swift property observers
+    /// (`didSet`) don't fire in an initialization context.
+    private func setInitialArea(_ newArea: CGFloat) {
+        self.area = newArea
+        if newArea > 0 {
+            _updatingMass = true
+            _mass = _density * newArea
+            _updatingMass = false
+        }
     }
 
     // MARK: - Copying
@@ -254,17 +267,15 @@ open class SKPhysicsBody: @unchecked Sendable {
         return bodyCopy
     }
 
-    // MARK: - Factory Methods
+    // MARK: - Shape Initializers
 
     /// Creates a circular physics body centered on the owning node's origin.
     ///
     /// - Parameter radius: The radius of the circle.
-    /// - Returns: A new physics body.
-    public class func circleOfRadius(_ radius: CGFloat) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .circle(radius: radius)
-        body.area = .pi * radius * radius
-        return body
+    public convenience init(circleOfRadius radius: CGFloat) {
+        self.init()
+        self.shape = .circle(radius: radius)
+        setInitialArea(.pi * radius * radius)
     }
 
     /// Creates a circular physics body centered on the specified point.
@@ -272,23 +283,19 @@ open class SKPhysicsBody: @unchecked Sendable {
     /// - Parameters:
     ///   - radius: The radius of the circle.
     ///   - center: The center of the circle.
-    /// - Returns: A new physics body.
-    public class func circleOfRadius(_ radius: CGFloat, center: CGPoint) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .circleWithCenter(radius: radius, center: center)
-        body.area = .pi * radius * radius
-        return body
+    public convenience init(circleOfRadius radius: CGFloat, center: CGPoint) {
+        self.init()
+        self.shape = .circleWithCenter(radius: radius, center: center)
+        setInitialArea(.pi * radius * radius)
     }
 
     /// Creates a rectangular physics body.
     ///
     /// - Parameter size: The size of the rectangle.
-    /// - Returns: A new physics body.
-    public class func rectangleOf(size: CGSize) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .rectangle(size: size)
-        body.area = size.width * size.height
-        return body
+    public convenience init(rectangleOf size: CGSize) {
+        self.init()
+        self.shape = .rectangle(size: size)
+        setInitialArea(size.width * size.height)
     }
 
     /// Creates a rectangular physics body centered on the specified point.
@@ -296,23 +303,19 @@ open class SKPhysicsBody: @unchecked Sendable {
     /// - Parameters:
     ///   - size: The size of the rectangle.
     ///   - center: The center of the rectangle.
-    /// - Returns: A new physics body.
-    public class func rectangleOf(size: CGSize, center: CGPoint) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .rectangleWithCenter(size: size, center: center)
-        body.area = size.width * size.height
-        return body
+    public convenience init(rectangleOf size: CGSize, center: CGPoint) {
+        self.init()
+        self.shape = .rectangleWithCenter(size: size, center: center)
+        setInitialArea(size.width * size.height)
     }
 
     /// Creates a polygon physics body from a path.
     ///
     /// - Parameter path: The path defining the polygon.
-    /// - Returns: A new physics body.
-    public class func polygonFrom(path: CGPath) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .polygon(path: path)
-        body.area = calculatePathArea(path)
-        return body
+    public convenience init(polygonFrom path: CGPath) {
+        self.init()
+        self.shape = .polygon(path: path)
+        setInitialArea(SKPhysicsBody.calculatePathArea(path))
     }
 
     /// Calculates the area of a path using the Shoelace formula.
@@ -390,34 +393,28 @@ open class SKPhysicsBody: @unchecked Sendable {
     /// Creates an edge-based physics body from a path.
     ///
     /// - Parameter path: The path defining the edges.
-    /// - Returns: A new physics body.
-    public class func edgeChainFrom(path: CGPath) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .edgeChain(path: path)
-        body.isDynamic = false
-        return body
+    public convenience init(edgeChainFrom path: CGPath) {
+        self.init()
+        self.shape = .edgeChain(path: path)
+        self.isDynamic = false
     }
 
     /// Creates an edge loop physics body from a path.
     ///
     /// - Parameter path: The path defining the loop.
-    /// - Returns: A new physics body.
-    public class func edgeLoopFrom(path: CGPath) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .edgeLoop(path: path)
-        body.isDynamic = false
-        return body
+    public convenience init(edgeLoopFrom path: CGPath) {
+        self.init()
+        self.shape = .edgeLoop(path: path)
+        self.isDynamic = false
     }
 
     /// Creates an edge loop physics body from a rectangle.
     ///
     /// - Parameter rect: The rectangle defining the loop.
-    /// - Returns: A new physics body.
-    public class func edgeLoopFrom(rect: CGRect) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .edgeLoopRect(rect: rect)
-        body.isDynamic = false
-        return body
+    public convenience init(edgeLoopFrom rect: CGRect) {
+        self.init()
+        self.shape = .edgeLoopRect(rect: rect)
+        self.isDynamic = false
     }
 
     /// Creates an edge physics body from two points.
@@ -425,12 +422,10 @@ open class SKPhysicsBody: @unchecked Sendable {
     /// - Parameters:
     ///   - p1: The start point of the edge.
     ///   - p2: The end point of the edge.
-    /// - Returns: A new physics body.
-    public class func edgeFrom(_ p1: CGPoint, to p2: CGPoint) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .edge(from: p1, to: p2)
-        body.isDynamic = false
-        return body
+    public convenience init(edgeFrom p1: CGPoint, to p2: CGPoint) {
+        self.init()
+        self.shape = .edge(from: p1, to: p2)
+        self.isDynamic = false
     }
 
     /// Creates a physics body from a texture.
@@ -438,33 +433,26 @@ open class SKPhysicsBody: @unchecked Sendable {
     /// - Parameters:
     ///   - texture: The texture defining the shape.
     ///   - size: The size of the texture.
-    /// - Returns: A new physics body.
     ///
     /// - Note: In the WASM environment, full texture analysis is not available due to WebGPU
     ///   limitations on pixel readback. This implementation uses an ellipse approximation
     ///   inscribed within the texture bounds, which provides better collision detection
     ///   than a simple rectangle for most sprite shapes (characters, projectiles, etc.).
     ///   For precise collision shapes, use `init(polygonFrom:)` with explicit vertices.
-    public class func bodyFrom(texture: SKTexture, size: CGSize) -> SKPhysicsBody {
-        // Use ellipse approximation for better fit than rectangle
-        // An inscribed ellipse typically matches sprite shapes better
+    public convenience init(texture: SKTexture, size: CGSize) {
+        self.init()
         let radius = min(size.width, size.height) / 2
-        let body = SKPhysicsBody()
 
         if abs(size.width - size.height) < 0.01 {
-            // Square-ish texture: use circle
-            body.shape = .circle(radius: radius)
-            body.area = .pi * radius * radius
+            self.shape = .circle(radius: radius)
+            setInitialArea(.pi * radius * radius)
         } else {
-            // Non-square: use rectangle but with slightly reduced size
-            // to approximate an ellipse's collision area
-            let scaleFactor: CGFloat = 0.85  // ~π/4 approximation
+            let scaleFactor: CGFloat = 0.85
             let adjustedSize = CGSize(width: size.width * scaleFactor,
                                        height: size.height * scaleFactor)
-            body.shape = .rectangle(size: adjustedSize)
-            body.area = adjustedSize.width * adjustedSize.height
+            self.shape = .rectangle(size: adjustedSize)
+            setInitialArea(adjustedSize.width * adjustedSize.height)
         }
-        return body
     }
 
     /// Creates a physics body from a texture with alpha threshold.
@@ -473,28 +461,22 @@ open class SKPhysicsBody: @unchecked Sendable {
     ///   - texture: The texture defining the shape.
     ///   - alphaThreshold: The minimum alpha value to consider as solid.
     ///   - size: The size of the texture.
-    /// - Returns: A new physics body.
     ///
-    /// - Note: In the WASM environment, texture pixel analysis is limited. This method
-    ///   behaves the same as `bodyFrom(texture:size:)`. For precise alpha-based collision
+    /// - Note: In the WASM environment, texture pixel analysis is limited. This initializer
+    ///   behaves the same as `init(texture:size:)`. For precise alpha-based collision
     ///   shapes, pre-compute polygon vertices and use `init(polygonFrom:)`.
-    public class func bodyFrom(texture: SKTexture, alphaThreshold: Float, size: CGSize) -> SKPhysicsBody {
-        // Same as bodyFrom(texture:size:) due to WASM limitations
-        // The alphaThreshold parameter is accepted for API compatibility
+    public convenience init(texture: SKTexture, alphaThreshold: Float, size: CGSize) {
         _ = alphaThreshold
-        return bodyFrom(texture: texture, size: size)
+        self.init(texture: texture, size: size)
     }
 
     /// Creates a physics body that combines multiple other bodies.
     ///
     /// - Parameter bodies: The bodies to combine.
-    /// - Returns: A new physics body.
-    public class func body(bodies: [SKPhysicsBody]) -> SKPhysicsBody {
-        let body = SKPhysicsBody()
-        body.shape = .composite(bodies: bodies)
-        // Calculate combined area
-        body.area = bodies.reduce(0) { $0 + $1.area }
-        return body
+    public convenience init(bodies: [SKPhysicsBody]) {
+        self.init()
+        self.shape = .composite(bodies: bodies)
+        setInitialArea(bodies.reduce(0) { $0 + $1.area })
     }
 
     // MARK: - Force and Impulse Application
