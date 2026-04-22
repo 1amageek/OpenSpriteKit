@@ -177,6 +177,9 @@ open class SKRenderer: @unchecked Sendable {
 
         // 9. Final callback
         scene.didFinishUpdate()
+
+        // 10. Diagnostics tick (rate-limited; off by default)
+        SKDiagnostics.shared.tick(scene: scene)
     }
 
     /// Updates particle systems recursively.

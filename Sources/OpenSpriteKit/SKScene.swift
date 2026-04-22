@@ -148,13 +148,11 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
     ///
     /// - Parameter filename: The name of the scene file (with or without `.sks` extension).
     /// - Returns: A new scene, or nil if the file could not be loaded.
-    public class func scene(fileNamed filename: String) -> SKScene? {
-        // Try to load from registered scene data first (WASM)
+    public class func scene(fileNamed filename: String) -> Self? {
         if let data = SKResourceLoader.shared.sceneData(forName: filename) {
-            return SKSParser.scene(from: data)
+            return SKSParser.scene(from: data) as? Self
         }
 
-        // Try to load from bundle (native platforms)
         let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
 
         if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
@@ -165,7 +163,7 @@ open class SKScene: SKEffectNode, @unchecked Sendable {
                 SKDiagnostics.logWarning("Failed to load scene data from \(url): \(error)")
                 return nil
             }
-            return SKSParser.scene(from: data)
+            return SKSParser.scene(from: data) as? Self
         }
 
         return nil

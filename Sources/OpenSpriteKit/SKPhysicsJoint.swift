@@ -16,10 +16,10 @@ open class SKPhysicsJoint: @unchecked Sendable {
     // MARK: - Properties
 
     /// The first physics body connected by the joint.
-    open weak var bodyA: SKPhysicsBody?
+    open var bodyA: SKPhysicsBody
 
     /// The second physics body connected by the joint.
-    open weak var bodyB: SKPhysicsBody?
+    open var bodyB: SKPhysicsBody
 
     /// The reaction force of the joint (computed during simulation).
     internal var _reactionForce: CGVector = .zero
@@ -35,7 +35,9 @@ open class SKPhysicsJoint: @unchecked Sendable {
 
     // MARK: - Initializers
 
-    public init() {
+    internal init(bodyA: SKPhysicsBody, bodyB: SKPhysicsBody) {
+        self.bodyA = bodyA
+        self.bodyB = bodyB
     }
 
     // MARK: - Internal
@@ -57,7 +59,7 @@ open class SKPhysicsJointPin: SKPhysicsJoint, @unchecked Sendable {
     // MARK: - Properties
 
     /// The anchor point of the joint in scene coordinates.
-    internal var anchor: CGPoint = .zero
+    internal var anchor: CGPoint
 
     /// The rotation speed of the joint.
     open var rotationSpeed: CGFloat = 0.0
@@ -76,7 +78,9 @@ open class SKPhysicsJointPin: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Initializers
 
-    public override init() {
+    internal init(bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchor: CGPoint) {
+        self.anchor = anchor
+        super.init(bodyA: bodyA, bodyB: bodyB)
     }
 
     // MARK: - Factory Methods
@@ -89,11 +93,7 @@ open class SKPhysicsJointPin: SKPhysicsJoint, @unchecked Sendable {
     ///   - anchor: The anchor point in scene coordinates.
     /// - Returns: A new pin joint.
     public class func joint(withBodyA bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchor: CGPoint) -> SKPhysicsJointPin {
-        let joint = SKPhysicsJointPin()
-        joint.bodyA = bodyA
-        joint.bodyB = bodyB
-        joint.anchor = anchor
-        return joint
+        return SKPhysicsJointPin(bodyA: bodyA, bodyB: bodyB, anchor: anchor)
     }
 }
 
@@ -107,13 +107,13 @@ open class SKPhysicsJointSpring: SKPhysicsJoint, @unchecked Sendable {
     // MARK: - Properties
 
     /// The anchor point on the first body in scene coordinates.
-    internal var anchorA: CGPoint = .zero
+    internal var anchorA: CGPoint
 
     /// The anchor point on the second body in scene coordinates.
-    internal var anchorB: CGPoint = .zero
+    internal var anchorB: CGPoint
 
     /// The rest length of the spring (calculated from initial anchor positions).
-    internal var restLength: CGFloat = 0.0
+    internal var restLength: CGFloat
 
     /// The damping of the spring.
     open var damping: CGFloat = 0.0
@@ -123,7 +123,13 @@ open class SKPhysicsJointSpring: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Initializers
 
-    public override init() {
+    internal init(bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchorA: CGPoint, anchorB: CGPoint) {
+        self.anchorA = anchorA
+        self.anchorB = anchorB
+        let dx = anchorB.x - anchorA.x
+        let dy = anchorB.y - anchorA.y
+        self.restLength = sqrt(dx * dx + dy * dy)
+        super.init(bodyA: bodyA, bodyB: bodyB)
     }
 
     // MARK: - Factory Methods
@@ -137,16 +143,7 @@ open class SKPhysicsJointSpring: SKPhysicsJoint, @unchecked Sendable {
     ///   - anchorB: The anchor point on the second body in scene coordinates.
     /// - Returns: A new spring joint.
     public class func joint(withBodyA bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchorA: CGPoint, anchorB: CGPoint) -> SKPhysicsJointSpring {
-        let joint = SKPhysicsJointSpring()
-        joint.bodyA = bodyA
-        joint.bodyB = bodyB
-        joint.anchorA = anchorA
-        joint.anchorB = anchorB
-        // Calculate rest length from initial positions
-        let dx = anchorB.x - anchorA.x
-        let dy = anchorB.y - anchorA.y
-        joint.restLength = sqrt(dx * dx + dy * dy)
-        return joint
+        return SKPhysicsJointSpring(bodyA: bodyA, bodyB: bodyB, anchorA: anchorA, anchorB: anchorB)
     }
 }
 
@@ -160,17 +157,29 @@ open class SKPhysicsJointFixed: SKPhysicsJoint, @unchecked Sendable {
     // MARK: - Properties
 
     /// The anchor point of the joint in scene coordinates.
-    internal var anchor: CGPoint = .zero
+    internal var anchor: CGPoint
 
     /// The relative offset from bodyA to bodyB (stored at creation time).
-    internal var relativeOffset: CGVector = .zero
+    internal var relativeOffset: CGVector
 
     /// The relative rotation difference (stored at creation time).
-    internal var relativeRotation: CGFloat = 0.0
+    internal var relativeRotation: CGFloat
 
     // MARK: - Initializers
 
-    public override init() {
+    internal init(bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchor: CGPoint) {
+        self.anchor = anchor
+        if let nodeA = bodyA.node, let nodeB = bodyB.node {
+            self.relativeOffset = CGVector(
+                dx: nodeB.position.x - nodeA.position.x,
+                dy: nodeB.position.y - nodeA.position.y
+            )
+            self.relativeRotation = nodeB.zRotation - nodeA.zRotation
+        } else {
+            self.relativeOffset = .zero
+            self.relativeRotation = 0.0
+        }
+        super.init(bodyA: bodyA, bodyB: bodyB)
     }
 
     // MARK: - Factory Methods
@@ -183,21 +192,7 @@ open class SKPhysicsJointFixed: SKPhysicsJoint, @unchecked Sendable {
     ///   - anchor: The anchor point in scene coordinates.
     /// - Returns: A new fixed joint.
     public class func joint(withBodyA bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchor: CGPoint) -> SKPhysicsJointFixed {
-        let joint = SKPhysicsJointFixed()
-        joint.bodyA = bodyA
-        joint.bodyB = bodyB
-        joint.anchor = anchor
-
-        // Store the relative offset and rotation at creation time
-        if let nodeA = bodyA.node, let nodeB = bodyB.node {
-            joint.relativeOffset = CGVector(
-                dx: nodeB.position.x - nodeA.position.x,
-                dy: nodeB.position.y - nodeA.position.y
-            )
-            joint.relativeRotation = nodeB.zRotation - nodeA.zRotation
-        }
-
-        return joint
+        return SKPhysicsJointFixed(bodyA: bodyA, bodyB: bodyB, anchor: anchor)
     }
 }
 
@@ -211,10 +206,10 @@ open class SKPhysicsJointSliding: SKPhysicsJoint, @unchecked Sendable {
     // MARK: - Properties
 
     /// The anchor point of the joint in scene coordinates.
-    internal var anchor: CGPoint = .zero
+    internal var anchor: CGPoint
 
     /// The axis along which the bodies can slide (normalized).
-    internal var axis: CGVector = CGVector(dx: 1, dy: 0)
+    internal var axis: CGVector
 
     /// Whether limits should be enabled.
     open var shouldEnableLimits: Bool = false
@@ -227,7 +222,15 @@ open class SKPhysicsJointSliding: SKPhysicsJoint, @unchecked Sendable {
 
     // MARK: - Initializers
 
-    public override init() {
+    internal init(bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchor: CGPoint, axis: CGVector) {
+        self.anchor = anchor
+        let length = sqrt(axis.dx * axis.dx + axis.dy * axis.dy)
+        if length > 0.0001 {
+            self.axis = CGVector(dx: axis.dx / length, dy: axis.dy / length)
+        } else {
+            self.axis = CGVector(dx: 1, dy: 0)
+        }
+        super.init(bodyA: bodyA, bodyB: bodyB)
     }
 
     // MARK: - Factory Methods
@@ -241,16 +244,7 @@ open class SKPhysicsJointSliding: SKPhysicsJoint, @unchecked Sendable {
     ///   - axis: The axis along which the bodies can slide.
     /// - Returns: A new sliding joint.
     public class func joint(withBodyA bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchor: CGPoint, axis: CGVector) -> SKPhysicsJointSliding {
-        let joint = SKPhysicsJointSliding()
-        joint.bodyA = bodyA
-        joint.bodyB = bodyB
-        joint.anchor = anchor
-        // Normalize the axis
-        let length = sqrt(axis.dx * axis.dx + axis.dy * axis.dy)
-        if length > 0.0001 {
-            joint.axis = CGVector(dx: axis.dx / length, dy: axis.dy / length)
-        }
-        return joint
+        return SKPhysicsJointSliding(bodyA: bodyA, bodyB: bodyB, anchor: anchor, axis: axis)
     }
 }
 
@@ -264,17 +258,23 @@ open class SKPhysicsJointLimit: SKPhysicsJoint, @unchecked Sendable {
     // MARK: - Properties
 
     /// The anchor point on the first body in scene coordinates.
-    internal var anchorA: CGPoint = .zero
+    internal var anchorA: CGPoint
 
     /// The anchor point on the second body in scene coordinates.
-    internal var anchorB: CGPoint = .zero
+    internal var anchorB: CGPoint
 
     /// The maximum distance between the two bodies.
-    open var maxLength: CGFloat = 0.0
+    open var maxLength: CGFloat
 
     // MARK: - Initializers
 
-    public override init() {
+    internal init(bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchorA: CGPoint, anchorB: CGPoint) {
+        self.anchorA = anchorA
+        self.anchorB = anchorB
+        let dx = anchorB.x - anchorA.x
+        let dy = anchorB.y - anchorA.y
+        self.maxLength = sqrt(dx * dx + dy * dy)
+        super.init(bodyA: bodyA, bodyB: bodyB)
     }
 
     // MARK: - Factory Methods
@@ -288,15 +288,6 @@ open class SKPhysicsJointLimit: SKPhysicsJoint, @unchecked Sendable {
     ///   - anchorB: The anchor point on the second body in scene coordinates.
     /// - Returns: A new limit joint.
     public class func joint(withBodyA bodyA: SKPhysicsBody, bodyB: SKPhysicsBody, anchorA: CGPoint, anchorB: CGPoint) -> SKPhysicsJointLimit {
-        let joint = SKPhysicsJointLimit()
-        joint.bodyA = bodyA
-        joint.bodyB = bodyB
-        joint.anchorA = anchorA
-        joint.anchorB = anchorB
-        // Calculate initial length as maxLength
-        let dx = anchorB.x - anchorA.x
-        let dy = anchorB.y - anchorA.y
-        joint.maxLength = sqrt(dx * dx + dy * dy)
-        return joint
+        return SKPhysicsJointLimit(bodyA: bodyA, bodyB: bodyB, anchorA: anchorA, anchorB: anchorB)
     }
 }

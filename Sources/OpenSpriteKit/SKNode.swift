@@ -22,8 +22,35 @@ open class SKNode: @unchecked Sendable {
     public private(set) lazy var layer: CALayer = {
         let layer = type(of: self).layerClass.init()
         layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        // SpriteKit drives animation via SKAction, not CA implicit animation.
+        // Without this, setting xScale = -1 interpolates through 0 over 0.25s
+        // and the node visually collapses mid-flip. An empty actions dict is
+        // not enough — action(forKey:) falls through to defaultAction, so every
+        // animatable key must map to a no-op action.
+        let null = NullAction()
+        let keys = [
+            "transform", "transform.scale", "transform.scale.x", "transform.scale.y",
+            "transform.rotation", "transform.rotation.z",
+            "transform.translation", "transform.translation.x", "transform.translation.y",
+            "position", "position.x", "position.y",
+            "bounds", "bounds.origin", "bounds.size",
+            "anchorPoint", "zPosition",
+            "opacity", "isHidden", "masksToBounds",
+            "backgroundColor", "cornerRadius", "borderWidth", "borderColor",
+            "shadowOpacity", "shadowRadius", "shadowOffset", "shadowColor", "shadowPath",
+            "contents", "contentsRect", "contentsCenter", "contentsScale",
+        ]
+        var map: [String: any CAAction] = [:]
+        for k in keys { map[k] = null }
+        layer.actions = map
         return layer
     }()
+
+    private struct NullAction: CAAction {
+        func run(forKey event: String, object anObject: Any, arguments dict: [AnyHashable: Any]?) {
+            // No-op: SKNode disables CA implicit animations; SKAction is the animation model.
+        }
+    }
 
     /// The class used to create the backing layer.
     /// Subclasses can override this to return a specialized layer type.
@@ -1052,8 +1079,12 @@ open class SKNode: @unchecked Sendable {
     /// - It is not hidden (and no ancestor is hidden)
     /// - Its own isUserInteractionEnabled is true
     open func atPoint(_ p: CGPoint) -> SKNode {
-        // If this node is invisible, entire subtree is invisible - return self
-        if isHidden || alpha == 0 { return self }
+        // If this node is invisible, entire subtree is invisible - return self.
+        // Use `<= 0` rather than `== 0`: alpha is not clamped at the storage
+        // site, and exact float equality is fragile against tiny residuals
+        // produced by actions or accumulated multiplications. Behavior for any
+        // legal alpha in [0, 1] is unchanged.
+        if isHidden || alpha <= 0 { return self }
 
         // Search with accumulated alpha (visibility propagates through ancestors)
         if let result = atPointHelper(p, accumulatedAlpha: alpha) {
@@ -1079,8 +1110,11 @@ open class SKNode: @unchecked Sendable {
             // Calculate effective properties for this child
             let childEffectiveAlpha = accumulatedAlpha * child.alpha
 
-            // Skip if effectively invisible
-            if childEffectiveAlpha == 0 { continue }
+            // Skip if effectively invisible. Use `<= 0` rather than `== 0`:
+            // alpha is not clamped at the storage site, and accumulated
+            // multiplication can produce tiny non-zero residuals that should
+            // still be treated as invisible.
+            if childEffectiveAlpha <= 0 { continue }
 
             let childPoint = convertPointToChild(p, child: child)
 
@@ -1153,8 +1187,11 @@ open class SKNode: @unchecked Sendable {
             // Calculate effective properties for this node
             let effectiveAlpha = parentAlpha * node.alpha
 
-            // Skip if effectively invisible
-            if effectiveAlpha == 0 { continue }
+            // Skip if effectively invisible. Use `<= 0` rather than `== 0`:
+            // alpha is not clamped at the storage site, and accumulated
+            // multiplication can produce tiny non-zero residuals that should
+            // still be treated as invisible.
+            if effectiveAlpha <= 0 { continue }
 
             let currentDepth = depthCounter
             depthCounter += 1
@@ -1379,18 +1416,16 @@ open class SKNode: @unchecked Sendable {
                 result.y = rotatedY
             }
 
-            // Inverse scale — IEEE 754: nonzero/0 = ±inf, 0/0 = nan
+            // Singular-transform limit: scale=0 collapses the axis, so the inverse resolves to the origin in that axis.
             if n.xScale != 0 {
                 result.x /= n.xScale
             } else {
-                SKDiagnostics.logWarning("Coordinate conversion through node '\(n.name ?? "unnamed")' with xScale=0 produces undefined results")
-                result.x = result.x == 0 ? .nan : .infinity * (result.x > 0 ? 1 : -1)
+                result.x = 0
             }
             if n.yScale != 0 {
                 result.y /= n.yScale
             } else {
-                SKDiagnostics.logWarning("Coordinate conversion through node '\(n.name ?? "unnamed")' with yScale=0 produces undefined results")
-                result.y = result.y == 0 ? .nan : .infinity * (result.y > 0 ? 1 : -1)
+                result.y = 0
             }
         }
 

@@ -189,11 +189,13 @@ open class SKTexture: @unchecked Sendable {
                 return nil
             }
 
-            // Calculate pixel rect from normalized textureRect
-            let pixelX = Int(CGFloat(parentImage.width) * _textureRect.origin.x)
-            let pixelY = Int(CGFloat(parentImage.height) * _textureRect.origin.y)
-            let pixelWidth = Int(CGFloat(parentImage.width) * _textureRect.width)
-            let pixelHeight = Int(CGFloat(parentImage.height) * _textureRect.height)
+            // Calculate pixel rect from normalized textureRect.
+            // Round to nearest integer to avoid off-by-one pixel errors from
+            // floating-point representation of normalized coordinates.
+            let pixelX = Int((CGFloat(parentImage.width) * _textureRect.origin.x).rounded())
+            let pixelY = Int((CGFloat(parentImage.height) * _textureRect.origin.y).rounded())
+            let pixelWidth = Int((CGFloat(parentImage.width) * _textureRect.width).rounded())
+            let pixelHeight = Int((CGFloat(parentImage.height) * _textureRect.height).rounded())
 
             let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelWidth, height: pixelHeight)
             guard let croppedImage = parentImage.cropping(to: cropRect) else {

@@ -432,7 +432,8 @@ internal final class SKPhysicsEngine {
 
         // Apply each joint type
         for joint in joints {
-            guard let bodyA = joint.bodyA, let bodyB = joint.bodyB else { continue }
+            let bodyA = joint.bodyA
+            let bodyB = joint.bodyB
             guard let nodeA = bodyA.node, let nodeB = bodyB.node else { continue }
 
             if let pinJoint = joint as? SKPhysicsJointPin {

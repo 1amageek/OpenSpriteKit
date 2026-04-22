@@ -8,8 +8,8 @@ import Foundation
 
 /// Lightweight diagnostics for tracking growth over time (WASM-friendly).
 @MainActor
-internal final class SKDiagnostics {
-    static let shared = SKDiagnostics()
+public final class SKDiagnostics {
+    public static let shared = SKDiagnostics()
 
     /// Logs a warning for non-fatal issues (failed file loads, parse errors, etc.).
     /// Callable from any isolation context.
@@ -19,16 +19,16 @@ internal final class SKDiagnostics {
 
     private init() {}
 
-    private var isEnabled: Bool = true
+    private var isEnabled: Bool = false
     private var interval: TimeInterval = 1.0
     private var lastLogTime: TimeInterval = 0
 
-    func setEnabled(_ enabled: Bool, interval: TimeInterval = 1.0) {
+    public func setEnabled(_ enabled: Bool, interval: TimeInterval = 1.0) {
         isEnabled = enabled
         self.interval = max(0.25, interval)
     }
 
-    func tick(scene: SKScene) {
+    public func tick(scene: SKScene) {
         guard isEnabled else { return }
 
         let now = Date().timeIntervalSinceReferenceDate

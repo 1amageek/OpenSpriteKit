@@ -156,7 +156,7 @@ struct SKPhysicsBodyFactoryMethodsTests {
     @Test("circleOfRadius calculates area as π*r²")
     func testCircleOfRadiusArea() {
         let radius: CGFloat = 50
-        let body = SKPhysicsBody.circleOfRadius(radius)
+        let body = SKPhysicsBody(circleOfRadius:radius)
 
         // Area = π * r² = π * 50² = π * 2500 ≈ 7853.98
         let expectedArea = CGFloat.pi * radius * radius
@@ -165,8 +165,8 @@ struct SKPhysicsBodyFactoryMethodsTests {
 
     @Test("circleOfRadius with different radii")
     func testCircleOfRadiusVariousRadii() {
-        let body1 = SKPhysicsBody.circleOfRadius(10)
-        let body2 = SKPhysicsBody.circleOfRadius(20)
+        let body1 = SKPhysicsBody(circleOfRadius:10)
+        let body2 = SKPhysicsBody(circleOfRadius:20)
 
         // Area of circle with r=20 should be 4x area of circle with r=10
         let ratio = body2.area / body1.area
@@ -176,7 +176,7 @@ struct SKPhysicsBodyFactoryMethodsTests {
     @Test("rectangleOf calculates area as width * height")
     func testRectangleOfArea() {
         let size = CGSize(width: 100, height: 50)
-        let body = SKPhysicsBody.rectangleOf(size: size)
+        let body = SKPhysicsBody(rectangleOf:size)
 
         // Area = width * height = 100 * 50 = 5000
         let expectedArea = size.width * size.height
@@ -185,8 +185,8 @@ struct SKPhysicsBodyFactoryMethodsTests {
 
     @Test("rectangleOf with different sizes")
     func testRectangleOfVariousSizes() {
-        let body1 = SKPhysicsBody.rectangleOf(size: CGSize(width: 10, height: 10))
-        let body2 = SKPhysicsBody.rectangleOf(size: CGSize(width: 20, height: 20))
+        let body1 = SKPhysicsBody(rectangleOf:CGSize(width: 10, height: 10))
+        let body2 = SKPhysicsBody(rectangleOf:CGSize(width: 20, height: 20))
 
         // Area of 20x20 should be 4x area of 10x10
         #expect(body1.area == 100)
@@ -195,7 +195,7 @@ struct SKPhysicsBodyFactoryMethodsTests {
 
     @Test("edgeLoopFrom rect creates static non-dynamic body")
     func testEdgeLoopFromRect() {
-        let body = SKPhysicsBody.edgeLoopFrom(rect: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let body = SKPhysicsBody(edgeLoopFrom:CGRect(x: 0, y: 0, width: 100, height: 100))
 
         // Edge bodies are static (not dynamic)
         #expect(body.isDynamic == false)
@@ -205,7 +205,7 @@ struct SKPhysicsBodyFactoryMethodsTests {
 
     @Test("edgeFrom point to point creates static body")
     func testEdgeFromPoints() {
-        let body = SKPhysicsBody.edgeFrom(CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 0))
+        let body = SKPhysicsBody(edgeFrom:CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 0))
 
         #expect(body.isDynamic == false)
     }
@@ -214,7 +214,7 @@ struct SKPhysicsBodyFactoryMethodsTests {
     func testCircleOfRadiusWithCenter() {
         let radius: CGFloat = 30
         let center = CGPoint(x: 100, y: 100)
-        let body = SKPhysicsBody.circleOfRadius(radius, center: center)
+        let body = SKPhysicsBody(circleOfRadius:radius, center: center)
 
         // Area should still be π * r²
         let expectedArea = CGFloat.pi * radius * radius
@@ -225,7 +225,7 @@ struct SKPhysicsBodyFactoryMethodsTests {
     func testRectangleOfWithCenter() {
         let size = CGSize(width: 80, height: 40)
         let center = CGPoint(x: 50, y: 50)
-        let body = SKPhysicsBody.rectangleOf(size: size, center: center)
+        let body = SKPhysicsBody(rectangleOf:size, center: center)
 
         // Area = width * height regardless of center
         #expect(body.area == 3200)
@@ -452,7 +452,7 @@ struct SKPhysicsBodyMassDensityLinkageTests {
 
     @Test("Setting density recalculates mass")
     func testDensitySetRecalculatesMass() {
-        let body = SKPhysicsBody.circleOfRadius(10)
+        let body = SKPhysicsBody(circleOfRadius:10)
         let area = body.area
         body.density = 2.0
 
@@ -462,7 +462,7 @@ struct SKPhysicsBodyMassDensityLinkageTests {
 
     @Test("Setting mass recalculates density")
     func testMassSetRecalculatesDensity() {
-        let body = SKPhysicsBody.rectangleOf(size: CGSize(width: 10, height: 10))
+        let body = SKPhysicsBody(rectangleOf:CGSize(width: 10, height: 10))
         let area = body.area // 100
         body.mass = 200.0
 
@@ -472,7 +472,7 @@ struct SKPhysicsBodyMassDensityLinkageTests {
 
     @Test("Factory body mass equals density times area")
     func testFactoryBodyMassEqualsDensityTimesArea() {
-        let body = SKPhysicsBody.circleOfRadius(5)
+        let body = SKPhysicsBody(circleOfRadius:5)
 
         #expect(abs(body.mass - body.density * body.area) < 0.001)
     }
@@ -490,7 +490,7 @@ struct SKPhysicsBodyMassDensityLinkageTests {
 
     @Test("Copy preserves mass and density independently")
     func testCopyPreservesMassDensity() {
-        let body = SKPhysicsBody.rectangleOf(size: CGSize(width: 20, height: 20))
+        let body = SKPhysicsBody(rectangleOf:CGSize(width: 20, height: 20))
         body.mass = 10.0
 
         let copy = body.copy()
@@ -512,7 +512,7 @@ struct SKPhysicsBodyEdgeBodyTests {
 
     @Test("Edge body isDynamic stays false when set to true")
     func testEdgeBodyCannotBeDynamic() {
-        let body = SKPhysicsBody.edgeLoopFrom(rect: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let body = SKPhysicsBody(edgeLoopFrom:CGRect(x: 0, y: 0, width: 100, height: 100))
         #expect(body.isDynamic == false)
 
         body.isDynamic = true
@@ -521,7 +521,7 @@ struct SKPhysicsBodyEdgeBodyTests {
 
     @Test("Edge from points cannot be made dynamic")
     func testEdgeFromPointsCannotBeDynamic() {
-        let body = SKPhysicsBody.edgeFrom(CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 0))
+        let body = SKPhysicsBody(edgeFrom:CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 0))
         body.isDynamic = true
 
         #expect(body.isDynamic == false)
@@ -533,7 +533,7 @@ struct SKPhysicsBodyEdgeBodyTests {
         path.move(to: CGPoint(x: 0, y: 0))
         path.addLine(to: CGPoint(x: 100, y: 0))
         path.addLine(to: CGPoint(x: 100, y: 100))
-        let body = SKPhysicsBody.edgeChainFrom(path: path)
+        let body = SKPhysicsBody(edgeChainFrom:path)
         #expect(body.isDynamic == false)
 
         body.isDynamic = true
@@ -547,7 +547,7 @@ struct SKPhysicsBodyEdgeBodyTests {
         path.addLine(to: CGPoint(x: 100, y: 0))
         path.addLine(to: CGPoint(x: 100, y: 100))
         path.closeSubpath()
-        let body = SKPhysicsBody.edgeLoopFrom(path: path)
+        let body = SKPhysicsBody(edgeLoopFrom:path)
         #expect(body.isDynamic == false)
 
         body.isDynamic = true
@@ -556,7 +556,7 @@ struct SKPhysicsBodyEdgeBodyTests {
 
     @Test("Volume body can be made non-dynamic and back")
     func testVolumeBodyCanToggleDynamic() {
-        let body = SKPhysicsBody.circleOfRadius(10)
+        let body = SKPhysicsBody(circleOfRadius:10)
         #expect(body.isDynamic == true)
 
         body.isDynamic = false
@@ -576,7 +576,7 @@ struct SKPhysicsEngineZeroMassSafetyTests {
     @MainActor func testForceOnZeroMassBody() {
         let scene = SKScene(size: CGSize(width: 400, height: 400))
         let node = SKNode()
-        let body = SKPhysicsBody.circleOfRadius(10)
+        let body = SKPhysicsBody(circleOfRadius:10)
         body.mass = 0
         body.affectedByGravity = false
         node.physicsBody = body
@@ -600,7 +600,8 @@ struct SKPhysicsEngineZeroMassSafetyTests {
         // Simulate a factory method setting area
         body.area = 100.0
 
-        #expect(body.mass == 2.0 * 100.0)
+        let expectedMass: CGFloat = 2.0 * 100.0
+        #expect(body.mass == expectedMass)
         #expect(body.density == 2.0)
     }
 
@@ -610,7 +611,7 @@ struct SKPhysicsEngineZeroMassSafetyTests {
         scene.physicsWorld.gravity = .zero
 
         let nodeA = SKNode()
-        let bodyA = SKPhysicsBody.circleOfRadius(20)
+        let bodyA = SKPhysicsBody(circleOfRadius:20)
         bodyA.mass = 0
         bodyA.affectedByGravity = false
         bodyA.velocity = CGVector(dx: 100, dy: 0)
@@ -619,7 +620,7 @@ struct SKPhysicsEngineZeroMassSafetyTests {
         scene.addChild(nodeA)
 
         let nodeB = SKNode()
-        let bodyB = SKPhysicsBody.circleOfRadius(20)
+        let bodyB = SKPhysicsBody(circleOfRadius:20)
         bodyB.mass = 0
         bodyB.affectedByGravity = false
         bodyB.velocity = CGVector(dx: -100, dy: 0)
@@ -653,7 +654,7 @@ struct SKPhysicsJointZeroMassSafetyTests {
         scene.physicsWorld.gravity = .zero
 
         let nodeA = SKNode()
-        let bodyA = SKPhysicsBody.circleOfRadius(10)
+        let bodyA = SKPhysicsBody(circleOfRadius:10)
         bodyA.mass = massA
         bodyA.affectedByGravity = false
         nodeA.physicsBody = bodyA
@@ -661,7 +662,7 @@ struct SKPhysicsJointZeroMassSafetyTests {
         scene.addChild(nodeA)
 
         let nodeB = SKNode()
-        let bodyB = SKPhysicsBody.circleOfRadius(10)
+        let bodyB = SKPhysicsBody(circleOfRadius:10)
         bodyB.mass = massB
         bodyB.affectedByGravity = false
         nodeB.physicsBody = bodyB
