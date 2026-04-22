@@ -143,6 +143,15 @@ swift test
 swift build --triple wasm32-unknown-wasi
 ```
 
+## End-to-End Tests
+
+OpenSpriteKit has no stand-alone browser E2E suite. The full SpriteKit → `OpenCoreAnimation` → `OpenCoreGraphics` → WebGPU pipeline is exercised by the **megaman** sample in the sibling workspace (a `swift-wasmport`-generated port of `Mega-Man-X8-16-bit` running on OpenSpriteKit). That project ships a Playwright suite that drives a real Chromium against `SKScene` / `SKSpriteNode` / `SKAction` / `SKPhysicsBody` via the `__megaman_test` JS harness.
+
+- Source: `../megaman/` (primary live E2E for OpenSpriteKit)
+- Playwright specs: `../megaman/tests/e2e/specs/`
+
+If you only need to verify that the lower layers boot in a browser, see `../OpenCoreGraphics/tests/e2e/` and `../OpenCoreAnimation/tests/e2e/` for self-contained smoke tests that do not require a full game scene.
+
 ## Dependencies
 
 - [OpenCoreGraphics](https://github.com/aspect-team/OpenCoreGraphics) - Core Graphics types for WASM
