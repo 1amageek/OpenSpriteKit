@@ -45,6 +45,14 @@ internal final class SKActionRunner {
         return total
     }
 
+    /// Returns node identifiers that currently own at least one running action.
+    /// Used by diagnostics to detect action buckets that outlive their scene node.
+    func runningActionNodeIDs() -> Set<ObjectIdentifier> {
+        var ids = Set(runningActions.keys)
+        ids.formUnion(anonymousActions.keys)
+        return ids
+    }
+
     // MARK: - Running Action State
 
     /// Stores the state of a running action.
@@ -204,6 +212,10 @@ internal final class SKActionRunner {
             for key in keysToRemove {
                 keyedActions[key] = nil
             }
+            guard isNodeStillActive(node) else {
+                removeAllActions(from: node)
+                return
+            }
             runningActions[nodeId] = keyedActions.isEmpty ? nil : keyedActions
         }
 
@@ -223,13 +235,23 @@ internal final class SKActionRunner {
             for i in indicesToRemove.reversed() {
                 anons.remove(at: i)
             }
+            guard isNodeStillActive(node) else {
+                removeAllActions(from: node)
+                return
+            }
             anonymousActions[nodeId] = anons.isEmpty ? nil : anons
         }
+
+        guard isNodeStillActive(node) else { return }
 
         // Recurse to children
         for child in node.children {
             updateActionsRecursively(node: child, deltaTime: effectiveDelta)
         }
+    }
+
+    private func isNodeStillActive(_ node: SKNode) -> Bool {
+        node is SKScene || node.parent != nil
     }
 
     // MARK: - Action Execution

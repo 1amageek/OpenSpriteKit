@@ -182,6 +182,13 @@ open class SKRenderer: @unchecked Sendable {
         SKDiagnostics.shared.tick(scene: scene)
     }
 
+    /// Clears the renderer's frame-time baseline so the next update starts
+    /// with a zero delta. This is useful when a caller switches between
+    /// wall-clock driven updates and a deterministic virtual clock.
+    public func resetTimeline() {
+        lastUpdateTime = 0
+    }
+
     /// Updates particle systems recursively.
     private func updateParticleSystems(for scene: SKScene, deltaTime: TimeInterval) {
         updateEmittersRecursively(node: scene, deltaTime: deltaTime)

@@ -374,6 +374,30 @@ struct SKActionRunnerTests {
         #expect(abs(node.alpha - 0.0) < 0.1)
     }
 
+    @Test("removeFromParent during action update clears descendant actions")
+    @MainActor
+    func testRemoveFromParentDuringUpdateClearsDescendantActions() {
+        resetRunner()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        let parent = SKNode()
+        let child = SKNode()
+        scene.addChild(parent)
+        parent.addChild(child)
+
+        child.run(SKAction.repeatForever(SKAction.rotate(byAngle: 1, duration: 1)))
+        parent.run(SKAction.sequence([
+            .wait(forDuration: 0.1),
+            .removeFromParent(),
+        ]))
+
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.2)
+
+        let snapshot = SKDiagnostics.shared.snapshot(scene: scene)
+        #expect(parent.parent == nil)
+        #expect(snapshot.runningActionCount == 0)
+        #expect(snapshot.orphanedActionNodeBucketCount == 0)
+    }
+
     // MARK: - Sequence DeltaTime Carry-Over
 
     @Test("sequence carries over overflow time to next action")
