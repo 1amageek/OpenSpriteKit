@@ -435,6 +435,7 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         guard effectNode.shouldEnableEffects, effectNode.filter != nil else {
             // No filter to apply, clear any cached image
             effectNode._cachedFilteredImage = nil
+            setChildLayersHidden(false, for: effectNode)
             return
         }
 
@@ -459,6 +460,13 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
             // Update the effect node's layer contents with the filtered image
             effectNode.layer.contents = filteredImage
             effectNode.layer.bounds = CGRect(origin: .zero, size: frame.size)
+            setChildLayersHidden(true, for: effectNode)
+        }
+    }
+
+    private func setChildLayersHidden(_ hidden: Bool, for node: SKNode) {
+        for child in node.children {
+            child.layer.isHidden = hidden
         }
     }
 

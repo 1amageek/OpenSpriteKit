@@ -6,14 +6,7 @@
 #if canImport(simd)
 @_exported import simd
 #else
-
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#elseif canImport(WASILibc)
-import WASILibc
-#endif
+import Foundation
 
 // MARK: - Vector Type Aliases
 

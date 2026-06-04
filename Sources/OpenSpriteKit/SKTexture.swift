@@ -7,9 +7,6 @@
 // MARK: - SKTextureCache
 
 import Foundation
-import OpenCoreImage
-import OpenImageIO
-
 /// Internal texture cache to avoid loading duplicate textures.
 /// Thread-safe through NSLock synchronization.
 internal final class SKTextureCache: @unchecked Sendable {

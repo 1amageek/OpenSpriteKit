@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import OpenSpriteKit
 
@@ -1070,5 +1071,98 @@ struct SKActionDeepCopyTests {
         #expect(copy.speed != 99.0)
         // Verify duration is preserved
         #expect(copy.duration == action.duration)
+    }
+}
+
+// MARK: - SKAction Named Loading Tests
+
+@Suite("SKAction Named Loading", .serialized)
+struct SKActionNamedLoadingTests {
+
+    private func actionArchiveData(_ dictionary: [String: Any]) throws -> Data {
+        try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
+    }
+
+    @Test("Named action loads registered property-list archive")
+    func testNamedActionLoadsRegisteredArchive() throws {
+        SKResourceLoader.shared.clearActions()
+        defer { SKResourceLoader.shared.clearActions() }
+
+        let archive = try actionArchiveData([
+            "type": "moveBy",
+            "dx": 64.0,
+            "dy": -16.0,
+            "duration": 1.25,
+            "timingMode": SKActionTimingMode.easeIn.rawValue,
+            "speed": 1.5
+        ])
+        SKResourceLoader.shared.registerAction(data: archive, forName: "Dash")
+
+        guard let action = SKAction(named: "Dash") else {
+            Issue.record("Expected named action archive to load")
+            return
+        }
+
+        #expect(action.duration == 1.25)
+        #expect(action.timingMode == .easeIn)
+        #expect(action.speed == 1.5)
+
+        if case .moveBy(let dx, let dy) = action.actionType {
+            #expect(dx == 64.0)
+            #expect(dy == -16.0)
+        } else {
+            Issue.record("Expected moveBy action type")
+        }
+    }
+
+    @Test("fromURL overloads load archives and duration override still applies")
+    func testFromURLOverloadsLoadArchive() throws {
+        let archive = try actionArchiveData([
+            "type": "sequence",
+            "actions": [
+                [
+                    "type": "wait",
+                    "duration": 0.25
+                ],
+                [
+                    "type": "moveTo",
+                    "point": [
+                        "x": 32.0,
+                        "y": 48.0
+                    ],
+                    "duration": 0.75
+                ]
+            ]
+        ])
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("ska")
+        try archive.write(to: url)
+        defer {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+            }
+        }
+
+        guard let loaded = SKAction(named: "MoveSequence", fromURL: url) else {
+            Issue.record("Expected fromURL overload to load archive")
+            return
+        }
+
+        if case .sequence(let actions) = loaded.actionType {
+            #expect(actions.count == 2)
+            #expect(actions[0].duration == 0.25)
+            #expect(actions[1].duration == 0.75)
+        } else {
+            Issue.record("Expected sequence action type")
+        }
+
+        guard let overridden = SKAction(named: "MoveSequence", fromURL: url, duration: 2.5) else {
+            Issue.record("Expected duration override overload to load archive")
+            return
+        }
+        #expect(overridden.duration == 2.5)
     }
 }

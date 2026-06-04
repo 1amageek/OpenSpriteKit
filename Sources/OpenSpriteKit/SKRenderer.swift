@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenImageIO
-
 #if arch(wasm32)
 import JavaScriptKit
 #endif

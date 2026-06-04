@@ -194,9 +194,16 @@ internal final class SKActionRunner {
         // Calculate effective delta time based on node's speed
         let effectiveDelta = deltaTime * Double(node.speed)
 
-        // Update keyed actions
+        // Update keyed actions.
+        //
+        // Use removeValue (not subscript read) so we own the bucket exclusively
+        // before mutating it. Without this, every per-frame `keyedActions[key] = ...`
+        // triggers a copy-on-write of the bucket because the parent
+        // `runningActions` dictionary still references its storage. That COW
+        // ran on every node with active actions every frame and was a top
+        // allocation hotspot in the megaman scene.
         let nodeId = ObjectIdentifier(node)
-        if var keyedActions = runningActions[nodeId] {
+        if var keyedActions = runningActions.removeValue(forKey: nodeId) {
             var keysToRemove: [String] = []
 
             for (key, var runningAction) in keyedActions {
@@ -210,17 +217,30 @@ internal final class SKActionRunner {
             }
 
             for key in keysToRemove {
-                keyedActions[key] = nil
+                keyedActions.removeValue(forKey: key)
             }
             guard isNodeStillActive(node) else {
                 removeAllActions(from: node)
                 return
             }
-            runningActions[nodeId] = keyedActions.isEmpty ? nil : keyedActions
+            // Merge any actions installed reentrantly by completion callbacks
+            // (SKNode.run inside a completion writes to runningActions[nodeId]
+            // while we own the local bucket); skipping the merge would clobber
+            // them when we write the bucket back.
+            if let installed = runningActions[nodeId] {
+                for (k, v) in installed {
+                    keyedActions[k] = v
+                }
+            }
+            if !keyedActions.isEmpty {
+                runningActions[nodeId] = keyedActions
+            } else {
+                runningActions.removeValue(forKey: nodeId)
+            }
         }
 
-        // Update anonymous actions
-        if var anons = anonymousActions[nodeId] {
+        // Update anonymous actions (same exclusive-ownership pattern).
+        if var anons = anonymousActions.removeValue(forKey: nodeId) {
             var indicesToRemove: [Int] = []
 
             for i in anons.indices {
@@ -239,7 +259,15 @@ internal final class SKActionRunner {
                 removeAllActions(from: node)
                 return
             }
-            anonymousActions[nodeId] = anons.isEmpty ? nil : anons
+            // Merge anonymous actions installed reentrantly by completion callbacks.
+            if let installed = anonymousActions[nodeId] {
+                anons.append(contentsOf: installed)
+            }
+            if !anons.isEmpty {
+                anonymousActions[nodeId] = anons
+            } else {
+                anonymousActions.removeValue(forKey: nodeId)
+            }
         }
 
         guard isNodeStillActive(node) else { return }
@@ -554,8 +582,21 @@ internal final class SKActionRunner {
             }
 
         // MARK: Compound Actions
-        case .group(_):
-            // Execute all child actions in parallel — overflow is discarded
+        case .group(let actions):
+            // childStates is normally seeded in `runAction` for top-level
+            // groups, but a group nested inside a sequence/repeat reaches
+            // executeAction with childStates == nil. Lazy-init here so the
+            // inner actions actually tick.
+            if runningAction.childStates == nil {
+                runningAction.childStates = actions.map { childAction in
+                    RunningAction(
+                        action: childAction,
+                        elapsedTime: 0,
+                        initialState: captureInitialState(for: childAction, from: node),
+                        completion: nil
+                    )
+                }
+            }
             if var childStates = runningAction.childStates {
                 var allCompleted = true
                 for i in childStates.indices {

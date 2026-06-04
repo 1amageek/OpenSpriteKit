@@ -528,4 +528,32 @@ struct SKActionRunnerTests {
 
         #expect(receivedTime >= 0, "customAction should have been called")
     }
+
+    @Test("group nested inside sequence ticks its child actions")
+    func testGroupNestedInSequence() {
+        resetRunner()
+        let node = SKNode()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        scene.addChild(node)
+
+        node.position = .zero
+        node.alpha = 0
+        node.setScale(0.2)
+
+        let action = SKAction.sequence([
+            SKAction.group([
+                SKAction.moveBy(x: 100, y: 0, duration: 1.0),
+                SKAction.fadeAlpha(to: 1.0, duration: 1.0),
+                SKAction.scale(to: 1.6, duration: 1.0)
+            ]),
+            SKAction.removeFromParent()
+        ])
+        node.run(action)
+
+        SKActionRunner.shared.update(scene: scene, deltaTime: 0.5)
+
+        #expect(node.position.x > 40, "moveBy inside nested group should advance x — got \(node.position.x)")
+        #expect(node.alpha > 0.4, "fadeAlpha inside nested group should advance alpha — got \(node.alpha)")
+        #expect(node.xScale > 0.6, "scale inside nested group should advance xScale — got \(node.xScale)")
+    }
 }

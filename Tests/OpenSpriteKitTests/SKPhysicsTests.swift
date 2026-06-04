@@ -108,6 +108,18 @@ struct SKPhysicsBodyPropertiesTests {
 
         #expect(body.charge == 1.5)
     }
+
+    @Test("Assigning physicsBody keeps node back-reference in sync")
+    func testPhysicsBodyAssignmentMaintainsNodeBackReference() {
+        let node = SKNode()
+        let body = SKPhysicsBody()
+
+        node.physicsBody = body
+        #expect(body.node === node)
+
+        node.physicsBody = nil
+        #expect(body.node == nil)
+    }
 }
 
 // MARK: - SKPhysicsBody Collision Tests
@@ -306,6 +318,40 @@ struct SKPhysicsWorldTests {
     }
 }
 
+// MARK: - SKPhysicsWorld Contact Tracking Tests
+
+@Suite("SKPhysicsWorld Contact Tracking")
+struct SKPhysicsWorldContactTrackingTests {
+
+    @Test("allContactedBodies returns the opposing body even when cached contact order differs")
+    @MainActor func testAllContactedBodiesUsesCachedContactBodies() {
+        let scene = SKScene(size: CGSize(width: 400, height: 400))
+        let nodeA = SKNode()
+        let nodeB = SKNode()
+        let bodyA = SKPhysicsBody(circleOfRadius: 10)
+        let bodyB = SKPhysicsBody(circleOfRadius: 10)
+
+        nodeA.physicsBody = bodyA
+        nodeB.physicsBody = bodyB
+        scene.addChild(nodeA)
+        scene.addChild(nodeB)
+
+        let pair = SKPhysicsWorld.ContactPair(bodyA, bodyB)
+        scene.physicsWorld.activeContacts = [pair]
+        scene.physicsWorld.contactCache[pair] = SKPhysicsContact(
+            bodyA: bodyB,
+            bodyB: bodyA,
+            contactPoint: .zero,
+            contactNormal: CGVector(dx: 1, dy: 0),
+            collisionImpulse: 0
+        )
+
+        let contactedBodies = bodyA.allContactedBodies()
+        #expect(contactedBodies.count == 1)
+        #expect(contactedBodies.first === bodyB)
+    }
+}
+
 // MARK: - SKPhysicsJoint Tests
 
 @Suite("SKPhysicsJoint")
@@ -374,6 +420,50 @@ struct SKPhysicsJointTests {
 
         #expect(joint.bodyA === bodyA)
         #expect(joint.bodyB === bodyB)
+    }
+
+    @Test("Adding and removing joints updates connected bodies")
+    func testWorldJointListsTrackBodies() {
+        let world = SKPhysicsWorld()
+        let bodyA = SKPhysicsBody()
+        let bodyB = SKPhysicsBody()
+        let joint = SKPhysicsJointPin.joint(withBodyA: bodyA, bodyB: bodyB, anchor: .zero)
+
+        world.add(joint)
+
+        #expect(world.allJoints.count == 1)
+        #expect(bodyA.joints.count == 1)
+        #expect(bodyB.joints.count == 1)
+        #expect(bodyA.joints.first === joint)
+        #expect(bodyB.joints.first === joint)
+
+        world.remove(joint)
+
+        #expect(world.allJoints.isEmpty)
+        #expect(bodyA.joints.isEmpty)
+        #expect(bodyB.joints.isEmpty)
+    }
+
+    @Test("removeAllJoints clears per-body joint state")
+    func testRemoveAllJointsClearsBodies() {
+        let world = SKPhysicsWorld()
+        let bodyA = SKPhysicsBody()
+        let bodyB = SKPhysicsBody()
+        let bodyC = SKPhysicsBody()
+
+        let jointAB = SKPhysicsJointPin.joint(withBodyA: bodyA, bodyB: bodyB, anchor: .zero)
+        let jointBC = SKPhysicsJointFixed.joint(withBodyA: bodyB, bodyB: bodyC, anchor: .zero)
+
+        world.add(jointAB)
+        world.add(jointBC)
+        #expect(bodyB.joints.count == 2)
+
+        world.removeAllJoints()
+
+        #expect(world.allJoints.isEmpty)
+        #expect(bodyA.joints.isEmpty)
+        #expect(bodyB.joints.isEmpty)
+        #expect(bodyC.joints.isEmpty)
     }
 }
 

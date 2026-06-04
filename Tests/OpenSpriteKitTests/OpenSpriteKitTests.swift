@@ -41,6 +41,61 @@ import Testing
     #expect(parent.children.isEmpty)
 }
 
+// Regression: removeFromParent must short-circuit on the first identity match
+// (firstIndex + remove(at:)). The previous implementation used removeAll which
+// continues scanning past the unique match, turning bulk cleanup into O(N^2).
+// We exercise the bulk-cleanup path that surfaced this in megaman's defeat
+// explosion and assert that 2000 removals stay roughly linear.
+@Test func testSKNodeRemoveFromParentBulkCleanupIsLinear() {
+    let parent = SKNode()
+    let count = 2000
+    var children: [SKNode] = []
+    children.reserveCapacity(count)
+    for _ in 0..<count {
+        let n = SKNode()
+        parent.addChild(n)
+        children.append(n)
+    }
+    #expect(parent.children.count == count)
+
+    // Remove every node one-by-one. With removeAll this is ~count * count / 2
+    // comparisons (~2,000,000). With firstIndex + remove(at:) it is ~count^2/4
+    // comparisons in the worst case (still O(N^2) due to the array shift) but
+    // ~10x faster constant factor; the soft bound below is generous enough to
+    // pass any reasonable implementation and only fail on outright regressions.
+    let start = Date()
+    for n in children {
+        n.removeFromParent()
+    }
+    let elapsed = Date().timeIntervalSince(start)
+
+    #expect(parent.children.isEmpty)
+    // 2 seconds is ~50x the observed baseline; trips only on catastrophic regressions.
+    #expect(elapsed < 2.0, "Bulk removeFromParent took \(elapsed)s — possible O(N^2) regression")
+}
+
+// Regression: removeFromParent must remove exactly the target identity even
+// when many siblings share the same `name`. removeAll(where:) on `name`
+// (rather than identity) would silently remove unrelated nodes.
+@Test func testSKNodeRemoveFromParentRemovesOnlySelf() {
+    let parent = SKNode()
+    let a = SKNode(); a.name = "x"
+    let b = SKNode(); b.name = "x"
+    let c = SKNode(); c.name = "x"
+    parent.addChild(a)
+    parent.addChild(b)
+    parent.addChild(c)
+
+    b.removeFromParent()
+
+    #expect(parent.children.count == 2)
+    #expect(parent.children[0] === a)
+    #expect(parent.children[1] === c)
+    #expect(b.parent == nil)
+    #expect(a.parent === parent)
+    #expect(c.parent === parent)
+}
+
 @Test func testSKNodeRemoveAllChildren() {
     let parent = SKNode()
     let child1 = SKNode()
@@ -167,6 +222,67 @@ import Testing
     node.removeAction(forKey: "testAction")
 
     #expect(node.action(forKey: "testAction") == nil)
+}
+
+// Regression: SKActionRunner.updateActionsRecursively pulls the per-node bucket
+// out via removeValue (exclusive ownership) to avoid a per-frame COW of the
+// bucket dictionary, then writes it back. If a completion callback runs SKAction
+// re-entrantly during the same tick, the runner installs the new action into
+// runningActions[nodeId] while the local bucket is detached. The merge step
+// must fold those reentrant entries back in — otherwise the new action is
+// clobbered by the writeback.
+@Test func testSKActionRunnerCompletionCallbackInstallsFollowupAction() {
+    let scene = SKScene(size: CGSize(width: 100, height: 100))
+    let node = SKNode()
+    scene.addChild(node)
+
+    var followupRan = false
+    let followup = SKAction.run { followupRan = true }
+    let first = SKAction.wait(forDuration: 0.1)
+
+    // Use the runner directly because SKNode has no run(_:withKey:completion:)
+    // overload — we need both a key and a completion to exercise the reentrant
+    // install path inside the keyed-bucket block.
+    SKActionRunner.shared.runAction(first, on: node, withKey: "first") {
+        // Reentrantly install a new keyed action from inside the completion.
+        node.run(followup, withKey: "followup")
+    }
+
+    // Tick 1: completes the wait and triggers the completion. The completion
+    // installs "followup" into runningActions[nodeId] while the runner owns
+    // the bucket. Without the merge, "followup" would be discarded.
+    SKActionRunner.shared.update(scene: scene, deltaTime: 0.2)
+    // Tick 2: should now run the followup .run action.
+    SKActionRunner.shared.update(scene: scene, deltaTime: 0.1)
+
+    #expect(followupRan, "Reentrantly-installed action was clobbered by bucket writeback")
+
+    // Cleanup so this test does not bleed into other tests via the singleton.
+    node.removeAllActions()
+}
+
+// Regression: removing the per-node bucket via removeValue must not lose other
+// entries when the node has many simultaneous keyed actions and one completes.
+@Test func testSKActionRunnerKeyedActionCompletionLeavesOthersIntact() {
+    let scene = SKScene(size: CGSize(width: 100, height: 100))
+    let node = SKNode()
+    scene.addChild(node)
+
+    let shortAction = SKAction.wait(forDuration: 0.05)
+    let longAction = SKAction.wait(forDuration: 1.0)
+    node.run(shortAction, withKey: "short")
+    node.run(longAction, withKey: "long")
+
+    #expect(node.action(forKey: "short") != nil)
+    #expect(node.action(forKey: "long") != nil)
+
+    // Tick past "short" only. "long" must remain installed.
+    SKActionRunner.shared.update(scene: scene, deltaTime: 0.1)
+
+    #expect(node.action(forKey: "short") == nil, "Completed action should be removed")
+    #expect(node.action(forKey: "long") != nil, "Sibling action was clobbered when bucket was written back")
+
+    node.removeAllActions()
 }
 
 @Test func testSKSceneBasic() {

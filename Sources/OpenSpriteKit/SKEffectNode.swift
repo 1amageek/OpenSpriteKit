@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreImage
-
 /// A node that renders its children into a separate buffer, optionally applying an effect, before drawing the final result.
 ///
 /// An `SKEffectNode` object renders its children into a buffer and optionally applies a Core Image filter

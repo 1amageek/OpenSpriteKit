@@ -6,8 +6,6 @@
 //
 
 import Foundation
-import OpenCoreImage
-
 // MARK: - SKTransition
 
 /// An object used to perform an animated transition to a new scene.
@@ -242,4 +240,3 @@ public enum SKTransitionDirection: Int, Sendable, Hashable {
     case right = 2
     case left = 3
 }
-

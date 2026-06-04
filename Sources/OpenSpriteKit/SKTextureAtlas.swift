@@ -29,8 +29,14 @@ open class SKTextureAtlas: @unchecked Sendable {
 
     // MARK: - Properties
 
+    /// Backing storage for `textureNames`.
+    private var storedTextureNames: [String] = []
+
     /// The names of the texture images stored in the atlas.
-    open private(set) var textureNames: [String] = []
+    open var textureNames: [String] {
+        loadRegisteredAtlasMetadataIfNeeded()
+        return storedTextureNames
+    }
 
     /// Internal storage for textures by name.
     private var textures: [String: SKTexture] = [:]
@@ -59,8 +65,7 @@ open class SKTextureAtlas: @unchecked Sendable {
     public convenience init(named name: String) {
         self.init()
         self.atlasName = name
-        // In WASM environment, atlas loading is handled differently
-        // The actual texture data would be loaded via resource loader
+        loadRegisteredAtlasMetadataIfNeeded()
     }
 
     /// Creates a texture atlas from a set of image files.
@@ -76,21 +81,21 @@ open class SKTextureAtlas: @unchecked Sendable {
         for (name, value) in dictionary {
             if let texture = value as? SKTexture {
                 textures[name] = texture
-                textureNames.append(name)
+                storedTextureNames.append(name)
             } else if let cgImage = value as? CGImage {
                 let texture = SKTexture(cgImage: cgImage)
                 textures[name] = texture
-                textureNames.append(name)
+                storedTextureNames.append(name)
             } else if let data = value as? Data {
                 // Use imageData initializer which decodes image format and determines size
                 if let texture = SKTexture(imageData: data) {
                     textures[name] = texture
-                    textureNames.append(name)
+                    storedTextureNames.append(name)
                 }
             }
         }
 
-        textureNames.sort()
+        storedTextureNames.sort()
     }
 
     /// Creates a texture atlas from a sprite sheet with frame definitions.
@@ -105,10 +110,10 @@ open class SKTextureAtlas: @unchecked Sendable {
         for (name, rect) in frames {
             let subTexture = SKTexture(rect: rect, in: texture)
             textures[name] = subTexture
-            textureNames.append(name)
+            storedTextureNames.append(name)
         }
 
-        textureNames.sort()
+        storedTextureNames.sort()
     }
 
     // MARK: - Accessing Textures
@@ -128,6 +133,8 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// we return a fresh placeholder without mutating `textures` or
     /// `textureNames`.
     open func textureNamed(_ name: String) -> SKTexture {
+        loadRegisteredAtlasMetadataIfNeeded()
+
         if let texture = textures[name] {
             return texture
         }
@@ -137,16 +144,14 @@ open class SKTextureAtlas: @unchecked Sendable {
         // `registerAtlas(...forName:)` with a frame dictionary. A matching
         // registration carries normalized frame rects into a single backing
         // image, so we derive the sub-texture from it.
-        if let atlasName = atlasName,
-           let atlasData = SKResourceLoader.shared.atlas(forName: atlasName),
+        if let atlasData = registeredAtlasData(),
            let frame = atlasData.frames[name] {
-            let source = SKTexture(cgImage: atlasData.image)
-            source.imageName = atlasName
-            let texture = SKTexture(rect: frame, in: source)
+            let sourceTexture = registeredSourceTexture(from: atlasData)
+            let texture = SKTexture(rect: frame, in: sourceTexture)
             textures[name] = texture
-            if !textureNames.contains(name) {
-                textureNames.append(name)
-                textureNames.sort()
+            if !storedTextureNames.contains(name) {
+                storedTextureNames.append(name)
+                storedTextureNames.sort()
             }
             return texture
         }
@@ -163,9 +168,9 @@ open class SKTextureAtlas: @unchecked Sendable {
                 let texture = SKTexture(cgImage: image)
                 texture.imageName = resourceName
                 textures[name] = texture
-                if !textureNames.contains(name) {
-                    textureNames.append(name)
-                    textureNames.sort()
+                if !storedTextureNames.contains(name) {
+                    storedTextureNames.append(name)
+                    storedTextureNames.sort()
                 }
                 return texture
             }
@@ -188,6 +193,9 @@ open class SKTextureAtlas: @unchecked Sendable {
             completionHandler()
             return
         }
+
+        loadRegisteredAtlasMetadataIfNeeded()
+        materializeRegisteredAtlasTexturesIfNeeded()
 
         // Preload all textures
         let allTextures = Array(textures.values)
@@ -288,9 +296,9 @@ open class SKTextureAtlas: @unchecked Sendable {
     ///   - name: The name to associate with the texture.
     open func addTexture(_ texture: SKTexture, named name: String) {
         textures[name] = texture
-        if !textureNames.contains(name) {
-            textureNames.append(name)
-            textureNames.sort()
+        if !storedTextureNames.contains(name) {
+            storedTextureNames.append(name)
+            storedTextureNames.sort()
         }
     }
 
@@ -299,7 +307,7 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// - Parameter name: The name of the texture to remove.
     open func removeTexture(named name: String) {
         textures.removeValue(forKey: name)
-        textureNames.removeAll { $0 == name }
+        storedTextureNames.removeAll { $0 == name }
     }
 
     /// Returns whether the atlas contains a texture with the specified name.
@@ -307,12 +315,14 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// - Parameter name: The name to check.
     /// - Returns: `true` if the atlas contains a texture with that name.
     open func containsTexture(named name: String) -> Bool {
-        return textures[name] != nil
+        loadRegisteredAtlasMetadataIfNeeded()
+        return textures[name] != nil || storedTextureNames.contains(name)
     }
 
     /// The number of textures in the atlas.
     open var count: Int {
-        return textures.count
+        loadRegisteredAtlasMetadataIfNeeded()
+        return storedTextureNames.isEmpty ? textures.count : storedTextureNames.count
     }
 
     // MARK: - Convenience Methods
@@ -322,14 +332,73 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// - Parameter names: The names of the textures to retrieve, in order.
     /// - Returns: An array of textures in the specified order.
     open func textures(named names: [String]) -> [SKTexture] {
-        return names.compactMap { textures[$0] }
+        return names.compactMap { name in
+            guard containsTexture(named: name) else {
+                return nil
+            }
+            return textureNamed(name)
+        }
     }
 
     /// Creates an array of all textures in the atlas, sorted by name.
     ///
     /// - Returns: An array of all textures in the atlas.
     open func allTextures() -> [SKTexture] {
-        return textureNames.compactMap { textures[$0] }
+        loadRegisteredAtlasMetadataIfNeeded()
+        materializeRegisteredAtlasTexturesIfNeeded()
+        return storedTextureNames.compactMap { textures[$0] }
+    }
+}
+
+// MARK: - Registered Atlas Helpers
+
+extension SKTextureAtlas {
+
+    private func registeredAtlasData() -> SKResourceLoader.AtlasData? {
+        guard let atlasName = atlasName else {
+            return nil
+        }
+        return SKResourceLoader.shared.atlas(forName: atlasName)
+    }
+
+    private func loadRegisteredAtlasMetadataIfNeeded() {
+        guard let atlasData = registeredAtlasData() else {
+            return
+        }
+
+        if sourceTexture == nil {
+            sourceTexture = registeredSourceTexture(from: atlasData)
+        }
+
+        if storedTextureNames.isEmpty {
+            storedTextureNames = atlasData.frames.keys.sorted()
+        }
+    }
+
+    @discardableResult
+    private func registeredSourceTexture(from atlasData: SKResourceLoader.AtlasData) -> SKTexture {
+        if let sourceTexture {
+            return sourceTexture
+        }
+
+        let texture = SKTexture(cgImage: atlasData.image)
+        texture.imageName = atlasName
+        sourceTexture = texture
+        return texture
+    }
+
+    private func materializeRegisteredAtlasTexturesIfNeeded() {
+        guard let atlasData = registeredAtlasData() else {
+            return
+        }
+
+        let sourceTexture = registeredSourceTexture(from: atlasData)
+        for name in storedTextureNames where textures[name] == nil {
+            guard let frame = atlasData.frames[name] else {
+                continue
+            }
+            textures[name] = SKTexture(rect: frame, in: sourceTexture)
+        }
     }
 }
 

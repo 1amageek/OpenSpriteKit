@@ -256,71 +256,59 @@ open class SKPhysicsWorld: @unchecked Sendable {
 
     /// Gets the axis-aligned bounding box for a physics body.
     private func getAABB(for body: SKPhysicsBody, node: SKNode) -> CGRect? {
-        let position = node.position
+        guard let localRect = localBoundingRect(for: body.shape, body: body) else { return nil }
+        return convertLocalRectToRootAABB(localRect, node: node)
+    }
 
-        switch body.shape {
+    private func localBoundingRect(for shape: SKPhysicsBodyShape, body: SKPhysicsBody) -> CGRect? {
+        switch shape {
         case .circle(let radius):
-            return CGRect(
-                x: position.x - radius,
-                y: position.y - radius,
-                width: radius * 2,
-                height: radius * 2
-            )
-
+            return CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)
         case .circleWithCenter(let radius, let center):
-            return CGRect(
-                x: position.x + center.x - radius,
-                y: position.y + center.y - radius,
-                width: radius * 2,
-                height: radius * 2
-            )
-
+            return CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
         case .rectangle(let size):
-            return CGRect(
-                x: position.x - size.width / 2,
-                y: position.y - size.height / 2,
-                width: size.width,
-                height: size.height
-            )
-
+            return CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height)
         case .rectangleWithCenter(let size, let center):
-            return CGRect(
-                x: position.x + center.x - size.width / 2,
-                y: position.y + center.y - size.height / 2,
-                width: size.width,
-                height: size.height
-            )
-
+            return CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+        case .polygon(let path), .edgeChain(let path), .edgeLoop(let path):
+            return path.boundingBox
         case .edgeLoopRect(let rect):
-            return CGRect(
-                x: position.x + rect.minX,
-                y: position.y + rect.minY,
-                width: rect.width,
-                height: rect.height
-            )
-
+            return rect
         case .edge(let from, let to):
             let minX = min(from.x, to.x)
             let maxX = max(from.x, to.x)
             let minY = min(from.y, to.y)
             let maxY = max(from.y, to.y)
-            return CGRect(
-                x: position.x + minX,
-                y: position.y + minY,
-                width: max(maxX - minX, 1),
-                height: max(maxY - minY, 1)
-            )
-
-        default:
-            // For complex shapes, use a simple bounding box based on area
-            let size = sqrt(body.area)
-            return CGRect(
-                x: position.x - size / 2,
-                y: position.y - size / 2,
-                width: size,
-                height: size
-            )
+            return CGRect(x: minX, y: minY, width: max(maxX - minX, 1), height: max(maxY - minY, 1))
+        case .composite(let bodies):
+            return bodies.compactMap { localBoundingRect(for: $0.shape, body: $0) }.reduce(nil) { partial, rect in
+                partial?.union(rect) ?? rect
+            }
         }
+    }
+
+    private func convertLocalRectToRootAABB(_ rect: CGRect, node: SKNode) -> CGRect {
+        let root = node.scene ?? rootNode(for: node)
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.maxX, y: rect.maxY)
+        ].map { root.convert($0, from: node) }
+
+        let minX = corners.map(\.x).min() ?? 0
+        let maxX = corners.map(\.x).max() ?? 0
+        let minY = corners.map(\.y).min() ?? 0
+        let maxY = corners.map(\.y).max() ?? 0
+        return CGRect(x: minX, y: minY, width: max(maxX - minX, 1), height: max(maxY - minY, 1))
+    }
+
+    private func rootNode(for node: SKNode) -> SKNode {
+        var root = node
+        while let parent = root.parent {
+            root = parent
+        }
+        return root
     }
 
     /// Checks if a body contains a point.
@@ -637,4 +625,3 @@ open class SKPhysicsWorld: @unchecked Sendable {
         return nxy0 + w * (nxy1 - nxy0)
     }
 }
-

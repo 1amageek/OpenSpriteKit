@@ -385,13 +385,587 @@ open class SKAction: @unchecked Sendable {
 
     /// Unarchives an action from data.
     ///
-    /// - Note: Action archives are not supported in pure Swift WASM builds.
-    ///         Actions should be created programmatically instead.
-    ///         This method always returns nil for WASM compatibility.
+    /// OpenSpriteKit supports a portable property-list representation for action data.
+    /// The archive may be either a single action dictionary or a wrapper dictionary
+    /// whose `action` value is the action dictionary itself.
     private static func unarchiveAction(from data: Data) -> SKAction? {
-        // Action archives require NSKeyedUnarchiver which is not available in WASM.
-        // Use programmatic action creation instead.
+        let propertyList: Any
+        do {
+            propertyList = try PropertyListSerialization.propertyList(from: data, format: nil)
+        } catch {
+            SKDiagnostics.logWarning("Failed to parse action property list: \(error)")
+            return nil
+        }
+
+        if let action = decodeActionArchive(propertyList) {
+            return action
+        }
+
+        SKDiagnostics.logWarning("Unsupported action archive format")
         return nil
+    }
+
+    private static func decodeActionArchive(_ archive: Any) -> SKAction? {
+        if let actionDictionary = archive as? [String: Any] {
+            if let nested = actionDictionary["action"] {
+                return decodeActionArchive(nested)
+            }
+            return decodePortableAction(from: actionDictionary)
+        }
+
+        if let actions = archive as? [[String: Any]], actions.count == 1 {
+            return decodePortableAction(from: actions[0])
+        }
+
+        return nil
+    }
+
+    private static func decodePortableAction(from dictionary: [String: Any]) -> SKAction? {
+        guard let rawType = (dictionary["type"] as? String) ?? (dictionary["actionType"] as? String) else {
+            return nil
+        }
+
+        let normalizedType = rawType.lowercased()
+        let action: SKAction?
+
+        switch normalizedType {
+        case "wait":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            let range = timeIntervalValue(dictionary["range"]) ?? timeIntervalValue(dictionary["durationRange"]) ?? 0
+            action = SKAction.wait(forDuration: duration, withRange: range)
+
+        case "moveby":
+            action = SKAction.moveBy(
+                x: cgFloatValue(dictionary["dx"]) ?? 0,
+                y: cgFloatValue(dictionary["dy"]) ?? 0,
+                duration: timeIntervalValue(dictionary["duration"]) ?? 0
+            )
+
+        case "moveto":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let point = pointValue(dictionary["point"]) {
+                action = SKAction.move(to: point, duration: duration)
+            } else if let x = cgFloatValue(dictionary["x"]),
+                      let y = cgFloatValue(dictionary["y"]) {
+                action = SKAction.move(to: CGPoint(x: x, y: y), duration: duration)
+            } else if let x = cgFloatValue(dictionary["x"]) {
+                action = SKAction.moveTo(x: x, duration: duration)
+            } else if let y = cgFloatValue(dictionary["y"]) {
+                action = SKAction.moveTo(y: y, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "rotateby":
+            action = SKAction.rotate(
+                byAngle: cgFloatValue(dictionary["angle"]) ?? 0,
+                duration: timeIntervalValue(dictionary["duration"]) ?? 0
+            )
+
+        case "rotateto":
+            guard let angle = cgFloatValue(dictionary["angle"]) else {
+                return nil
+            }
+            action = SKAction.rotate(
+                toAngle: angle,
+                duration: timeIntervalValue(dictionary["duration"]) ?? 0,
+                shortestUnitArc: boolValue(dictionary["shortestUnitArc"]) ?? false
+            )
+
+        case "scaleby":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let scale = cgFloatValue(dictionary["scale"]) {
+                action = SKAction.scale(by: scale, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "scalexyby":
+            action = SKAction.scaleX(
+                by: cgFloatValue(dictionary["dx"]) ?? 0,
+                y: cgFloatValue(dictionary["dy"]) ?? 0,
+                duration: timeIntervalValue(dictionary["duration"]) ?? 0
+            )
+
+        case "scaleto":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let size = sizeValue(dictionary["size"]) {
+                action = SKAction.scale(to: size, duration: duration)
+            } else if let scale = cgFloatValue(dictionary["scale"]) {
+                action = SKAction.scale(to: scale, duration: duration)
+            } else if let xScale = cgFloatValue(dictionary["xScale"]) {
+                action = SKAction.scaleX(to: xScale, duration: duration)
+            } else if let yScale = cgFloatValue(dictionary["yScale"]) {
+                action = SKAction.scaleY(to: yScale, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "scaletosize":
+            guard let size = sizeValue(dictionary["size"]) else {
+                return nil
+            }
+            action = SKAction.scale(to: size, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+
+        case "speedby":
+            action = SKAction.speed(by: cgFloatValue(dictionary["delta"]) ?? 0, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+
+        case "speedto":
+            guard let speed = cgFloatValue(dictionary["speed"]) else {
+                return nil
+            }
+            action = SKAction.speed(to: speed, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+
+        case "fadealphaby":
+            action = SKAction.fadeAlpha(by: cgFloatValue(dictionary["delta"]) ?? 0, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+
+        case "fadealphato":
+            guard let alpha = cgFloatValue(dictionary["alpha"]) else {
+                return nil
+            }
+            action = SKAction.fadeAlpha(to: alpha, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+
+        case "hide":
+            action = SKAction.hide()
+
+        case "unhide":
+            action = SKAction.unhide()
+
+        case "settexture":
+            guard let textureName = stringValue(dictionary["textureName"]) ?? stringValue(dictionary["imageName"]) else {
+                return nil
+            }
+            action = SKAction.setTexture(SKTexture(imageNamed: textureName), resize: boolValue(dictionary["resize"]) ?? false)
+
+        case "animatetextures":
+            guard let textureNames = stringArrayValue(dictionary["textureNames"]) else {
+                return nil
+            }
+            let textures = textureNames.map { SKTexture(imageNamed: $0) }
+            action = SKAction.animate(
+                with: textures,
+                timePerFrame: timeIntervalValue(dictionary["timePerFrame"]) ?? 0,
+                resize: boolValue(dictionary["resize"]) ?? false,
+                restore: boolValue(dictionary["restore"]) ?? false
+            )
+
+        case "setnormaltexture":
+            guard let textureName = stringValue(dictionary["textureName"]) ?? stringValue(dictionary["imageName"]) else {
+                return nil
+            }
+            action = SKAction.setNormalTexture(SKTexture(imageNamed: textureName), resize: boolValue(dictionary["resize"]) ?? false)
+
+        case "animatenormaltextures":
+            guard let textureNames = stringArrayValue(dictionary["textureNames"]) else {
+                return nil
+            }
+            let textures = textureNames.map { SKTexture(imageNamed: $0) }
+            action = SKAction.animate(
+                withNormalTextures: textures,
+                timePerFrame: timeIntervalValue(dictionary["timePerFrame"]) ?? 0,
+                resize: boolValue(dictionary["resize"]) ?? false,
+                restore: boolValue(dictionary["restore"]) ?? false
+            )
+
+        case "resizeby":
+            action = SKAction.resize(
+                byWidth: cgFloatValue(dictionary["width"]) ?? 0,
+                height: cgFloatValue(dictionary["height"]) ?? 0,
+                duration: timeIntervalValue(dictionary["duration"]) ?? 0
+            )
+
+        case "resizeto":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            let width = cgFloatValue(dictionary["width"])
+            let height = cgFloatValue(dictionary["height"])
+            if let width, let height {
+                action = SKAction.resize(toWidth: width, height: height, duration: duration)
+            } else if let width {
+                action = SKAction.resize(toWidth: width, duration: duration)
+            } else if let height {
+                action = SKAction.resize(toHeight: height, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "colorize":
+            guard let colorDictionary = dictionary["color"] as? [String: Any],
+                  let color = colorValue(colorDictionary) else {
+                return nil
+            }
+            action = SKAction.colorize(
+                with: color,
+                colorBlendFactor: cgFloatValue(dictionary["blendFactor"]) ?? 0,
+                duration: timeIntervalValue(dictionary["duration"]) ?? 0
+            )
+
+        case "colorizewithblendfactor":
+            action = SKAction.colorize(
+                withColorBlendFactor: cgFloatValue(dictionary["blendFactor"]) ?? 0,
+                duration: timeIntervalValue(dictionary["duration"]) ?? 0
+            )
+
+        case "playsoundfile":
+            guard let filename = stringValue(dictionary["filename"]) else {
+                return nil
+            }
+            action = SKAction.playSoundFileNamed(filename, waitForCompletion: boolValue(dictionary["waitForCompletion"]) ?? false)
+
+        case "play":
+            action = SKAction.play()
+
+        case "pause":
+            action = SKAction.pause()
+
+        case "stop":
+            action = SKAction.stop()
+
+        case "changevolume":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.changeVolume(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.changeVolume(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "changeplaybackrate":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.changePlaybackRate(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.changePlaybackRate(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "stereopan":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.stereoPan(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.stereoPan(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "changeobstruction":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.changeObstruction(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.changeObstruction(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "changeocclusion":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.changeOcclusion(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.changeOcclusion(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "changereverb":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.changeReverb(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.changeReverb(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "applyforce":
+            guard let force = vectorValue(dictionary["force"]) else {
+                return nil
+            }
+            if let point = pointValue(dictionary["point"]) {
+                action = SKAction.applyForce(force, at: point, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+            } else {
+                action = SKAction.applyForce(force, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+            }
+
+        case "applytorque":
+            guard let torque = cgFloatValue(dictionary["torque"]) else {
+                return nil
+            }
+            action = SKAction.applyTorque(torque, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+
+        case "applyimpulse":
+            guard let impulse = vectorValue(dictionary["impulse"]) else {
+                return nil
+            }
+            if let point = pointValue(dictionary["point"]) {
+                action = SKAction.applyImpulse(impulse, at: point, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+            } else {
+                action = SKAction.applyImpulse(impulse, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+            }
+
+        case "applyangularimpulse":
+            guard let impulse = cgFloatValue(dictionary["impulse"]) else {
+                return nil
+            }
+            action = SKAction.applyAngularImpulse(impulse, duration: timeIntervalValue(dictionary["duration"]) ?? 0)
+
+        case "changecharge":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.changeCharge(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.changeCharge(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "changemass":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.changeMass(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.changeMass(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "strength":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.strength(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.strength(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "falloff":
+            let duration = timeIntervalValue(dictionary["duration"]) ?? 0
+            if let to = floatValue(dictionary["to"]) {
+                action = SKAction.falloff(to: to, duration: duration)
+            } else if let by = floatValue(dictionary["by"]) {
+                action = SKAction.falloff(by: by, duration: duration)
+            } else {
+                action = nil
+            }
+
+        case "removefromparent":
+            action = SKAction.removeFromParent()
+
+        case "runonchild":
+            guard let childName = stringValue(dictionary["name"]),
+                  let nested = nestedActionValue(dictionary["action"]) else {
+                return nil
+            }
+            action = SKAction.run(nested, onChildWithName: childName)
+
+        case "group":
+            guard let actions = actionArrayValue(dictionary["actions"]) else {
+                return nil
+            }
+            action = SKAction.group(actions)
+
+        case "sequence":
+            guard let actions = actionArrayValue(dictionary["actions"]) else {
+                return nil
+            }
+            action = SKAction.sequence(actions)
+
+        case "repeat", "repeataction":
+            guard let nested = nestedActionValue(dictionary["action"]) else {
+                return nil
+            }
+            action = SKAction.repeat(nested, count: intValue(dictionary["count"]) ?? 0)
+
+        case "repeatforever":
+            guard let nested = nestedActionValue(dictionary["action"]) else {
+                return nil
+            }
+            action = SKAction.repeatForever(nested)
+
+        default:
+            return nil
+        }
+
+        guard let action else {
+            return nil
+        }
+
+        applyCommonArchiveProperties(from: dictionary, to: action)
+        return action
+    }
+
+    private static func applyCommonArchiveProperties(from dictionary: [String: Any], to action: SKAction) {
+        if let timingMode = timingModeValue(dictionary["timingMode"]) {
+            action.timingMode = timingMode
+        }
+        if let speed = cgFloatValue(dictionary["speed"]) {
+            action.speed = speed
+        }
+    }
+
+    private static func nestedActionValue(_ value: Any?) -> SKAction? {
+        if let dictionary = value as? [String: Any] {
+            return decodePortableAction(from: dictionary)
+        }
+        return nil
+    }
+
+    private static func actionArrayValue(_ value: Any?) -> [SKAction]? {
+        guard let dictionaries = value as? [[String: Any]] else {
+            return nil
+        }
+        let actions = dictionaries.compactMap(decodePortableAction(from:))
+        return actions.count == dictionaries.count ? actions : nil
+    }
+
+    private static func dictionaryValue(_ value: Any?) -> [String: Any]? {
+        value as? [String: Any]
+    }
+
+    private static func stringArrayValue(_ value: Any?) -> [String]? {
+        value as? [String]
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        if let string = value as? String {
+            return string
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        return nil
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let int = value as? Int {
+            return int
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let string = value as? String {
+            return Int(string)
+        }
+        return nil
+    }
+
+    private static func floatValue(_ value: Any?) -> Float? {
+        if let float = value as? Float {
+            return float
+        }
+        if let number = value as? NSNumber {
+            return number.floatValue
+        }
+        if let string = value as? String {
+            return Float(string)
+        }
+        return nil
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        if let double = value as? Double {
+            return double
+        }
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = value as? String {
+            return Double(string)
+        }
+        return nil
+    }
+
+    private static func timeIntervalValue(_ value: Any?) -> TimeInterval? {
+        doubleValue(value)
+    }
+
+    private static func cgFloatValue(_ value: Any?) -> CGFloat? {
+        guard let double = doubleValue(value) else {
+            return nil
+        }
+        return CGFloat(double)
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let bool = value as? Bool {
+            return bool
+        }
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+        if let string = value as? String {
+            switch string.lowercased() {
+            case "true", "yes", "1":
+                return true
+            case "false", "no", "0":
+                return false
+            default:
+                return nil
+            }
+        }
+        return nil
+    }
+
+    private static func timingModeValue(_ value: Any?) -> SKActionTimingMode? {
+        if let rawValue = intValue(value) {
+            return SKActionTimingMode(rawValue: rawValue)
+        }
+        if let string = stringValue(value) {
+            switch string.lowercased() {
+            case "linear":
+                return .linear
+            case "easein":
+                return .easeIn
+            case "easeout":
+                return .easeOut
+            case "easeineaseout":
+                return .easeInEaseOut
+            default:
+                return nil
+            }
+        }
+        return nil
+    }
+
+    private static func pointValue(_ value: Any?) -> CGPoint? {
+        guard let dictionary = dictionaryValue(value),
+              let x = cgFloatValue(dictionary["x"]),
+              let y = cgFloatValue(dictionary["y"]) else {
+            return nil
+        }
+        return CGPoint(x: x, y: y)
+    }
+
+    private static func vectorValue(_ value: Any?) -> CGVector? {
+        guard let dictionary = dictionaryValue(value),
+              let dx = cgFloatValue(dictionary["dx"]),
+              let dy = cgFloatValue(dictionary["dy"]) else {
+            return nil
+        }
+        return CGVector(dx: dx, dy: dy)
+    }
+
+    private static func sizeValue(_ value: Any?) -> CGSize? {
+        guard let dictionary = dictionaryValue(value),
+              let width = cgFloatValue(dictionary["width"]),
+              let height = cgFloatValue(dictionary["height"]) else {
+            return nil
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    private static func colorValue(_ dictionary: [String: Any]) -> SKColor? {
+        guard let red = cgFloatValue(dictionary["red"]),
+              let green = cgFloatValue(dictionary["green"]),
+              let blue = cgFloatValue(dictionary["blue"]) else {
+            return nil
+        }
+        let alpha = cgFloatValue(dictionary["alpha"]) ?? 1.0
+        return SKColor(red: red, green: green, blue: blue, alpha: alpha)
     }
 
     /// Copies properties from another action.

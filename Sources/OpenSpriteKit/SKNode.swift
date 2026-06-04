@@ -196,7 +196,14 @@ open class SKNode: @unchecked Sendable {
     // MARK: - Physics Properties
 
     /// The physics body associated with the node.
-    open var physicsBody: SKPhysicsBody?
+    open var physicsBody: SKPhysicsBody? {
+        didSet {
+            if oldValue?.node === self {
+                oldValue?.node = nil
+            }
+            physicsBody?.node = self
+        }
+    }
 
     // MARK: - Constraint Properties
 
@@ -469,6 +476,7 @@ open class SKNode: @unchecked Sendable {
     ///
     /// - Parameter node: The node to add as a child.
     open func addChild(_ node: SKNode) {
+        guard canAdopt(node) else { return }
         // Remove from existing parent if any (per SpriteKit spec)
         if node.parent != nil {
             node.removeFromParent()
@@ -489,6 +497,7 @@ open class SKNode: @unchecked Sendable {
     ///   - node: The node to insert.
     ///   - index: The index at which to insert the node.
     open func insertChild(_ node: SKNode, at index: Int) {
+        guard canAdopt(node) else { return }
         // Remove from existing parent if any (per SpriteKit spec)
         if node.parent != nil {
             node.removeFromParent()
@@ -504,7 +513,14 @@ open class SKNode: @unchecked Sendable {
     /// Removes the receiving node from its parent.
     open func removeFromParent() {
         guard let parent = parent else { return }
-        parent.children.removeAll { $0 === self }
+        // Use firstIndex + remove(at:) instead of removeAll {}.
+        // A node has at most one parent (enforced by addChild), so it appears
+        // in parent.children at most once — removeAll keeps scanning after the
+        // match, which makes a single removal O(N) per call and the megaman
+        // explosion-cleanup pattern (50+ siblings vanishing in one frame) O(N^2).
+        if let index = parent.children.firstIndex(where: { $0 === self }) {
+            parent.children.remove(at: index)
+        }
         // Clean up actions to prevent memory leaks
         removeAllActionsRecursively()
         // Sync layer hierarchy
@@ -556,6 +572,7 @@ open class SKNode: @unchecked Sendable {
     ///
     /// - Parameter parent: The new parent node.
     open func move(toParent parent: SKNode) {
+        guard parent.canAdopt(self) else { return }
         removeFromParent()
         parent.addChild(self)
     }
@@ -573,6 +590,11 @@ open class SKNode: @unchecked Sendable {
             current = node.parent
         }
         return false
+    }
+
+    private func canAdopt(_ node: SKNode) -> Bool {
+        guard node !== self else { return false }
+        return !inParentHierarchy(node)
     }
 
     /// Compares the parameter node to the receiving node.

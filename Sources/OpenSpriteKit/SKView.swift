@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenCoreImage
-
 #if arch(wasm32)
 import JavaScriptKit
 #endif
@@ -121,6 +119,11 @@ open class SKView: SKViewBase {
         }
 
         scene?.didMove(to: self)
+        if scene != nil {
+            startRenderLoop()
+        } else {
+            stopRenderLoop()
+        }
     }
 
     /// Sets the scene internally (for transitions).

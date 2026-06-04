@@ -55,11 +55,7 @@ public final class SKDiagnostics {
         let actionNodeIDs = SKActionRunner.shared.runningActionNodeIDs()
         let textureCount = SKTextureCache.shared.cachedCount()
         let resourceCounts = SKResourceLoader.shared.resourceCounts()
-        #if arch(wasm32)
-        let gpuTextureCount = SKTextureManager.shared.cachedTextureCount()
-        #else
         let gpuTextureCount = 0
-        #endif
 
         return SKDiagnosticsSnapshot(
             nodeCount: nodeStats.nodeCount,

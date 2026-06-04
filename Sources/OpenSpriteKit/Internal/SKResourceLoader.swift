@@ -5,8 +5,6 @@
 // Licensed under MIT License
 
 import Foundation
-import OpenImageIO
-
 #if arch(wasm32)
 import JavaScriptKit
 #endif
@@ -56,6 +54,9 @@ internal final class SKResourceLoader {
     /// Registered emitter data keyed by name.
     private var emitterRegistry: [String: Data] = [:]
 
+    /// Serializes access to the mutable registries.
+    private let lock = NSLock()
+
     /// Atlas data structure.
     struct AtlasData {
         let image: CGImage
@@ -71,59 +72,83 @@ internal final class SKResourceLoader {
 
     private init() {}
 
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
     // MARK: - Cache Management
 
     /// Clears all registered resources.
     func clearAll() {
-        imageRegistry.removeAll()
-        cgImageRegistry.removeAll()
-        atlasRegistry.removeAll()
-        actionRegistry.removeAll()
-        sceneRegistry.removeAll()
-        shaderRegistry.removeAll()
-        tileSetRegistry.removeAll()
-        emitterRegistry.removeAll()
+        withLock {
+            imageRegistry.removeAll()
+            cgImageRegistry.removeAll()
+            atlasRegistry.removeAll()
+            actionRegistry.removeAll()
+            sceneRegistry.removeAll()
+            shaderRegistry.removeAll()
+            tileSetRegistry.removeAll()
+            emitterRegistry.removeAll()
+        }
     }
 
     /// Clears all registered images.
     func clearImages() {
-        imageRegistry.removeAll()
-        cgImageRegistry.removeAll()
+        withLock {
+            imageRegistry.removeAll()
+            cgImageRegistry.removeAll()
+        }
     }
 
     /// Clears all registered texture atlases.
     func clearAtlases() {
-        atlasRegistry.removeAll()
+        withLock {
+            atlasRegistry.removeAll()
+        }
     }
 
     /// Clears all registered actions.
     func clearActions() {
-        actionRegistry.removeAll()
+        withLock {
+            actionRegistry.removeAll()
+        }
     }
 
     /// Clears all registered scenes.
     func clearScenes() {
-        sceneRegistry.removeAll()
+        withLock {
+            sceneRegistry.removeAll()
+        }
     }
 
     /// Clears all registered shaders.
     func clearShaders() {
-        shaderRegistry.removeAll()
+        withLock {
+            shaderRegistry.removeAll()
+        }
     }
 
     /// Clears all registered tile sets.
     func clearTileSets() {
-        tileSetRegistry.removeAll()
+        withLock {
+            tileSetRegistry.removeAll()
+        }
     }
 
     /// Clears all registered emitters.
     func clearEmitters() {
-        emitterRegistry.removeAll()
+        withLock {
+            emitterRegistry.removeAll()
+        }
     }
 
     /// Returns counts of registered resource types (for diagnostics).
     func resourceCounts() -> String {
-        return "images=\(imageRegistry.count + cgImageRegistry.count) atlases=\(atlasRegistry.count) actions=\(actionRegistry.count) scenes=\(sceneRegistry.count) shaders=\(shaderRegistry.count) tilesets=\(tileSetRegistry.count) emitters=\(emitterRegistry.count)"
+        withLock {
+            "images=\(imageRegistry.count + cgImageRegistry.count) atlases=\(atlasRegistry.count) actions=\(actionRegistry.count) scenes=\(sceneRegistry.count) shaders=\(shaderRegistry.count) tilesets=\(tileSetRegistry.count) emitters=\(emitterRegistry.count)"
+        }
     }
 
     // MARK: - Image Registration
@@ -134,7 +159,9 @@ internal final class SKResourceLoader {
     ///   - data: PNG or JPEG image data.
     ///   - name: The name to associate with the image.
     func registerImage(data: Data, forName name: String) {
-        imageRegistry[name] = data
+        withLock {
+            imageRegistry[name] = data
+        }
     }
 
     /// Registers a CGImage for a given name.
@@ -143,7 +170,9 @@ internal final class SKResourceLoader {
     ///   - image: The CGImage to register.
     ///   - name: The name to associate with the image.
     func registerImage(_ image: CGImage, forName name: String) {
-        cgImageRegistry[name] = image
+        withLock {
+            cgImageRegistry[name] = image
+        }
     }
 
     /// Retrieves a CGImage for a given name.
@@ -151,25 +180,27 @@ internal final class SKResourceLoader {
     /// - Parameter name: The name of the registered image.
     /// - Returns: The CGImage, or nil if not found.
     func image(forName name: String) -> CGImage? {
-        // First check direct CGImage registry
-        if let image = cgImageRegistry[name] {
-            return image
-        }
+        withLock {
+            // First check direct CGImage registry
+            if let image = cgImageRegistry[name] {
+                return image
+            }
 
-        // Then check data registry and decode
-        if let data = imageRegistry[name] {
-            return decodeImage(from: data)
-        }
-
-        // Try with common extensions
-        for ext in ["png", "jpg", "jpeg"] {
-            let nameWithExt = name.hasSuffix(".\(ext)") ? name : "\(name).\(ext)"
-            if let data = imageRegistry[nameWithExt] {
+            // Then check data registry and decode
+            if let data = imageRegistry[name] {
                 return decodeImage(from: data)
             }
-        }
 
-        return nil
+            // Try with common extensions
+            for ext in ["png", "jpg", "jpeg"] {
+                let nameWithExt = name.hasSuffix(".\(ext)") ? name : "\(name).\(ext)"
+                if let data = imageRegistry[nameWithExt] {
+                    return decodeImage(from: data)
+                }
+            }
+
+            return nil
+        }
     }
 
     /// Decodes image data to CGImage.
@@ -211,7 +242,9 @@ internal final class SKResourceLoader {
     ///   - atlas: The atlas data containing the image and frame definitions.
     ///   - name: The name to associate with the atlas.
     func registerAtlas(_ atlas: AtlasData, forName name: String) {
-        atlasRegistry[name] = atlas
+        withLock {
+            atlasRegistry[name] = atlas
+        }
     }
 
     /// Registers a texture atlas from image data and frame definitions.
@@ -223,7 +256,9 @@ internal final class SKResourceLoader {
     func registerAtlas(imageData: Data, frames: [String: CGRect], forName name: String) {
         if let image = decodeImage(from: imageData) {
             let atlas = AtlasData(image: image, frames: frames)
-            atlasRegistry[name] = atlas
+            withLock {
+                atlasRegistry[name] = atlas
+            }
         }
     }
 
@@ -232,7 +267,9 @@ internal final class SKResourceLoader {
     /// - Parameter name: The name of the registered atlas.
     /// - Returns: The atlas data, or nil if not found.
     func atlas(forName name: String) -> AtlasData? {
-        return atlasRegistry[name] ?? atlasRegistry["\(name).atlas"]
+        withLock {
+            atlasRegistry[name] ?? atlasRegistry["\(name).atlas"]
+        }
     }
 
     // MARK: - Action Registration
@@ -243,12 +280,16 @@ internal final class SKResourceLoader {
     ///   - data: The action file data (property list format).
     ///   - name: The name to associate with the action.
     func registerAction(data: Data, forName name: String) {
-        actionRegistry[name] = data
+        withLock {
+            actionRegistry[name] = data
+        }
     }
 
     /// Retrieves action data for a given name.
     func actionData(forName name: String) -> Data? {
-        return actionRegistry[name]
+        withLock {
+            actionRegistry[name]
+        }
     }
 
     // MARK: - Scene Registration
@@ -259,12 +300,16 @@ internal final class SKResourceLoader {
     ///   - data: The scene file data (.sks format).
     ///   - name: The name to associate with the scene.
     func registerScene(data: Data, forName name: String) {
-        sceneRegistry[name] = data
+        withLock {
+            sceneRegistry[name] = data
+        }
     }
 
     /// Retrieves scene data for a given name.
     func sceneData(forName name: String) -> Data? {
-        return sceneRegistry[name] ?? sceneRegistry["\(name).sks"]
+        withLock {
+            sceneRegistry[name] ?? sceneRegistry["\(name).sks"]
+        }
     }
 
     // MARK: - Shader Registration
@@ -275,7 +320,9 @@ internal final class SKResourceLoader {
     ///   - source: The shader source code.
     ///   - name: The name to associate with the shader.
     func registerShader(source: String, forName name: String) {
-        shaderRegistry[name] = source
+        withLock {
+            shaderRegistry[name] = source
+        }
     }
 
     /// Retrieves shader source code for a given name.
@@ -283,18 +330,20 @@ internal final class SKResourceLoader {
     /// - Parameter name: The name of the registered shader.
     /// - Returns: The shader source code, or nil if not found.
     func shaderSource(forName name: String) -> String? {
-        // Try exact name
-        if let source = shaderRegistry[name] {
-            return source
-        }
-        // Try with common extensions
-        for ext in ["fsh", "frag", "glsl", "metal"] {
-            let nameWithExt = "\(name).\(ext)"
-            if let source = shaderRegistry[nameWithExt] {
+        withLock {
+            // Try exact name
+            if let source = shaderRegistry[name] {
                 return source
             }
+            // Try with common extensions
+            for ext in ["fsh", "frag", "glsl", "metal"] {
+                let nameWithExt = "\(name).\(ext)"
+                if let source = shaderRegistry[nameWithExt] {
+                    return source
+                }
+            }
+            return nil
         }
-        return nil
     }
 
     // MARK: - TileSet Registration
@@ -305,7 +354,9 @@ internal final class SKResourceLoader {
     ///   - data: The tile set file data (.sks format).
     ///   - name: The name to associate with the tile set.
     func registerTileSet(data: Data, forName name: String) {
-        tileSetRegistry[name] = data
+        withLock {
+            tileSetRegistry[name] = data
+        }
     }
 
     /// Retrieves tile set data for a given name.
@@ -313,7 +364,9 @@ internal final class SKResourceLoader {
     /// - Parameter name: The name of the registered tile set.
     /// - Returns: The tile set data, or nil if not found.
     func tileSetData(forName name: String) -> Data? {
-        return tileSetRegistry[name] ?? tileSetRegistry["\(name).sks"]
+        withLock {
+            tileSetRegistry[name] ?? tileSetRegistry["\(name).sks"]
+        }
     }
 
     // MARK: - Emitter Registration
@@ -324,7 +377,9 @@ internal final class SKResourceLoader {
     ///   - data: The emitter file data (.sks format).
     ///   - name: The name to associate with the emitter.
     func registerEmitter(data: Data, forName name: String) {
-        emitterRegistry[name] = data
+        withLock {
+            emitterRegistry[name] = data
+        }
     }
 
     /// Retrieves emitter data for a given name.
@@ -332,7 +387,9 @@ internal final class SKResourceLoader {
     /// - Parameter name: The name of the registered emitter.
     /// - Returns: The emitter data, or nil if not found.
     func emitterData(forName name: String) -> Data? {
-        return emitterRegistry[name] ?? emitterRegistry["\(name).sks"]
+        withLock {
+            emitterRegistry[name] ?? emitterRegistry["\(name).sks"]
+        }
     }
 
     // MARK: - WASM URL Loading
@@ -349,7 +406,9 @@ internal final class SKResourceLoader {
         guard let image = decodeImage(from: response) else {
             throw SKResourceError.decodingFailed
         }
-        cgImageRegistry[name] = image
+        withLock {
+            cgImageRegistry[name] = image
+        }
         return image
     }
 
