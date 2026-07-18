@@ -17,8 +17,8 @@ import JavaScriptKit
 ///
 /// ## Example
 /// ```swift
-/// let renderer = SKRenderer()
-/// try await renderer.initialize(canvas: canvasElement)
+/// let renderer = SKRenderer(canvas: canvasElement)
+/// try await renderer.initialize()
 /// renderer.scene = myScene
 ///
 /// // In your render loop:
@@ -105,19 +105,6 @@ open class SKRenderer: @unchecked Sendable {
     public func initialize() async throws {
         try await rendererDelegate.initialize()
     }
-
-    #if arch(wasm32)
-    /// Initializes the renderer for WebGPU rendering.
-    ///
-    /// - Parameter canvas: The JavaScript canvas element to render to.
-    /// - Throws: An error if WebGPU initialization fails.
-    @available(*, deprecated, message: "Use init(canvas:) and initialize() instead")
-    public func initialize(canvas: JSObject) async throws {
-        // For backward compatibility, create a new renderer
-        // Note: This is not ideal but maintains API compatibility
-        try await rendererDelegate.initialize()
-    }
-    #endif
 
     /// Resizes the renderer to match a new canvas size.
     ///

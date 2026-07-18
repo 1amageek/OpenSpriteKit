@@ -34,16 +34,6 @@ open class SKVideoNode: SKNode, @unchecked Sendable {
         super.init()
     }
 
-    @available(*, deprecated, message: "Use init(fileNamed:) instead")
-    public convenience init(videoFileNamed videoFile: String) {
-        self.init(fileNamed: videoFile)
-    }
-
-    @available(*, deprecated, message: "Use init(url:) instead")
-    public convenience init(videoURL url: URL) {
-        self.init(url: url)
-    }
-
     open func play() {
         isPlaying = true
     }

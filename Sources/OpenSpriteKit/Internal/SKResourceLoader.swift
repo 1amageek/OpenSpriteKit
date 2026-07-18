@@ -205,10 +205,10 @@ internal final class SKResourceLoader {
 
     /// Decodes image data to CGImage.
     ///
-    /// Supports PNG, JPEG, GIF, BMP, TIFF, and WebP formats via ImageIO/OpenImageIO.
+    /// Supports PNG, JPEG, GIF, BMP, and TIFF formats via ImageIO/OpenImageIO.
     private func decodeImage(from data: Data) -> CGImage? {
         // CGImageSourceCreateWithData is available via OpenImageIO
-        // Supports PNG, JPEG, GIF, BMP, TIFF, WebP
+        // Supports PNG, JPEG, GIF, BMP, and TIFF
         guard let source = CGImageSourceCreateWithData(data, nil) else {
             print("SKResourceLoader: Failed to create image source from \(data.count) bytes of data")
             return nil

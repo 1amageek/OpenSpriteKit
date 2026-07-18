@@ -744,19 +744,11 @@ open class SKTexture: @unchecked Sendable {
         return newTexture
     }
 
-    /// Returns the CGImage representation of this texture.
-    ///
-    /// - Returns: A CGImage, or nil if the texture cannot be converted.
-    @available(*, deprecated, renamed: "cgImage()")
-    open func getCGImage() -> CGImage? {
-        return cgImage()
-    }
-
     // MARK: - Image File Loading
 
     /// Creates a texture from image file data.
     ///
-    /// Supports PNG, JPEG, GIF, BMP, TIFF, and WebP formats via ImageIO/OpenImageIO.
+    /// Supports PNG, JPEG, GIF, BMP, and TIFF formats via ImageIO/OpenImageIO.
     ///
     /// - Parameter imageData: The raw image file data (e.g., PNG or JPEG bytes).
     /// - Returns: A new texture, or nil if the data could not be decoded.
@@ -778,7 +770,7 @@ open class SKTexture: @unchecked Sendable {
 
     /// Creates a texture from an image file URL.
     ///
-    /// Supports PNG, JPEG, GIF, BMP, TIFF, and WebP formats via ImageIO/OpenImageIO.
+    /// Supports PNG, JPEG, GIF, BMP, and TIFF formats via ImageIO/OpenImageIO.
     ///
     /// - Parameter url: The URL to the image file.
     /// - Returns: A new texture, or nil if the file could not be loaded or decoded.
