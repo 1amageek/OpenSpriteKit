@@ -136,10 +136,13 @@ import Testing
 }
 
 @Test func testSKNodeMoveToParent() {
+    let scene = SKScene(size: CGSize(width: 800, height: 600))
     let parent1 = SKNode()
     let parent2 = SKNode()
     let child = SKNode()
 
+    scene.addChild(parent1)
+    scene.addChild(parent2)
     parent1.addChild(child)
     #expect(child.parent === parent1)
 
@@ -148,6 +151,46 @@ import Testing
     #expect(child.parent === parent2)
     #expect(parent1.children.isEmpty)
     #expect(parent2.children.count == 1)
+}
+
+@Test func testSKNodeReparentPreservesRunningAction() {
+    SKActionRunner.shared.reset()
+    let scene = SKScene(size: CGSize(width: 800, height: 600))
+    let parent1 = SKNode()
+    let parent2 = SKNode()
+    let child = SKNode()
+    scene.addChild(parent1)
+    scene.addChild(parent2)
+    parent1.addChild(child)
+    child.run(.moveBy(x: 100, y: 0, duration: 1))
+
+    SKActionRunner.shared.update(scene: scene, deltaTime: 0.25)
+    let beforeReparent = child.position.x
+    parent2.addChild(child)
+    SKActionRunner.shared.update(scene: scene, deltaTime: 0.25)
+
+    #expect(child.parent === parent2)
+    #expect(child.position.x > beforeReparent)
+}
+
+@Test func testSKNodeMoveToParentPreservesScenePosition() {
+    let scene = SKScene(size: CGSize(width: 800, height: 600))
+    let parent1 = SKNode()
+    parent1.position = CGPoint(x: 100, y: 40)
+    let parent2 = SKNode()
+    parent2.position = CGPoint(x: -30, y: 75)
+    let child = SKNode()
+    child.position = CGPoint(x: 20, y: 10)
+    scene.addChild(parent1)
+    scene.addChild(parent2)
+    parent1.addChild(child)
+    let scenePosition = child.convert(.zero, to: scene)
+
+    child.move(toParent: parent2)
+
+    #expect(child.parent === parent2)
+    #expect(abs(child.convert(.zero, to: scene).x - scenePosition.x) < 0.001)
+    #expect(abs(child.convert(.zero, to: scene).y - scenePosition.y) < 0.001)
 }
 
 @Test func testSKNodeInParentHierarchy() {

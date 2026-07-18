@@ -435,23 +435,34 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         guard effectNode.shouldEnableEffects, effectNode.filter != nil else {
             // No filter to apply, clear any cached image
             effectNode._cachedFilteredImage = nil
+            effectNode.layer.contents = nil
             setChildLayersHidden(false, for: effectNode)
             return
         }
 
         // If rasterized and cache is valid, skip processing
         if effectNode.shouldRasterize && !effectNode._needsFilterUpdate {
-            if effectNode._cachedFilteredImage != nil {
+            if let cachedImage = effectNode._cachedFilteredImage {
+                effectNode.layer.contents = cachedImage
+                setChildLayersHidden(true, for: effectNode)
                 return
             }
         }
 
         // Calculate the size for rendering
         let frame = effectNode.calculateAccumulatedFrame()
-        guard !frame.isEmpty else { return }
+        guard !frame.isEmpty else {
+            effectNode.layer.contents = nil
+            effectNode._cachedFilteredImage = nil
+            setChildLayersHidden(false, for: effectNode)
+            return
+        }
 
         // Render children to an offscreen image
         guard let childImage = effectNode.renderChildrenToImage(size: frame.size) else {
+            effectNode.layer.contents = nil
+            effectNode._cachedFilteredImage = nil
+            setChildLayersHidden(false, for: effectNode)
             return
         }
 
@@ -461,6 +472,10 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
             effectNode.layer.contents = filteredImage
             effectNode.layer.bounds = CGRect(origin: .zero, size: frame.size)
             setChildLayersHidden(true, for: effectNode)
+        } else {
+            effectNode.layer.contents = nil
+            effectNode._cachedFilteredImage = nil
+            setChildLayersHidden(false, for: effectNode)
         }
     }
 

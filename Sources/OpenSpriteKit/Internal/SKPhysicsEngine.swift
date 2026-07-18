@@ -918,82 +918,75 @@ internal final class SKPhysicsEngine {
                                   shouldCollide: Bool) -> SKPhysicsContact? {
         guard let nodeA = bodyA.node, let nodeB = bodyB.node else { return nil }
 
-        // Get shape info for both bodies
         let shapeA = bodyA.shape
         let shapeB = bodyB.shape
-        let posA = nodeA.position
-        let posB = nodeB.position
+        let root = nodeA.scene ?? nodeB.scene ?? rootNode(for: nodeA)
 
         // Dispatch to shape-specific collision tests
         switch (shapeA, shapeB) {
         case (.circle(let radiusA), .circle(let radiusB)):
+            let circleA = worldCircle(radius: radiusA, center: .zero, node: nodeA, root: root)
+            let circleB = worldCircle(radius: radiusB, center: .zero, node: nodeB, root: root)
             return circleVsCircle(bodyA: bodyA, bodyB: bodyB,
-                                   posA: posA, posB: posB,
-                                   radiusA: radiusA, radiusB: radiusB,
+                                   posA: circleA.center, posB: circleB.center,
+                                   radiusA: circleA.radius, radiusB: circleB.radius,
                                    centerA: .zero, centerB: .zero,
                                    shouldCollide: shouldCollide)
 
         case (.circleWithCenter(let radiusA, let centerA), .circle(let radiusB)):
+            let circleA = worldCircle(radius: radiusA, center: centerA, node: nodeA, root: root)
+            let circleB = worldCircle(radius: radiusB, center: .zero, node: nodeB, root: root)
             return circleVsCircle(bodyA: bodyA, bodyB: bodyB,
-                                   posA: posA, posB: posB,
-                                   radiusA: radiusA, radiusB: radiusB,
-                                   centerA: centerA, centerB: .zero,
+                                   posA: circleA.center, posB: circleB.center,
+                                   radiusA: circleA.radius, radiusB: circleB.radius,
+                                   centerA: .zero, centerB: .zero,
                                    shouldCollide: shouldCollide)
 
         case (.circle(let radiusA), .circleWithCenter(let radiusB, let centerB)):
+            let circleA = worldCircle(radius: radiusA, center: .zero, node: nodeA, root: root)
+            let circleB = worldCircle(radius: radiusB, center: centerB, node: nodeB, root: root)
             return circleVsCircle(bodyA: bodyA, bodyB: bodyB,
-                                   posA: posA, posB: posB,
-                                   radiusA: radiusA, radiusB: radiusB,
-                                   centerA: .zero, centerB: centerB,
+                                   posA: circleA.center, posB: circleB.center,
+                                   radiusA: circleA.radius, radiusB: circleB.radius,
+                                   centerA: .zero, centerB: .zero,
                                    shouldCollide: shouldCollide)
 
         case (.circleWithCenter(let radiusA, let centerA), .circleWithCenter(let radiusB, let centerB)):
+            let circleA = worldCircle(radius: radiusA, center: centerA, node: nodeA, root: root)
+            let circleB = worldCircle(radius: radiusB, center: centerB, node: nodeB, root: root)
             return circleVsCircle(bodyA: bodyA, bodyB: bodyB,
-                                   posA: posA, posB: posB,
-                                   radiusA: radiusA, radiusB: radiusB,
-                                   centerA: centerA, centerB: centerB,
+                                   posA: circleA.center, posB: circleB.center,
+                                   radiusA: circleA.radius, radiusB: circleB.radius,
+                                   centerA: .zero, centerB: .zero,
                                    shouldCollide: shouldCollide)
 
         case (.circle(let radius), .rectangle(let size)),
              (.circle(let radius), .rectangleWithCenter(let size, _)):
-            let rectCenter: CGPoint
-            if case .rectangleWithCenter(_, let center) = shapeB {
-                rectCenter = CGPoint(x: posB.x + center.x, y: posB.y + center.y)
-            } else {
-                rectCenter = posB
-            }
-            return circleVsRect(bodyA: bodyA, bodyB: bodyB,
-                                 circlePos: posA, circleRadius: radius, circleOffset: .zero,
-                                 rectCenter: rectCenter, rectSize: size,
-                                 shouldCollide: shouldCollide)
+            let rectCenter = rectangleCenter(for: shapeB)
+            let circle = worldCircle(radius: radius, center: .zero, node: nodeA, root: root)
+            let rect = worldRectangle(size: size, center: rectCenter, node: nodeB, root: root)
+            return circleVsWorldRect(bodyA: bodyA, bodyB: bodyB,
+                                     circle: circle, rect: rect,
+                                     shouldCollide: shouldCollide)
 
         case (.circleWithCenter(let radius, let offset), .rectangle(let size)),
              (.circleWithCenter(let radius, let offset), .rectangleWithCenter(let size, _)):
-            let rectCenter: CGPoint
-            if case .rectangleWithCenter(_, let center) = shapeB {
-                rectCenter = CGPoint(x: posB.x + center.x, y: posB.y + center.y)
-            } else {
-                rectCenter = posB
-            }
-            return circleVsRect(bodyA: bodyA, bodyB: bodyB,
-                                 circlePos: posA, circleRadius: radius, circleOffset: offset,
-                                 rectCenter: rectCenter, rectSize: size,
-                                 shouldCollide: shouldCollide)
+            let rectCenter = rectangleCenter(for: shapeB)
+            let circle = worldCircle(radius: radius, center: offset, node: nodeA, root: root)
+            let rect = worldRectangle(size: size, center: rectCenter, node: nodeB, root: root)
+            return circleVsWorldRect(bodyA: bodyA, bodyB: bodyB,
+                                     circle: circle, rect: rect,
+                                     shouldCollide: shouldCollide)
 
         case (.rectangle(let size), .circle(let radius)),
              (.rectangleWithCenter(let size, _), .circle(let radius)):
-            let rectCenter: CGPoint
-            if case .rectangleWithCenter(_, let center) = shapeA {
-                rectCenter = CGPoint(x: posA.x + center.x, y: posA.y + center.y)
-            } else {
-                rectCenter = posA
-            }
+            let rectCenter = rectangleCenter(for: shapeA)
+            let rect = worldRectangle(size: size, center: rectCenter, node: nodeA, root: root)
+            let circle = worldCircle(radius: radius, center: .zero, node: nodeB, root: root)
             // Swap order for consistent normal direction
-            if let contact = circleVsRect(bodyA: bodyB, bodyB: bodyA,
-                                           circlePos: posB, circleRadius: radius, circleOffset: .zero,
-                                           rectCenter: rectCenter, rectSize: size,
-                                           shouldCollide: shouldCollide) {
-                // Swap bodies back and invert normal
+            if let contact = circleVsWorldRect(bodyA: bodyB, bodyB: bodyA,
+                                               circle: circle, rect: rect,
+                                               shouldCollide: shouldCollide) {
                 return SKPhysicsContact(
                     bodyA: bodyA,
                     bodyB: bodyB,
@@ -1006,16 +999,12 @@ internal final class SKPhysicsEngine {
 
         case (.rectangle(let size), .circleWithCenter(let radius, let offset)),
              (.rectangleWithCenter(let size, _), .circleWithCenter(let radius, let offset)):
-            let rectCenter: CGPoint
-            if case .rectangleWithCenter(_, let center) = shapeA {
-                rectCenter = CGPoint(x: posA.x + center.x, y: posA.y + center.y)
-            } else {
-                rectCenter = posA
-            }
-            if let contact = circleVsRect(bodyA: bodyB, bodyB: bodyA,
-                                           circlePos: posB, circleRadius: radius, circleOffset: offset,
-                                           rectCenter: rectCenter, rectSize: size,
-                                           shouldCollide: shouldCollide) {
+            let rectCenter = rectangleCenter(for: shapeA)
+            let rect = worldRectangle(size: size, center: rectCenter, node: nodeA, root: root)
+            let circle = worldCircle(radius: radius, center: offset, node: nodeB, root: root)
+            if let contact = circleVsWorldRect(bodyA: bodyB, bodyB: bodyA,
+                                               circle: circle, rect: rect,
+                                               shouldCollide: shouldCollide) {
                 return SKPhysicsContact(
                     bodyA: bodyA,
                     bodyB: bodyB,
@@ -1030,30 +1019,184 @@ internal final class SKPhysicsEngine {
              (.rectangleWithCenter(let sizeA, _), .rectangle(let sizeB)),
              (.rectangle(let sizeA), .rectangleWithCenter(let sizeB, _)),
              (.rectangleWithCenter(let sizeA, _), .rectangleWithCenter(let sizeB, _)):
-            let centerA: CGPoint
-            let centerB: CGPoint
-            if case .rectangleWithCenter(_, let offset) = shapeA {
-                centerA = CGPoint(x: posA.x + offset.x, y: posA.y + offset.y)
-            } else {
-                centerA = posA
-            }
-            if case .rectangleWithCenter(_, let offset) = shapeB {
-                centerB = CGPoint(x: posB.x + offset.x, y: posB.y + offset.y)
-            } else {
-                centerB = posB
-            }
-            return rectVsRect(bodyA: bodyA, bodyB: bodyB,
-                               centerA: centerA, sizeA: sizeA, rotationA: nodeA.zRotation,
-                               centerB: centerB, sizeB: sizeB, rotationB: nodeB.zRotation,
-                               shouldCollide: shouldCollide)
+            let rectA = worldRectangle(size: sizeA, center: rectangleCenter(for: shapeA), node: nodeA, root: root)
+            let rectB = worldRectangle(size: sizeB, center: rectangleCenter(for: shapeB), node: nodeB, root: root)
+            return rectVsWorldRect(bodyA: bodyA, bodyB: bodyB,
+                                   rectA: rectA, rectB: rectB,
+                                   shouldCollide: shouldCollide)
 
         default:
             // Fallback: use AABB intersection for other shapes
             return aabbFallback(bodyA: bodyA, bodyB: bodyB,
-                                 nodeA: nodeA, nodeB: nodeB,
                                  aabbA: aabbA, aabbB: aabbB,
                                  shouldCollide: shouldCollide)
         }
+    }
+
+    private struct WorldCircle {
+        let center: CGPoint
+        let radius: CGFloat
+    }
+
+    private struct WorldRectangle {
+        let center: CGPoint
+        let corners: [CGPoint]
+        let axisX: CGVector
+        let axisY: CGVector
+        let halfWidth: CGFloat
+        let halfHeight: CGFloat
+    }
+
+    private func rectangleCenter(for shape: SKPhysicsBodyShape) -> CGPoint {
+        if case .rectangleWithCenter(_, let center) = shape {
+            return center
+        }
+        return .zero
+    }
+
+    private func worldCircle(radius: CGFloat, center: CGPoint, node: SKNode, root: SKNode) -> WorldCircle {
+        let worldCenter = root.convert(center, from: node)
+        let worldX = root.convert(CGPoint(x: center.x + radius, y: center.y), from: node)
+        let worldY = root.convert(CGPoint(x: center.x, y: center.y + radius), from: node)
+        let scaledRadius = max(distance(worldCenter, worldX), distance(worldCenter, worldY))
+        return WorldCircle(center: worldCenter, radius: scaledRadius)
+    }
+
+    private func worldRectangle(size: CGSize, center: CGPoint, node: SKNode, root: SKNode) -> WorldRectangle {
+        let halfWidth = size.width / 2
+        let halfHeight = size.height / 2
+        let localCorners = [
+            CGPoint(x: center.x - halfWidth, y: center.y - halfHeight),
+            CGPoint(x: center.x + halfWidth, y: center.y - halfHeight),
+            CGPoint(x: center.x + halfWidth, y: center.y + halfHeight),
+            CGPoint(x: center.x - halfWidth, y: center.y + halfHeight)
+        ]
+        let corners = localCorners.map { root.convert($0, from: node) }
+        let worldCenter = root.convert(center, from: node)
+        let axisX = normalized(CGVector(
+            dx: corners[1].x - corners[0].x,
+            dy: corners[1].y - corners[0].y
+        ))
+        let axisY = normalized(CGVector(
+            dx: corners[3].x - corners[0].x,
+            dy: corners[3].y - corners[0].y
+        ))
+        return WorldRectangle(
+            center: worldCenter,
+            corners: corners,
+            axisX: axisX,
+            axisY: axisY,
+            halfWidth: distance(corners[0], corners[1]) / 2,
+            halfHeight: distance(corners[0], corners[3]) / 2
+        )
+    }
+
+    private func circleVsWorldRect(
+        bodyA: SKPhysicsBody,
+        bodyB: SKPhysicsBody,
+        circle: WorldCircle,
+        rect: WorldRectangle,
+        shouldCollide: Bool
+    ) -> SKPhysicsContact? {
+        let delta = CGVector(
+            dx: circle.center.x - rect.center.x,
+            dy: circle.center.y - rect.center.y
+        )
+        let localX = delta.dx * rect.axisX.dx + delta.dy * rect.axisX.dy
+        let localY = delta.dx * rect.axisY.dx + delta.dy * rect.axisY.dy
+        let closestX = max(-rect.halfWidth, min(localX, rect.halfWidth))
+        let closestY = max(-rect.halfHeight, min(localY, rect.halfHeight))
+        let closest = CGPoint(
+            x: rect.center.x + rect.axisX.dx * closestX + rect.axisY.dx * closestY,
+            y: rect.center.y + rect.axisX.dy * closestX + rect.axisY.dy * closestY
+        )
+
+        let dx = circle.center.x - closest.x
+        let dy = circle.center.y - closest.y
+        let distSq = dx * dx + dy * dy
+        guard distSq <= circle.radius * circle.radius else { return nil }
+
+        let normal: CGVector
+        if distSq > 0.0001 {
+            let dist = sqrt(distSq)
+            normal = CGVector(dx: dx / dist, dy: dy / dist)
+        } else {
+            let toLeft = localX + rect.halfWidth
+            let toRight = rect.halfWidth - localX
+            let toBottom = localY + rect.halfHeight
+            let toTop = rect.halfHeight - localY
+            let minDistance = min(min(toLeft, toRight), min(toBottom, toTop))
+            if minDistance == toLeft {
+                normal = CGVector(dx: -rect.axisX.dx, dy: -rect.axisX.dy)
+            } else if minDistance == toRight {
+                normal = rect.axisX
+            } else if minDistance == toBottom {
+                normal = CGVector(dx: -rect.axisY.dx, dy: -rect.axisY.dy)
+            } else {
+                normal = rect.axisY
+            }
+        }
+
+        return SKPhysicsContact(
+            bodyA: bodyA,
+            bodyB: bodyB,
+            contactPoint: closest,
+            contactNormal: normal,
+            collisionImpulse: shouldCollide ? 1.0 : 0.0
+        )
+    }
+
+    private func rectVsWorldRect(
+        bodyA: SKPhysicsBody,
+        bodyB: SKPhysicsBody,
+        rectA: WorldRectangle,
+        rectB: WorldRectangle,
+        shouldCollide: Bool
+    ) -> SKPhysicsContact? {
+        let axes = [rectA.axisX, rectA.axisY, rectB.axisX, rectB.axisY]
+        var minOverlap: CGFloat = .infinity
+        var minAxis = rectA.axisX
+
+        for axis in axes {
+            let projA = projectCorners(rectA.corners, onto: axis)
+            let projB = projectCorners(rectB.corners, onto: axis)
+            let overlap = min(projA.max, projB.max) - max(projA.min, projB.min)
+            if overlap <= 0 {
+                return nil
+            }
+            if overlap < minOverlap {
+                minOverlap = overlap
+                minAxis = axis
+            }
+        }
+
+        let centerDiff = CGVector(dx: rectA.center.x - rectB.center.x, dy: rectA.center.y - rectB.center.y)
+        if minAxis.dx * centerDiff.dx + minAxis.dy * centerDiff.dy < 0 {
+            minAxis = CGVector(dx: -minAxis.dx, dy: -minAxis.dy)
+        }
+
+        return SKPhysicsContact(
+            bodyA: bodyA,
+            bodyB: bodyB,
+            contactPoint: CGPoint(
+                x: (rectA.center.x + rectB.center.x) / 2,
+                y: (rectA.center.y + rectB.center.y) / 2
+            ),
+            contactNormal: minAxis,
+            collisionImpulse: shouldCollide ? 1.0 : 0.0
+        )
+    }
+
+    private func distance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+        let dx = lhs.x - rhs.x
+        let dy = lhs.y - rhs.y
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    private func normalized(_ vector: CGVector) -> CGVector {
+        let length = sqrt(vector.dx * vector.dx + vector.dy * vector.dy)
+        guard length > 0.0001 else { return CGVector(dx: 1, dy: 0) }
+        return CGVector(dx: vector.dx / length, dy: vector.dy / length)
     }
 
     // MARK: - Shape-Specific Collision Tests
@@ -1327,7 +1470,6 @@ internal final class SKPhysicsEngine {
 
     /// AABB fallback for complex shapes.
     private func aabbFallback(bodyA: SKPhysicsBody, bodyB: SKPhysicsBody,
-                               nodeA: SKNode, nodeB: SKNode,
                                aabbA: CGRect, aabbB: CGRect,
                                shouldCollide: Bool) -> SKPhysicsContact? {
         let intersection = aabbA.intersection(aabbB)
@@ -1339,8 +1481,8 @@ internal final class SKPhysicsEngine {
         )
 
         // Calculate contact normal (from B to A)
-        let dx = nodeA.position.x - nodeB.position.x
-        let dy = nodeA.position.y - nodeB.position.y
+        let dx = aabbA.midX - aabbB.midX
+        let dy = aabbA.midY - aabbB.midY
         let dist = sqrt(dx * dx + dy * dy)
         let normal: CGVector
         if dist > 0 {

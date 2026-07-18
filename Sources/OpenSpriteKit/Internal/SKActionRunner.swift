@@ -623,7 +623,9 @@ internal final class SKActionRunner {
             }
 
             var remainingDelta = deltaTime
-            while runningAction.currentIndex < actions.count && remainingDelta > 0 {
+            var remainingActionBudget = actions.count - runningAction.currentIndex
+            while runningAction.currentIndex < actions.count && remainingActionBudget > 0 {
+                remainingActionBudget -= 1
                 let currentAction = actions[runningAction.currentIndex]
 
                 // Initialize child state if needed

@@ -556,4 +556,24 @@ struct SKActionRunnerTests {
         #expect(node.alpha > 0.4, "fadeAlpha inside nested group should advance alpha — got \(node.alpha)")
         #expect(node.xScale > 0.6, "scale inside nested group should advance xScale — got \(node.xScale)")
     }
+
+    @Test("sequence executes zero-duration tail after a group with no overflow")
+    func testSequenceExecutesInstantTailWithoutOverflow() {
+        resetRunner()
+        let scene = SKScene(size: CGSize(width: 800, height: 600))
+        let node = SKNode()
+        scene.addChild(node)
+
+        node.run(.sequence([
+            .group([
+                .moveBy(x: 10, y: 0, duration: 1),
+                .fadeOut(withDuration: 1),
+            ]),
+            .removeFromParent(),
+        ]))
+
+        SKActionRunner.shared.update(scene: scene, deltaTime: 1)
+
+        #expect(node.parent == nil)
+    }
 }

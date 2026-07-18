@@ -1,6 +1,6 @@
 # OpenSpriteKit
 
-A Swift library providing **full API compatibility with Apple's SpriteKit** for WebAssembly (WASM) environments.
+A Swift library implementing SpriteKit-compatible APIs for WebAssembly (WASM) environments on top of the OpenCore* stack and WebGPU.
 
 ## Overview
 
@@ -8,7 +8,7 @@ OpenSpriteKit enables cross-platform Swift applications to use SpriteKit APIs in
 
 ## Requirements
 
-- Swift 6.2+
+- Swift 6.3.1+
 - For native platforms: macOS 15+, iOS 18+, tvOS 18+, watchOS 11+, visionOS 2+
 - For WASM: SwiftWasm toolchain
 
@@ -35,7 +35,7 @@ import SpriteKit
 import OpenSpriteKit
 #endif
 
-// Your SpriteKit code works in both environments
+// Shared code can use the common, implemented API surface.
 let scene = SKScene(size: CGSize(width: 800, height: 600))
 
 let sprite = SKSpriteNode(color: .red, size: CGSize(width: 100, height: 100))
@@ -49,9 +49,26 @@ sprite.run(action)
 ```
 
 - **Native platforms** (iOS, macOS, etc.): Use Apple's SpriteKit directly
-- **WASM/Web**: Use OpenSpriteKit with identical APIs
+- **WASM/Web**: Use OpenSpriteKit for the implemented compatibility surface
 
-## Implemented Types
+## Implementation Status
+
+The presence of a public type does not imply behavioral parity with every
+SpriteKit feature. The current verified baseline is:
+
+| Evidence | Result |
+|---|---|
+| Native package | 449 tests passed |
+| Package browser smoke | Scene, action, rendering, and pixel assertions passed |
+| `megaman` release-WASM E2E | 33 automated scenarios passed; 1 capture-only scenario is intentionally skipped |
+
+The node tree, CALayer-backed 2D rendering, actions, reparenting, common
+physics/input paths, and game-scene execution are active. Known gaps include
+real `SK3DNode` rendering, field sampling, complete software rendering,
+unsupported archive classes, and filter/renderer behavior inherited from
+incomplete lower-layer APIs.
+
+## Public Types
 
 ### Nodes
 
@@ -69,10 +86,10 @@ sprite.run(action)
 | `SKLightNode` | Implemented |
 | `SKVideoNode` | Implemented |
 | `SKReferenceNode` | Implemented |
-| `SK3DNode` | Implemented |
+| `SK3DNode` | API shell; SceneKit rendering is unavailable on WASM |
 | `SKTransformNode` | Implemented |
 | `SKAudioNode` | Implemented |
-| `SKFieldNode` | Implemented |
+| `SKFieldNode` | API present; field sampling parity remains open |
 | `SKTileMapNode` | Implemented |
 
 ### Rendering
@@ -136,21 +153,32 @@ sprite.run(action)
 # Build for native platforms
 swift build
 
-# Run tests
-swift test
+# Run focused native tests with a 30-second process timeout
+perl -e 'alarm 30; exec @ARGV' -- \
+  xcodebuild test -scheme OpenSpriteKit -destination 'platform=macOS' \
+  -only-testing:OpenSpriteKitTests
 
-# Build for WASM (requires SwiftWasm toolchain)
-swift build --triple wasm32-unknown-wasi
+# Build for WASM
+swift build --swift-sdk swift-6.3.1-RELEASE_wasm
 ```
 
 ## End-to-End Tests
 
-OpenSpriteKit has no stand-alone browser E2E suite. The full SpriteKit → `OpenCoreAnimation` → `OpenCoreGraphics` → WebGPU pipeline is exercised by the **megaman** sample in the sibling workspace (a `swift-wasmport`-generated port of `Mega-Man-X8-16-bit` running on OpenSpriteKit). That project ships a Playwright suite that drives a real Chromium against `SKScene` / `SKSpriteNode` / `SKAction` / `SKPhysicsBody` via the `__megaman_test` JS harness.
+OpenSpriteKit has a stand-alone browser smoke suite and a game-level suite.
+Together they exercise the SpriteKit → `OpenCoreAnimation` →
+`OpenCoreGraphics` → WebGPU path in real Chromium.
 
-- Source: `../megaman/` (primary live E2E for OpenSpriteKit)
-- Playwright specs: `../megaman/tests/e2e/specs/`
+- Package smoke: `Tests/e2e/`
+- Game source: `../megaman/` (primary live E2E for OpenSpriteKit)
+- Game specs: `../megaman/tests/e2e/specs/`
 
-If you only need to verify that the lower layers boot in a browser, see `../OpenCoreGraphics/tests/e2e/` and `../OpenCoreAnimation/tests/e2e/` for self-contained smoke tests that do not require a full game scene.
+```bash
+cd Tests/e2e && npm test
+cd ../../../megaman/tests/e2e && npm test
+```
+
+These passing scenarios establish the exercised runtime paths; they are not a
+claim of complete SpriteKit behavioral or rendering parity.
 
 ## Dependencies
 

@@ -479,7 +479,7 @@ open class SKNode: @unchecked Sendable {
         guard canAdopt(node) else { return }
         // Remove from existing parent if any (per SpriteKit spec)
         if node.parent != nil {
-            node.removeFromParent()
+            node.detachFromParent(removingActions: false)
         }
         node.parent = self
         node.scene = self.scene ?? (self as? SKScene)
@@ -500,7 +500,7 @@ open class SKNode: @unchecked Sendable {
         guard canAdopt(node) else { return }
         // Remove from existing parent if any (per SpriteKit spec)
         if node.parent != nil {
-            node.removeFromParent()
+            node.detachFromParent(removingActions: false)
         }
         node.parent = self
         node.scene = self.scene ?? (self as? SKScene)
@@ -512,6 +512,10 @@ open class SKNode: @unchecked Sendable {
 
     /// Removes the receiving node from its parent.
     open func removeFromParent() {
+        detachFromParent(removingActions: true)
+    }
+
+    private func detachFromParent(removingActions: Bool) {
         guard let parent = parent else { return }
         // Use firstIndex + remove(at:) instead of removeAll {}.
         // A node has at most one parent (enforced by addChild), so it appears
@@ -521,8 +525,9 @@ open class SKNode: @unchecked Sendable {
         if let index = parent.children.firstIndex(where: { $0 === self }) {
             parent.children.remove(at: index)
         }
-        // Clean up actions to prevent memory leaks
-        removeAllActionsRecursively()
+        if removingActions {
+            removeAllActionsRecursively()
+        }
         // Sync layer hierarchy
         layer.removeFromSuperlayer()
         self.parent = nil
@@ -573,8 +578,11 @@ open class SKNode: @unchecked Sendable {
     /// - Parameter parent: The new parent node.
     open func move(toParent parent: SKNode) {
         guard parent.canAdopt(self) else { return }
-        removeFromParent()
+        guard let currentScene = scene, parent.scene === currentScene else { return }
+        let scenePosition = convert(.zero, to: currentScene)
+        detachFromParent(removingActions: false)
         parent.addChild(self)
+        position = parent.convert(scenePosition, from: currentScene)
     }
 
     /// Returns a Boolean value that indicates whether the node is a descendant of the target node.

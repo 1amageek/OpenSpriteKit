@@ -20,14 +20,14 @@ This applies to ALL Apple Developer documentation URLs:
 
 ## Project Overview
 
-OpenSpriteKit is a Swift library that provides **full API compatibility with Apple's SpriteKit framework** for WebAssembly (WASM) environments.
+OpenSpriteKit targets full SpriteKit API compatibility for WebAssembly (WASM) environments. Current completion is measured per runtime path; a declared type is not proof of behavioral parity.
 
 ### Core Principle: Full Compatibility
 
-**The API must be 100% compatible with SpriteKit.** This means:
+**The target API must be 100% compatible with SpriteKit.** This means:
 - Identical type names, method signatures, and property names
-- Same behavior and semantics as SpriteKit
-- Code written for SpriteKit should compile and work without modification when using OpenSpriteKit
+- The implemented runtime behavior and semantics must be validated against SpriteKit
+- Compatibility claims must identify the exercised surface and evidence
 
 ### How `canImport` Works
 
@@ -60,51 +60,50 @@ This library exists so that cross-platform Swift code can use SpriteKit APIs eve
 # Build the package (native)
 swift build
 
-# Run tests
-swift test
-
-# Run a specific test
-swift test --filter <TestName>
+# Run focused tests with a process timeout
+perl -e 'alarm 30; exec @ARGV' -- \
+  xcodebuild test -scheme OpenSpriteKit -destination 'platform=macOS' \
+  -only-testing:OpenSpriteKitTests
 ```
 
 ### WASM Build (Primary Target)
 
 This library targets WASM. Follow these steps to build for WebAssembly:
 
-#### 1. Install Swift 6.2+ with swiftly
+#### 1. Install Swift 6.3.1+ with swiftly
 
 ```bash
 # Install swiftly (if not already installed)
 # See: https://www.swift.org/install/
 
-# Install Swift 6.2.3
-swiftly install 6.2.3
+# Install Swift 6.3.1
+swiftly install 6.3.1
 
 # Select the toolchain
-swiftly use 6.2.3
+swiftly use 6.3.1
 ```
 
 #### 2. Install the WASM SDK
 
 ```bash
-swift sdk install https://download.swift.org/swift-6.2.3-release/wasm-sdk/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE_wasm.artifactbundle.tar.gz --checksum 394040ecd5260e68bb02f6c20aeede733b9b90702c2204e178f3e42413edad2a
+Install the matching Swift 6.3.1 WASM SDK using the Swift SDK installation workflow.
 ```
 
 #### 3. Verify SDK installation
 
 ```bash
 swift sdk list
-# Should show: swift-6.2.3-RELEASE_wasm
+# Should show: swift-6.3.1-RELEASE_wasm
 ```
 
 #### 4. Build for WASM
 
 ```bash
 # Standard WASM build
-swift build --swift-sdk swift-6.2.3-RELEASE_wasm
+swift build --swift-sdk swift-6.3.1-RELEASE_wasm
 
 # Embedded Swift mode (smaller binaries)
-swift build --swift-sdk swift-6.2.3-RELEASE_wasm-embedded
+swift build --swift-sdk swift-6.3.1-RELEASE_wasm-embedded
 ```
 
 **Reference**: https://www.swift.org/documentation/articles/wasm-getting-started.html
