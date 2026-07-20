@@ -12,7 +12,7 @@ import simd
 ///
 /// `SKWarpGeometry` is the abstract base class for warp transformation definitions.
 /// Use the `SKWarpGeometryGrid` subclass to create grid-based warping effects.
-open class SKWarpGeometry: @unchecked Sendable, Equatable, Hashable {
+open class SKWarpGeometry: Equatable, Hashable {
 
     // MARK: - Initializers
 
@@ -56,7 +56,7 @@ open class SKWarpGeometry: @unchecked Sendable, Equatable, Hashable {
 /// An `SKWarpGeometryGrid` object defines a warp transformation using a grid of control points.
 /// Each control point has a source position and a destination position. During rendering,
 /// the source positions are mapped to the destination positions, creating a warping effect.
-open class SKWarpGeometryGrid: SKWarpGeometry, @unchecked Sendable {
+open class SKWarpGeometryGrid: SKWarpGeometry {
 
     // MARK: - Properties
 
@@ -265,4 +265,3 @@ open class SKWarpGeometryGrid: SKWarpGeometry, @unchecked Sendable {
         return positions
     }
 }
-

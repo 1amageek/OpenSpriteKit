@@ -15,7 +15,7 @@ import Foundation
 /// `SKScene` is a subclass of `SKEffectNode` and enables certain effects to apply to the entire scene.
 /// Though applying effects to an entire scene can be an expensive operation, creativity and ingenuity
 /// may help you find some interesting ways to use effects.
-open class SKScene: SKEffectNode, @unchecked Sendable {
+open class SKScene: SKEffectNode {
 
     // MARK: - Size and Scale Properties
 

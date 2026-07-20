@@ -34,7 +34,7 @@ import Foundation
 ///
 /// let sprite = SKSpriteNode(texture: texture)
 /// ```
-open class SKMutableTexture: SKTexture, @unchecked Sendable {
+open class SKMutableTexture: SKTexture {
 
     // MARK: - Properties
 

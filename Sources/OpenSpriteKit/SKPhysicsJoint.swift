@@ -11,7 +11,7 @@ import Foundation
 /// An `SKPhysicsJoint` object connects two physics bodies so that they are simulated together
 /// by the physics world. You never create instances of `SKPhysicsJoint` directly; instead,
 /// you create one of the subclasses.
-open class SKPhysicsJoint: @unchecked Sendable {
+open class SKPhysicsJoint {
 
     // MARK: - Properties
 
@@ -54,7 +54,7 @@ open class SKPhysicsJoint: @unchecked Sendable {
 /// A joint that pins two bodies together at a single point, allowing them to rotate around that point.
 ///
 /// A pin joint allows the two bodies to rotate independently around the anchor point.
-open class SKPhysicsJointPin: SKPhysicsJoint, @unchecked Sendable {
+open class SKPhysicsJointPin: SKPhysicsJoint {
 
     // MARK: - Properties
 
@@ -102,7 +102,7 @@ open class SKPhysicsJointPin: SKPhysicsJoint, @unchecked Sendable {
 /// A joint that simulates a spring connecting two physics bodies.
 ///
 /// A spring joint simulates a spring that connects two physics bodies.
-open class SKPhysicsJointSpring: SKPhysicsJoint, @unchecked Sendable {
+open class SKPhysicsJointSpring: SKPhysicsJoint {
 
     // MARK: - Properties
 
@@ -152,7 +152,7 @@ open class SKPhysicsJointSpring: SKPhysicsJoint, @unchecked Sendable {
 /// A joint that fuses two physics bodies together at a reference point.
 ///
 /// A fixed joint connects two physics bodies so that they cannot move relative to each other.
-open class SKPhysicsJointFixed: SKPhysicsJoint, @unchecked Sendable {
+open class SKPhysicsJointFixed: SKPhysicsJoint {
 
     // MARK: - Properties
 
@@ -201,7 +201,7 @@ open class SKPhysicsJointFixed: SKPhysicsJoint, @unchecked Sendable {
 /// A joint that allows two physics bodies to slide along an axis.
 ///
 /// A sliding joint allows two physics bodies to slide along a common axis.
-open class SKPhysicsJointSliding: SKPhysicsJoint, @unchecked Sendable {
+open class SKPhysicsJointSliding: SKPhysicsJoint {
 
     // MARK: - Properties
 
@@ -253,7 +253,7 @@ open class SKPhysicsJointSliding: SKPhysicsJoint, @unchecked Sendable {
 /// A joint that limits the distance between two physics bodies.
 ///
 /// A limit joint connects two physics bodies with a maximum allowed distance.
-open class SKPhysicsJointLimit: SKPhysicsJoint, @unchecked Sendable {
+open class SKPhysicsJointLimit: SKPhysicsJoint {
 
     // MARK: - Properties
 

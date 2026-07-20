@@ -11,7 +11,7 @@ import Foundation
 /// A `SKEmitterNode` object is a node that automatically creates and renders small particle sprites.
 /// Particles are privately owned by SpriteKit—your game cannot access the generated sprites.
 /// Emitter nodes are often used to create smoke, fire, sparks, and other particle effects.
-open class SKEmitterNode: SKNode, @unchecked Sendable {
+open class SKEmitterNode: SKNode {
 
     // MARK: - Layer Class Override
 
@@ -731,7 +731,7 @@ public enum SKParticleRenderOrder: Int, Sendable, Hashable {
 ///
 /// An `SKKeyframeSequence` defines a series of keyframe values and times that can
 /// be used to animate particle properties.
-open class SKKeyframeSequence: @unchecked Sendable {
+open class SKKeyframeSequence {
 
     // MARK: - Properties
 

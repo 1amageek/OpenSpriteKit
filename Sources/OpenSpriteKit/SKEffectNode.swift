@@ -12,7 +12,7 @@ import Foundation
 /// apply distortions to nodes that don't implement the protocol, such as shape and video nodes.
 /// Use effect nodes to incorporate sophisticated special effects into a scene or to cache the
 /// contents of a static subtree for faster rendering performance.
-open class SKEffectNode: SKNode, SKWarpable, @unchecked Sendable {
+open class SKEffectNode: SKNode, SKWarpable {
 
     /// Shared Core Image context to avoid per-frame allocations.
     private static let sharedCIContext = CIContext(options: nil)

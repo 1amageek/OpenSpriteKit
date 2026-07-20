@@ -11,7 +11,7 @@ import Foundation
 /// An object used to perform an animated transition to a new scene.
 ///
 /// An `SKTransition` object is used to animate a change from one scene to another.
-open class SKTransition: @unchecked Sendable {
+open class SKTransition {
 
     // MARK: - Internal Types
 
@@ -63,6 +63,7 @@ open class SKTransition: @unchecked Sendable {
     /// - Parameters:
     ///   - ciFilter: A Core Image filter object.
     ///   - duration: The duration, in seconds, over which to perform the transition.
+    @available(*, unavailable, message: "Core Image scene transitions require a dual-scene filter compositor that OpenSpriteKit does not yet provide.")
     public init(ciFilter: CIFilter, duration: TimeInterval) {
         self.transitionType = .ciFilter(filter: ciFilter)
         self.duration = duration
@@ -118,6 +119,7 @@ open class SKTransition: @unchecked Sendable {
     ///   - direction: The direction of the flip.
     ///   - duration: The duration of the transition.
     /// - Returns: A flip transition.
+    @available(*, unavailable, message: "Flip transitions require perspective scene compositing that OpenSpriteKit does not yet provide.")
     public class func flip(with direction: SKTransitionDirection, duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .flip(direction: direction), duration: duration)
     }
@@ -126,6 +128,7 @@ open class SKTransition: @unchecked Sendable {
     ///
     /// - Parameter duration: The duration of the transition.
     /// - Returns: A horizontal flip transition.
+    @available(*, unavailable, message: "Flip transitions require perspective scene compositing that OpenSpriteKit does not yet provide.")
     public class func flipHorizontal(withDuration duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .flip(direction: .up), duration: duration)
     }
@@ -134,6 +137,7 @@ open class SKTransition: @unchecked Sendable {
     ///
     /// - Parameter duration: The duration of the transition.
     /// - Returns: A vertical flip transition.
+    @available(*, unavailable, message: "Flip transitions require perspective scene compositing that OpenSpriteKit does not yet provide.")
     public class func flipVertical(withDuration duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .flip(direction: .right), duration: duration)
     }
@@ -172,6 +176,7 @@ open class SKTransition: @unchecked Sendable {
     ///
     /// - Parameter duration: The duration of the transition.
     /// - Returns: A doors-open transition.
+    @available(*, unavailable, message: "Door transitions require split-scene compositing that OpenSpriteKit does not yet provide.")
     public class func doorsOpenHorizontal(withDuration duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .doorsOpen(horizontal: true), duration: duration)
     }
@@ -180,6 +185,7 @@ open class SKTransition: @unchecked Sendable {
     ///
     /// - Parameter duration: The duration of the transition.
     /// - Returns: A doors-open transition.
+    @available(*, unavailable, message: "Door transitions require split-scene compositing that OpenSpriteKit does not yet provide.")
     public class func doorsOpenVertical(withDuration duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .doorsOpen(horizontal: false), duration: duration)
     }
@@ -188,6 +194,7 @@ open class SKTransition: @unchecked Sendable {
     ///
     /// - Parameter duration: The duration of the transition.
     /// - Returns: A doors-close transition.
+    @available(*, unavailable, message: "Door transitions require split-scene compositing that OpenSpriteKit does not yet provide.")
     public class func doorsCloseHorizontal(withDuration duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .doorsClose(horizontal: true), duration: duration)
     }
@@ -196,6 +203,7 @@ open class SKTransition: @unchecked Sendable {
     ///
     /// - Parameter duration: The duration of the transition.
     /// - Returns: A doors-close transition.
+    @available(*, unavailable, message: "Door transitions require split-scene compositing that OpenSpriteKit does not yet provide.")
     public class func doorsCloseVertical(withDuration duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .doorsClose(horizontal: false), duration: duration)
     }
@@ -204,6 +212,7 @@ open class SKTransition: @unchecked Sendable {
     ///
     /// - Parameter duration: The duration of the transition.
     /// - Returns: A doorway transition.
+    @available(*, unavailable, message: "Doorway transitions require split-scene compositing that OpenSpriteKit does not yet provide.")
     public class func doorway(withDuration duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .doorway, duration: duration)
     }
@@ -214,6 +223,7 @@ open class SKTransition: @unchecked Sendable {
     ///   - filter: The filter to use.
     ///   - duration: The duration of the transition.
     /// - Returns: A filter-based transition.
+    @available(*, unavailable, message: "Core Image scene transitions require a dual-scene filter compositor that OpenSpriteKit does not yet provide.")
     public class func transition(with filter: CIFilter, duration: TimeInterval) -> SKTransition {
         return SKTransition(type: .ciFilter(filter: filter), duration: duration)
     }

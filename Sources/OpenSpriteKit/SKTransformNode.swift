@@ -14,7 +14,7 @@ import simd
 /// `SKTransformNode` adds the ability to rotate nodes across the x and y axes.
 /// When combined with `SKNode`'s `zRotation` property, nodes added as children
 /// to a transform node have the ability to rotate in 3D.
-open class SKTransformNode: SKNode, @unchecked Sendable {
+open class SKTransformNode: SKNode {
 
     // MARK: - Rotation Properties
 

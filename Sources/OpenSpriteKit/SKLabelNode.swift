@@ -20,7 +20,7 @@ public enum NSLineBreakMode: Int, Sendable, Hashable {
 ///
 /// `SKLabelNode` allows you to render text in your scene. You can define a custom style using properties
 /// such as `fontName` and `fontColor`, or configure the look of your text with an `NSAttributedString`.
-open class SKLabelNode: SKNode, @unchecked Sendable {
+open class SKLabelNode: SKNode {
 
     // MARK: - Layer Class Override
 

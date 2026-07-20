@@ -15,7 +15,7 @@ import Foundation
 /// As an example, you might want to share an enemy ship across two different levels, Scene1.sks
 /// and Scene2.sks, in a level-based game. Reference nodes allow you to do that without creating
 /// copies of the shared node and its properties.
-open class SKReferenceNode: SKNode, @unchecked Sendable {
+open class SKReferenceNode: SKNode {
 
     // MARK: - Properties
 

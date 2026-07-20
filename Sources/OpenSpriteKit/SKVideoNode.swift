@@ -4,7 +4,7 @@
 import Foundation
 
 /// A graphical element that plays video content.
-open class SKVideoNode: SKNode, @unchecked Sendable {
+open class SKVideoNode: SKNode {
     /// The point in the sprite that corresponds to the node's position.
     open var anchorPoint: CGPoint = CGPoint(x: 0.5, y: 0.5)
 

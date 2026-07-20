@@ -11,7 +11,7 @@ import Foundation
 /// `SKShapeNode` allows you to create onscreen graphical elements from mathematical points, lines, and curves.
 /// The advantage this has over rasterized graphics, such as those displayed by textures, is that shapes are
 /// rasterized dynamically at runtime to produce crisp detail and smoother edges.
-open class SKShapeNode: SKNode, @unchecked Sendable {
+open class SKShapeNode: SKNode {
 
     // MARK: - Layer Class Override
 

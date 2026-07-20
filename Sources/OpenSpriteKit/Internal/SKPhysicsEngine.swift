@@ -186,9 +186,10 @@ internal final class SKPhysicsEngine {
                 // Check if field affects this body (category bit mask check)
                 guard (field.categoryBitMask & body.fieldBitMask) != 0 else { continue }
 
+                let localPoint = field.convert(bodyPosition, from: scene)
+
                 // Check if body is within field's region
                 if let region = field.region {
-                    let localPoint = field.convert(bodyPosition, from: scene)
                     guard region.contains(localPoint) else { continue }
                 }
 
@@ -200,6 +201,7 @@ internal final class SKPhysicsEngine {
                 let force = calculateFieldForce(
                     field: field,
                     fieldPosition: fieldPosition,
+                    fieldLocalPosition: vector_float3(Float(localPoint.x), Float(localPoint.y), 0),
                     bodyPosition: position3D,
                     bodyVelocity: velocity3D,
                     bodyMass: Float(body.mass),
@@ -234,6 +236,7 @@ internal final class SKPhysicsEngine {
     private func calculateFieldForce(
         field: SKFieldNode,
         fieldPosition: vector_float3,
+        fieldLocalPosition: vector_float3,
         bodyPosition: vector_float3,
         bodyVelocity: vector_float3,
         bodyMass: Float,
@@ -313,9 +316,25 @@ internal final class SKPhysicsEngine {
             let velocityDiff = targetVelocity - bodyVelocity
             return velocityDiff * bodyMass * 10.0 // Spring-like force to reach target
 
-        case .velocityWithTexture:
-            // Texture-based velocity field (not implemented - would require texture sampling)
-            return .zero
+        case .velocityWithTexture(let texture):
+            let textureSize = texture.size()
+            guard textureSize.width > 0, textureSize.height > 0, deltaTime > 0 else {
+                return .zero
+            }
+            let normalizedPoint = CGPoint(
+                x: (CGFloat(fieldLocalPosition.x) + textureSize.width / 2) / textureSize.width,
+                y: (CGFloat(fieldLocalPosition.y) + textureSize.height / 2) / textureSize.height
+            )
+            guard let normal = texture.velocityNormal(at: normalizedPoint) else {
+                return .zero
+            }
+            let targetVelocity = normal * strength
+            let forceScale = bodyMass / Float(deltaTime)
+            return vector_float3(
+                (targetVelocity.x - bodyVelocity.x) * forceScale,
+                (targetVelocity.y - bodyVelocity.y) * forceScale,
+                (targetVelocity.z - bodyVelocity.z) * forceScale
+            )
 
         case .noise(let smoothness, let animationSpeed):
             // Noise field: smooth random force based on position

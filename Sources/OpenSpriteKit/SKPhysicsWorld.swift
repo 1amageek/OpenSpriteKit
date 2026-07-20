@@ -14,7 +14,7 @@ import simd
 /// `SKPhysicsWorld` runs the physics engine of a scene and is the place that contact detection occurs.
 /// Do not create a `SKPhysicsWorld` directly; the system creates a physics world and adds it to the scene's
 /// `physicsWorld` property.
-open class SKPhysicsWorld: @unchecked Sendable {
+open class SKPhysicsWorld {
 
     // MARK: - Properties
 
@@ -432,10 +432,10 @@ open class SKPhysicsWorld: @unchecked Sendable {
         for field in fieldNodes {
             guard field.isEnabled else { continue }
 
+            let localPoint = field.convert(positionPoint, from: scene)
+
             // Check if position is within the field's region
             if let region = field.region {
-                // Convert position to field's local coordinate space
-                let localPoint = field.convert(positionPoint, from: scene)
                 guard region.contains(localPoint) else { continue }
             }
 
@@ -447,7 +447,8 @@ open class SKPhysicsWorld: @unchecked Sendable {
             let force = calculateFieldForce(
                 field: field,
                 fieldPosition: fieldPosition,
-                samplePosition: position
+                samplePosition: position,
+                fieldLocalPosition: vector_float3(Float(localPoint.x), Float(localPoint.y), 0)
             )
 
             if field.isExclusive {
@@ -478,7 +479,12 @@ open class SKPhysicsWorld: @unchecked Sendable {
     }
 
     /// Calculates the force applied by a field at a given position.
-    private func calculateFieldForce(field: SKFieldNode, fieldPosition: vector_float3, samplePosition: vector_float3) -> vector_float3 {
+    private func calculateFieldForce(
+        field: SKFieldNode,
+        fieldPosition: vector_float3,
+        samplePosition: vector_float3,
+        fieldLocalPosition: vector_float3
+    ) -> vector_float3 {
         // Calculate displacement from field to sample position
         let displacement = samplePosition - fieldPosition
         var distance = simd_length(displacement)
@@ -546,10 +552,19 @@ open class SKPhysicsWorld: @unchecked Sendable {
             // Sets velocity, not force - return the direction scaled by strength
             return simd_normalize(direction) * strength
 
-        case .velocityWithTexture:
-            // Texture-based velocity field would require texture sampling
-            // Return zero for now as it needs texture coordinate lookup
-            return .zero
+        case .velocityWithTexture(let texture):
+            let textureSize = texture.size()
+            guard textureSize.width > 0, textureSize.height > 0 else {
+                return .zero
+            }
+            let normalizedPoint = CGPoint(
+                x: (CGFloat(fieldLocalPosition.x) + textureSize.width / 2) / textureSize.width,
+                y: (CGFloat(fieldLocalPosition.y) + textureSize.height / 2) / textureSize.height
+            )
+            guard let normal = texture.velocityNormal(at: normalizedPoint) else {
+                return .zero
+            }
+            return normal * strength
 
         case .noise(let smoothness, let animationSpeed):
             // Simple noise-based force
@@ -578,10 +593,9 @@ open class SKPhysicsWorld: @unchecked Sendable {
         }
     }
 
-    /// Simple noise function for field sampling.
-    /// This is a simplified Perlin-like noise for basic randomization.
+    /// Deterministic trilinear value noise for field sampling.
     private func simplexNoise(x: Float, y: Float, z: Float) -> Float {
-        // Simple hash-based noise approximation
+        // Hash lattice coordinates and interpolate their scalar values.
         let ix = Int(floor(x)) & 255
         let iy = Int(floor(y)) & 255
         let iz = Int(floor(z)) & 255

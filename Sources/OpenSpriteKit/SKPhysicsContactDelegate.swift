@@ -36,7 +36,7 @@ public extension SKPhysicsContactDelegate {
 ///
 /// An `SKPhysicsContact` object describes the contact between two physics bodies.
 /// The contact object is passed to the contact delegate's methods.
-open class SKPhysicsContact: @unchecked Sendable {
+open class SKPhysicsContact {
 
     // MARK: - Properties
 

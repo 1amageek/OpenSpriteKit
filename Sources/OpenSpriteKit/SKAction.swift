@@ -33,7 +33,7 @@ public enum SKActionTimingMode: Int, Sendable, Hashable {
 /// Actions are used to change a node in some way over time. For example, you can use actions
 /// to move a node, scale it, rotate it, or fade its transparency. You can also use actions
 /// to play sounds or run custom code.
-open class SKAction: @unchecked Sendable {
+open class SKAction {
 
     // MARK: - Timing Properties
 
@@ -90,9 +90,6 @@ open class SKAction: @unchecked Sendable {
         case repeatForever(action: SKAction)
         case wait(duration: TimeInterval, range: TimeInterval)
         case runBlock(block: () -> Void)
-        #if canImport(Dispatch)
-        case runBlockOnQueue(block: () -> Void, queue: DispatchQueue)
-        #endif
         case customAction(block: (SKNode, CGFloat) -> Void)
         case applyForce(force: CGVector, point: CGPoint?)
         case applyTorque(torque: CGFloat)
@@ -1412,13 +1409,10 @@ open class SKAction: @unchecked Sendable {
 
     /// Creates an action that plays a sound.
     ///
-    /// When `waitForCompletion` is true, the action uses an estimated duration of 1.0 second.
-    /// The actual playback duration depends on the audio file and audio system implementation.
+    /// When `waitForCompletion` is true, the action runner observes the actual playback state.
     public class func playSoundFileNamed(_ soundFile: String, waitForCompletion wait: Bool) -> SKAction {
         let action = SKAction()
-        // When waiting, use estimated duration. Actual duration depends on audio file.
-        // Getting accurate duration would require loading and parsing the audio file.
-        action.duration = wait ? 1.0 : 0
+        action.duration = 0
         action.actionType = .playSoundFile(filename: soundFile, waitForCompletion: wait)
         return action
     }
@@ -1748,16 +1742,6 @@ open class SKAction: @unchecked Sendable {
         action.actionType = .runBlock(block: block)
         return action
     }
-
-    #if canImport(Dispatch)
-    /// Creates an action that executes a block on a specific dispatch queue.
-    public class func run(_ block: @escaping () -> Void, queue: DispatchQueue) -> SKAction {
-        let action = SKAction()
-        action.duration = 0
-        action.actionType = .runBlockOnQueue(block: block, queue: queue)
-        return action
-    }
-    #endif
 
     // MARK: - Inverse Kinematics Actions
 

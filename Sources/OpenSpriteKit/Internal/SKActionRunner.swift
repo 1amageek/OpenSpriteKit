@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import Synchronization
 
 /// Manages the execution of SKActions on nodes.
 ///
@@ -15,42 +16,83 @@ import Foundation
 /// - Executing completion callbacks
 /// - Supporting compound actions (sequence, group, repeat)
 ///
-/// - Note: This class is accessed from the main thread only (display link callbacks and SKNode methods).
-///   `nonisolated(unsafe)` is used because callers (SKNode.run, etc.) are not yet @MainActor.
-///   When SKNode is migrated to @MainActor, this should become `@MainActor static let shared`.
-internal final class SKActionRunner {
+internal final class SKActionRunner: Sendable {
 
     // MARK: - Singleton
 
     /// Shared instance of the action runner.
-    nonisolated(unsafe) static let shared = SKActionRunner()
+    static let shared = SKActionRunner()
 
-    private init() {}
+    private let stateLock = Mutex(())
+    private let stateAddress: UInt
+
+    private init() {
+        let pointer = UnsafeMutablePointer<State>.allocate(capacity: 1)
+        pointer.initialize(to: State())
+        stateAddress = UInt(bitPattern: pointer)
+    }
+
+    deinit {
+        let pointer = statePointer
+        pointer.deinitialize(count: 1)
+        pointer.deallocate()
+    }
+
+    /// SpriteKit action and completion closures are intentionally not `Sendable`
+    /// in the public API. The heap allocation keeps that source-compatible state
+    /// behind a real mutex without falsely declaring the closures Sendable.
+    private var statePointer: UnsafeMutablePointer<State> {
+        guard let pointer = UnsafeMutablePointer<State>(bitPattern: stateAddress) else {
+            preconditionFailure("SKActionRunner state storage is invalid")
+        }
+        return pointer
+    }
+
+    private func withStateLock<Result>(_ body: (inout State) throws -> Result) rethrows -> Result {
+        try stateLock.withLock { _ in
+            try body(&statePointer.pointee)
+        }
+    }
 
     /// Resets all running actions (for testing purposes).
     func reset() {
-        runningActions.removeAll()
-        anonymousActions.removeAll()
+        withStateLock { state in
+            let releasedNodeIDs = state.nodes.compactMap { identifier, reference in
+                reference.node == nil ? identifier : nil
+            }
+            for nodeID in releasedNodeIDs {
+                state.runningActions.removeValue(forKey: nodeID)
+                state.anonymousActions.removeValue(forKey: nodeID)
+                state.nodeRemovalGeneration.removeValue(forKey: nodeID)
+                state.removedActionKeys.removeValue(forKey: nodeID)
+                state.nodes.removeValue(forKey: nodeID)
+            }
+            state.activeOneShotAudioNodes.removeAll { !$0.isPlaybackActive }
+        }
     }
 
     /// Returns total number of running actions (for diagnostics).
     func totalRunningActionsCount() -> Int {
-        var total = 0
-        for (_, actions) in runningActions {
-            total += actions.count
+        withStateLock { state in
+            var total = 0
+            for (_, actions) in state.runningActions {
+                total += actions.count
+            }
+            for (_, actions) in state.anonymousActions {
+                total += actions.count
+            }
+            return total
         }
-        for (_, actions) in anonymousActions {
-            total += actions.count
-        }
-        return total
     }
 
     /// Returns node identifiers that currently own at least one running action.
     /// Used by diagnostics to detect action buckets that outlive their scene node.
     func runningActionNodeIDs() -> Set<ObjectIdentifier> {
-        var ids = Set(runningActions.keys)
-        ids.formUnion(anonymousActions.keys)
-        return ids
+        withStateLock { state in
+            var ids = Set(state.runningActions.keys)
+            ids.formUnion(state.anonymousActions.keys)
+            return ids
+        }
     }
 
     // MARK: - Running Action State
@@ -71,6 +113,7 @@ internal final class SKActionRunner {
         /// Duration calculated at runtime for velocity-based actions.
         /// If nil, uses action.duration.
         var calculatedDuration: TimeInterval?
+        var audioNode: SKAudioNode? = nil
 
         /// Effective duration considering both action.duration and calculatedDuration.
         var effectiveDuration: TimeInterval {
@@ -94,15 +137,38 @@ internal final class SKActionRunner {
         var strength: Float?  // For SKFieldNode
         var falloff: Float?   // For SKFieldNode
         var warpGeometry: SKWarpGeometry?  // For SKWarpable nodes
+        var audioVolume: Float?
+        var audioPlaybackRate: Float?
+        var audioPan: Float?
+        var audioObstruction: Float?
+        var audioOcclusion: Float?
+        var audioReverb: Float?
     }
 
     // MARK: - Properties
 
-    /// Maps node identifiers to their running actions.
-    private var runningActions: [ObjectIdentifier: [String: RunningAction]] = [:]
+    private struct State {
+        var runningActions: [ObjectIdentifier: [String: RunningAction]] = [:]
+        var anonymousActions: [ObjectIdentifier: [RunningAction]] = [:]
+        var activeOneShotAudioNodes: [SKAudioNode] = []
+        var nodes: [ObjectIdentifier: WeakNodeReference] = [:]
+        var nodeRemovalGeneration: [ObjectIdentifier: UInt] = [:]
+        var removedActionKeys: [ObjectIdentifier: Set<String>] = [:]
+    }
 
-    /// Anonymous actions (actions without keys).
-    private var anonymousActions: [ObjectIdentifier: [RunningAction]] = [:]
+    private final class WeakNodeReference {
+        weak var node: SKNode?
+
+        init(_ node: SKNode) {
+            self.node = node
+        }
+    }
+
+    private struct ExtractedActions {
+        var keyed: [String: RunningAction]?
+        var anonymous: [RunningAction]?
+        let nodeRemovalGeneration: UInt
+    }
 
     // MARK: - Action Management
 
@@ -148,32 +214,36 @@ internal final class SKActionRunner {
             runningAction.currentIndex = 0
         }
 
-        if let key = key {
-            // Remove existing action with same key
-            runningActions[nodeId]?[key] = nil
-            if runningActions[nodeId] == nil {
-                runningActions[nodeId] = [:]
+        withStateLock { state in
+            state.nodes[nodeId] = WeakNodeReference(node)
+            if let key {
+                state.runningActions[nodeId, default: [:]][key] = runningAction
+                state.removedActionKeys[nodeId]?.remove(key)
+            } else {
+                state.anonymousActions[nodeId, default: []].append(runningAction)
             }
-            runningActions[nodeId]?[key] = runningAction
-        } else {
-            if anonymousActions[nodeId] == nil {
-                anonymousActions[nodeId] = []
-            }
-            anonymousActions[nodeId]?.append(runningAction)
         }
     }
 
     /// Removes all actions from a node.
     func removeAllActions(from node: SKNode) {
         let nodeId = ObjectIdentifier(node)
-        runningActions[nodeId] = nil
-        anonymousActions[nodeId] = nil
+        withStateLock { state in
+            state.runningActions.removeValue(forKey: nodeId)
+            state.anonymousActions.removeValue(forKey: nodeId)
+            state.nodeRemovalGeneration[nodeId, default: 0] &+= 1
+            state.removedActionKeys.removeValue(forKey: nodeId)
+            state.nodes.removeValue(forKey: nodeId)
+        }
     }
 
     /// Removes an action with a specific key from a node.
     func removeAction(forKey key: String, from node: SKNode) {
         let nodeId = ObjectIdentifier(node)
-        runningActions[nodeId]?[key] = nil
+        withStateLock { state in
+            state.runningActions[nodeId]?.removeValue(forKey: key)
+            state.removedActionKeys[nodeId, default: []].insert(key)
+        }
     }
 
     // MARK: - Update Loop
@@ -184,6 +254,9 @@ internal final class SKActionRunner {
     ///   - scene: The scene containing the nodes.
     ///   - deltaTime: The time elapsed since the last update.
     func update(scene: SKScene, deltaTime: TimeInterval) {
+        withStateLock { state in
+            state.activeOneShotAudioNodes.removeAll { !$0.isPlaybackActive }
+        }
         updateActionsRecursively(node: scene, deltaTime: deltaTime)
     }
 
@@ -203,7 +276,14 @@ internal final class SKActionRunner {
         // ran on every node with active actions every frame and was a top
         // allocation hotspot in the megaman scene.
         let nodeId = ObjectIdentifier(node)
-        if var keyedActions = runningActions.removeValue(forKey: nodeId) {
+        let extracted = withStateLock { state in
+            ExtractedActions(
+                keyed: state.runningActions.removeValue(forKey: nodeId),
+                anonymous: state.anonymousActions.removeValue(forKey: nodeId),
+                nodeRemovalGeneration: state.nodeRemovalGeneration[nodeId, default: 0]
+            )
+        }
+        if var keyedActions = extracted.keyed {
             var keysToRemove: [String] = []
 
             for (key, var runningAction) in keyedActions {
@@ -223,24 +303,24 @@ internal final class SKActionRunner {
                 removeAllActions(from: node)
                 return
             }
-            // Merge any actions installed reentrantly by completion callbacks
-            // (SKNode.run inside a completion writes to runningActions[nodeId]
-            // while we own the local bucket); skipping the merge would clobber
-            // them when we write the bucket back.
-            if let installed = runningActions[nodeId] {
-                for (k, v) in installed {
-                    keyedActions[k] = v
+            withStateLock { state in
+                let wasRemoved = state.nodeRemovalGeneration[nodeId, default: 0] != extracted.nodeRemovalGeneration
+                if !wasRemoved {
+                    for key in state.removedActionKeys.removeValue(forKey: nodeId) ?? [] {
+                        keyedActions.removeValue(forKey: key)
+                    }
+                    for (key, action) in state.runningActions.removeValue(forKey: nodeId) ?? [:] {
+                        keyedActions[key] = action
+                    }
+                    if !keyedActions.isEmpty {
+                        state.runningActions[nodeId] = keyedActions
+                    }
                 }
-            }
-            if !keyedActions.isEmpty {
-                runningActions[nodeId] = keyedActions
-            } else {
-                runningActions.removeValue(forKey: nodeId)
             }
         }
 
         // Update anonymous actions (same exclusive-ownership pattern).
-        if var anons = anonymousActions.removeValue(forKey: nodeId) {
+        if var anons = extracted.anonymous {
             var indicesToRemove: [Int] = []
 
             for i in anons.indices {
@@ -259,14 +339,14 @@ internal final class SKActionRunner {
                 removeAllActions(from: node)
                 return
             }
-            // Merge anonymous actions installed reentrantly by completion callbacks.
-            if let installed = anonymousActions[nodeId] {
-                anons.append(contentsOf: installed)
-            }
-            if !anons.isEmpty {
-                anonymousActions[nodeId] = anons
-            } else {
-                anonymousActions.removeValue(forKey: nodeId)
+            withStateLock { state in
+                let wasRemoved = state.nodeRemovalGeneration[nodeId, default: 0] != extracted.nodeRemovalGeneration
+                if !wasRemoved {
+                    anons.append(contentsOf: state.anonymousActions.removeValue(forKey: nodeId) ?? [])
+                    if !anons.isEmpty {
+                        state.anonymousActions[nodeId] = anons
+                    }
+                }
             }
         }
 
@@ -314,6 +394,13 @@ internal final class SKActionRunner {
 
         // Execute the action based on its type
         executeAction(action, on: node, progress: progress, initialState: runningAction.initialState, runningAction: &runningAction, deltaTime: effectiveDelta)
+
+        if case .playSoundFile(_, let waitForCompletion) = action.actionType,
+           waitForCompletion,
+           let audioNode = runningAction.audioNode,
+           audioNode.isPlaybackActive {
+            return nil
+        }
 
         // Check if completed and calculate overflow
         if duration <= 0 {
@@ -388,6 +475,16 @@ internal final class SKActionRunner {
         case .warp, .animateWarps:
             if let warpable = node as? SKWarpable {
                 state.warpGeometry = warpable.warpGeometry
+            }
+        case .changeVolume, .changePlaybackRate, .stereopan,
+             .changeObstruction, .changeOcclusion, .changeReverb:
+            if let audioNode = node as? SKAudioNode {
+                state.audioVolume = audioNode.volume
+                state.audioPlaybackRate = audioNode.playbackRate
+                state.audioPan = audioNode.stereoPan
+                state.audioObstruction = audioNode.obstruction
+                state.audioOcclusion = audioNode.occlusion
+                state.audioReverb = audioNode.reverbBlend
             }
         default:
             break
@@ -741,13 +838,6 @@ internal final class SKActionRunner {
                 block()
             }
 
-        #if canImport(Dispatch)
-        case .runBlockOnQueue(let block, let queue):
-            if progress >= 1.0 {
-                queue.async { block() }
-            }
-        #endif
-
         case .customAction(let block):
             // Pass linear elapsed time, unaffected by timing mode
             let elapsedTime = min(runningAction.elapsedTime, runningAction.effectiveDuration)
@@ -830,55 +920,66 @@ internal final class SKActionRunner {
 
         // MARK: Sound Actions
         case .playSoundFile(let filename, _):
-            // Sound playback would require Web Audio API integration for WASM
-            // This is a placeholder that logs the intent
-            if progress >= 1.0 {
-                #if DEBUG
-                print("[SKAction] playSoundFile: \(filename)")
-                #endif
+            if progress >= 1.0, runningAction.audioNode == nil {
+                let audioNode = SKAudioNode(fileNamed: filename)
+                audioNode.autoplayLooped = false
+                audioNode.playAudio()
+                runningAction.audioNode = audioNode
+                withStateLock { state in
+                    state.activeOneShotAudioNodes.append(audioNode)
+                }
             }
 
         case .play:
             if progress >= 1.0, let audioNode = node as? SKAudioNode {
-                audioNode.isPositional = true  // Mark as playing
+                audioNode.playAudio()
             }
 
         case .pause:
             if progress >= 1.0, let audioNode = node as? SKAudioNode {
-                audioNode.isPositional = false  // Mark as paused
+                audioNode.pauseAudio()
             }
 
         case .stop:
-            if progress >= 1.0, let _ = node as? SKAudioNode {
-                // Stop playback
+            if progress >= 1.0, let audioNode = node as? SKAudioNode {
+                audioNode.stopAudio()
             }
 
         case .changeVolume(let to, let by):
-            // Audio volume changes would require integration with audio system
-            _ = to
-            _ = by
+            if let audioNode = node as? SKAudioNode, let initial = initialState.audioVolume {
+                let target = to ?? (initial + (by ?? 0))
+                audioNode.setVolume(initial + (target - initial) * progress)
+            }
 
         case .changePlaybackRate(let to, let by):
-            // Playback rate changes would require integration with audio system
-            _ = to
-            _ = by
+            if let audioNode = node as? SKAudioNode, let initial = initialState.audioPlaybackRate {
+                let target = to ?? (initial + (by ?? 0))
+                audioNode.setPlaybackRate(initial + (target - initial) * progress)
+            }
 
         case .stereopan(let to, let by):
-            // Stereo panning would require integration with audio system
-            _ = to
-            _ = by
+            if let audioNode = node as? SKAudioNode, let initial = initialState.audioPan {
+                let target = to ?? (initial + (by ?? 0))
+                audioNode.setStereoPan(initial + (target - initial) * progress)
+            }
 
         case .changeObstruction(let to, let by):
-            _ = to
-            _ = by
+            if let audioNode = node as? SKAudioNode, let initial = initialState.audioObstruction {
+                let target = to ?? (initial + (by ?? 0))
+                audioNode.setObstruction(initial + (target - initial) * progress)
+            }
 
         case .changeOcclusion(let to, let by):
-            _ = to
-            _ = by
+            if let audioNode = node as? SKAudioNode, let initial = initialState.audioOcclusion {
+                let target = to ?? (initial + (by ?? 0))
+                audioNode.setOcclusion(initial + (target - initial) * progress)
+            }
 
         case .changeReverb(let to, let by):
-            _ = to
-            _ = by
+            if let audioNode = node as? SKAudioNode, let initial = initialState.audioReverb {
+                let target = to ?? (initial + (by ?? 0))
+                audioNode.setReverbBlend(initial + (target - initial) * progress)
+            }
 
         // MARK: Physics Actions
         case .applyForce(let force, let point):
@@ -960,8 +1061,7 @@ internal final class SKActionRunner {
 
         // MARK: Inverse Kinematics Actions
         case .reach(let target, let rootNode, _):
-            // Simplified IK implementation
-            // Real IK would require iterative solving through the joint chain
+            // Solve the full parent chain iteratively with FABRIK.
             // Target is in scene coordinates, so convert node position to scene coordinates
             if progress >= 1.0 {
                 solveIK(endEffector: node, target: target, rootNode: rootNode)
@@ -1170,27 +1270,7 @@ internal final class SKActionRunner {
     // MARK: - Path Helpers
 
     private func pointOnPath(_ path: CGPath, at progress: CGFloat) -> CGPoint {
-        // Approximate point on path at given progress
-        // This is a simplified implementation
-        var points: [CGPoint] = []
-
-        path.applyWithBlock { element in
-            switch element.pointee.type {
-            case .moveToPoint, .addLineToPoint:
-                guard let pts = element.pointee.points else { return }
-                points.append(pts[0])
-            case .addQuadCurveToPoint:
-                guard let pts = element.pointee.points else { return }
-                points.append(pts[1])
-            case .addCurveToPoint:
-                guard let pts = element.pointee.points else { return }
-                points.append(pts[2])
-            case .closeSubpath:
-                break
-            @unknown default:
-                break
-            }
-        }
+        let points = sampledPathPoints(path)
 
         guard points.count > 1 else {
             return points.first ?? .zero
@@ -1224,6 +1304,74 @@ internal final class SKActionRunner {
         }
 
         return points.last ?? .zero
+    }
+
+    private func sampledPathPoints(_ path: CGPath) -> [CGPoint] {
+        var points: [CGPoint] = []
+        var current = CGPoint.zero
+        var subpathStart = CGPoint.zero
+
+        path.applyWithBlock { element in
+            guard let elementPoints = element.pointee.points else { return }
+            switch element.pointee.type {
+            case .moveToPoint:
+                current = elementPoints[0]
+                subpathStart = current
+                points.append(current)
+            case .addLineToPoint:
+                current = elementPoints[0]
+                points.append(current)
+            case .addQuadCurveToPoint:
+                let start = current
+                let control = elementPoints[0]
+                let end = elementPoints[1]
+                let controlLength = distance(start, control) + distance(control, end)
+                let steps = max(4, min(64, Int(ceil(controlLength / 4))))
+                for step in 1...steps {
+                    let t = CGFloat(step) / CGFloat(steps)
+                    let oneMinusT = 1 - t
+                    points.append(CGPoint(
+                        x: oneMinusT * oneMinusT * start.x + 2 * oneMinusT * t * control.x + t * t * end.x,
+                        y: oneMinusT * oneMinusT * start.y + 2 * oneMinusT * t * control.y + t * t * end.y
+                    ))
+                }
+                current = end
+            case .addCurveToPoint:
+                let start = current
+                let control1 = elementPoints[0]
+                let control2 = elementPoints[1]
+                let end = elementPoints[2]
+                let controlLength = distance(start, control1) + distance(control1, control2) + distance(control2, end)
+                let steps = max(6, min(96, Int(ceil(controlLength / 4))))
+                for step in 1...steps {
+                    let t = CGFloat(step) / CGFloat(steps)
+                    let oneMinusT = 1 - t
+                    points.append(CGPoint(
+                        x: oneMinusT * oneMinusT * oneMinusT * start.x
+                            + 3 * oneMinusT * oneMinusT * t * control1.x
+                            + 3 * oneMinusT * t * t * control2.x
+                            + t * t * t * end.x,
+                        y: oneMinusT * oneMinusT * oneMinusT * start.y
+                            + 3 * oneMinusT * oneMinusT * t * control1.y
+                            + 3 * oneMinusT * t * t * control2.y
+                            + t * t * t * end.y
+                    ))
+                }
+                current = end
+            case .closeSubpath:
+                if current != subpathStart {
+                    points.append(subpathStart)
+                    current = subpathStart
+                }
+            @unknown default:
+                break
+            }
+        }
+        return points
+    }
+
+    private func distance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+        hypot(rhs.x - lhs.x, rhs.y - lhs.y)
     }
 
     /// Calculates the tangent angle on a path at a given progress.

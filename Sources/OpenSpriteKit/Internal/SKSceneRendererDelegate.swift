@@ -20,9 +20,9 @@
 /// ## Implementation Notes
 ///
 /// - On WASM: `SKWebGPUSceneRenderer` provides the WebGPU implementation
-/// - For testing: `SKNullSceneRenderer` provides a no-op implementation
+/// - For native tests: `SKNullSceneRenderer` reports unsupported GPU rendering
 ///
-internal protocol SKSceneRendererDelegate: AnyObject, Sendable {
+internal protocol SKSceneRendererDelegate: AnyObject {
 
     // MARK: - Initialization
 
@@ -32,7 +32,7 @@ internal protocol SKSceneRendererDelegate: AnyObject, Sendable {
     /// the rendering context. It must be called before any rendering operations.
     ///
     /// - Throws: An error if initialization fails (e.g., WebGPU not available).
-    func initialize() async throws
+    @MainActor func initialize() async throws
 
     // MARK: - Rendering
 
@@ -42,7 +42,7 @@ internal protocol SKSceneRendererDelegate: AnyObject, Sendable {
     /// to the GPU texture or canvas.
     ///
     /// - Parameter layer: The root layer to render.
-    func render(layer: CALayer)
+    func render(layer: CALayer) -> SKRendererError?
 
     // MARK: - Resize
 
@@ -63,21 +63,4 @@ internal protocol SKSceneRendererDelegate: AnyObject, Sendable {
     /// After calling this method, the renderer should not be used for
     /// any further rendering operations.
     func invalidate()
-}
-
-// MARK: - Default Implementations
-
-extension SKSceneRendererDelegate {
-
-    /// Default implementation does nothing.
-    func initialize() async throws {}
-
-    /// Default implementation does nothing.
-    func render(layer: CALayer) {}
-
-    /// Default implementation does nothing.
-    func resize(width: Int, height: Int) {}
-
-    /// Default implementation does nothing.
-    func invalidate() {}
 }

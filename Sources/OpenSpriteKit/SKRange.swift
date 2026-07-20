@@ -9,7 +9,7 @@ import Foundation
 /// A definition of a range of floating-point values.
 ///
 /// You typically use a `SKRange` to clamp a value so that it is within the specified range.
-open class SKRange: @unchecked Sendable {
+open class SKRange {
 
     // MARK: - Properties
 

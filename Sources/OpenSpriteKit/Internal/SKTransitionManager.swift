@@ -132,21 +132,19 @@ internal final class SKTransitionManager {
             toScene.zPosition = -1
 
         case .flip(_):
-            // 3D flip would require more complex animation
-            toScene.alpha = 0
+            preconditionFailure("Unavailable flip transition reached the renderer")
 
         case .doorsOpen(_):
-            toScene.alpha = 0
+            preconditionFailure("Unavailable doors-open transition reached the renderer")
 
         case .doorsClose(_):
-            toScene.alpha = 0
+            preconditionFailure("Unavailable doors-close transition reached the renderer")
 
         case .doorway:
-            toScene.alpha = 0
+            preconditionFailure("Unavailable doorway transition reached the renderer")
 
         case .ciFilter:
-            // Filter-based transitions would use CIImage
-            toScene.alpha = 0
+            preconditionFailure("Unavailable Core Image transition reached the renderer")
 
         case .none:
             break
@@ -211,36 +209,19 @@ internal final class SKTransitionManager {
             )
 
         case .flip(_):
-            // Simplified flip - just crossfade
-            fromScene.alpha = 1 - p
-            toScene.alpha = p
+            preconditionFailure("Unavailable flip transition reached the renderer")
 
         case .doorsOpen(_):
-            if progress < 0.5 {
-                // Doors opening
-                fromScene.alpha = 1
-                toScene.alpha = 0
-            } else {
-                fromScene.alpha = 0
-                toScene.alpha = 1
-            }
+            preconditionFailure("Unavailable doors-open transition reached the renderer")
 
         case .doorsClose(_):
-            if progress < 0.5 {
-                toScene.alpha = 0
-            } else {
-                toScene.alpha = CGFloat((progress - 0.5) * 2)
-            }
+            preconditionFailure("Unavailable doors-close transition reached the renderer")
 
         case .doorway:
-            // Crossfade for doorway
-            fromScene.alpha = 1 - p
-            toScene.alpha = p
+            preconditionFailure("Unavailable doorway transition reached the renderer")
 
         case .ciFilter:
-            // Filter transitions would need custom rendering
-            fromScene.alpha = 1 - p
-            toScene.alpha = p
+            preconditionFailure("Unavailable Core Image transition reached the renderer")
 
         case .none:
             toScene.alpha = 1

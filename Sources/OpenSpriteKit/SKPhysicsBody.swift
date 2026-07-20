@@ -44,7 +44,7 @@ internal enum SKPhysicsBodyShape {
 /// An `SKPhysicsBody` object defines the shape and simulation parameters for a physics body
 /// in the physics simulation. When a scene processes a new frame, it performs physics calculations
 /// on physics bodies attached to nodes in the scene.
-open class SKPhysicsBody: @unchecked Sendable {
+open class SKPhysicsBody {
 
     // MARK: - Shape
 

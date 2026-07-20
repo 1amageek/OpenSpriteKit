@@ -60,7 +60,7 @@ public enum SKSParserError: Error {
 /// - Some advanced properties may not be preserved
 /// - Physics bodies are reconstructed with basic shapes
 ///
-public final class SKSParser: @unchecked Sendable {
+public final class SKSParser {
 
     // MARK: - Public API
 

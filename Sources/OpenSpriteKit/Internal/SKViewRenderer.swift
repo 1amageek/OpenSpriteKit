@@ -21,14 +21,14 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
 
     // MARK: - Properties
 
-    private nonisolated(unsafe) var displayLink: CADisplayLink?
+    private var displayLink: CADisplayLink?
     private weak var view: SKView?
     private var lastUpdateTime: TimeInterval = 0
-    private nonisolated(unsafe) var isRunning: Bool = false
+    private var isRunning: Bool = false
 
     /// The internal scene renderer delegate.
     /// Starts with null renderer and is replaced with the appropriate implementation in start().
-    private nonisolated(unsafe) var rendererDelegate: SKSceneRendererDelegate
+    private var rendererDelegate: SKSceneRendererDelegate
 
     // MARK: - Initialization
 
@@ -36,7 +36,7 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         self.rendererDelegate = SKNullSceneRenderer()
     }
 
-    deinit {
+    isolated deinit {
         // Directly clean up resources without calling MainActor-isolated methods
         isRunning = false
         displayLink?.invalidate()
@@ -72,7 +72,7 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
     }
 
     /// Stops the render loop and releases resources.
-    nonisolated func stop() {
+    func stop() {
         isRunning = false
         displayLink?.invalidate()
         displayLink = nil
@@ -133,10 +133,10 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
     private func renderTransition(currentTime: TimeInterval) {
         // Render both scenes during transition via the delegate
         if let transitionFromScene = SKTransitionManager.shared.fromScene {
-            rendererDelegate.render(layer: transitionFromScene.layer)
+            handleRenderingError(rendererDelegate.render(layer: transitionFromScene.layer))
         }
         if let transitionToScene = SKTransitionManager.shared.toScene {
-            rendererDelegate.render(layer: transitionToScene.layer)
+            handleRenderingError(rendererDelegate.render(layer: transitionToScene.layer))
         }
     }
 
@@ -492,7 +492,13 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         applyCameraTransform(to: scene)
 
         // Render the scene's layer tree via the delegate
-        rendererDelegate.render(layer: scene.layer)
+        handleRenderingError(rendererDelegate.render(layer: scene.layer))
+    }
+
+    private func handleRenderingError(_ error: SKRendererError?) {
+        guard let error else { return }
+        SKDiagnostics.logWarning("Scene rendering stopped: \(error)")
+        isRunning = false
     }
 
     /// Applies the camera transform to the scene's layer for rendering.

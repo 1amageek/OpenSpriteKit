@@ -58,15 +58,19 @@ SpriteKit feature. The current verified baseline is:
 
 | Evidence | Result |
 |---|---|
-| Native package | 449 tests passed |
+| Native package | 456 tests passed |
 | Package browser smoke | Scene, action, rendering, and pixel assertions passed |
 | `megaman` release-WASM E2E | 33 automated scenarios passed; 1 capture-only scenario is intentionally skipped |
 
 The node tree, CALayer-backed 2D rendering, actions, reparenting, common
-physics/input paths, and game-scene execution are active. Known gaps include
-real `SK3DNode` rendering, field sampling, complete software rendering,
-unsupported archive classes, and filter/renderer behavior inherited from
-incomplete lower-layer APIs.
+physics/input paths, texture-backed velocity fields, browser/native audio
+control, and game-scene execution are active. The software CGImage path renders
+sprites, shapes, and deterministic bitmap labels. Known gaps include a
+SceneKit-compatible 3D runtime, full typographic shaping in the software path,
+unsupported archive classes, and filter behavior inherited from lower layers.
+`SK3DNode`, perspective flip transitions, split-scene door transitions, and
+dual-scene Core Image transitions are explicitly unavailable instead of being
+reported as successful cross-fades or empty renders.
 
 ## Public Types
 
@@ -86,10 +90,10 @@ incomplete lower-layer APIs.
 | `SKLightNode` | Implemented |
 | `SKVideoNode` | Implemented |
 | `SKReferenceNode` | Implemented |
-| `SK3DNode` | API shell; SceneKit rendering is unavailable on WASM |
+| `SK3DNode` | Explicitly unavailable until a SceneKit-compatible runtime and offscreen renderer exist |
 | `SKTransformNode` | Implemented |
 | `SKAudioNode` | Implemented |
-| `SKFieldNode` | API present; field sampling parity remains open |
+| `SKFieldNode` | Implemented, including normal-texture velocity sampling |
 | `SKTileMapNode` | Implemented |
 
 ### Rendering

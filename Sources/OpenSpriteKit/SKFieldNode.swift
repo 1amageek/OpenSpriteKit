@@ -30,7 +30,7 @@ public typealias SKFieldForceEvaluator = (
 ///
 /// There are many different kinds of field nodes that can be created, each with different effects.
 /// Instantiate the appropriate kind of field node and then add it to the scene's node tree.
-open class SKFieldNode: SKNode, @unchecked Sendable {
+open class SKFieldNode: SKNode {
 
     // MARK: - Field Type
 
@@ -263,6 +263,7 @@ open class SKFieldNode: SKNode, @unchecked Sendable {
         let field = SKFieldNode()
         field.fieldType = .velocityWithTexture(texture: texture)
         field.texture = texture
+        field.region = SKRegion(size: texture.size())
         return field
     }
 

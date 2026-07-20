@@ -17,7 +17,7 @@ import Foundation
 /// 2. The light node's `isEnabled` property is `true`.
 /// 3. The light node's `categoryBitMask` property and one of the sprite's lighting masks are
 ///    logically combined using an AND operation, and the result is a nonzero number.
-open class SKLightNode: SKNode, @unchecked Sendable {
+open class SKLightNode: SKNode {
 
     // MARK: - Activation Properties
 

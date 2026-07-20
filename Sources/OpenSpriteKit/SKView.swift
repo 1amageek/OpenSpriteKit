@@ -5,6 +5,7 @@
 // Licensed under MIT License
 
 import Foundation
+import Synchronization
 #if arch(wasm32)
 import JavaScriptKit
 #endif
@@ -28,7 +29,7 @@ open class SKView: SKViewBase {
     open private(set) var scene: SKScene?
 
     /// The internal renderer that manages the render loop.
-    private nonisolated(unsafe) var viewRenderer: SKViewRenderer?
+    private var viewRenderer: SKViewRenderer?
 
     /// A Boolean value that indicates whether the view pauses the scene when the app becomes inactive.
     open var pauseWhenInactive: Bool = true
@@ -72,8 +73,13 @@ open class SKView: SKViewBase {
     /// The delegate for this view.
     open weak var delegate: SKViewDelegate?
 
+    private nonisolated let viewSizeStorage = Mutex(CGSize.zero)
+
     /// The size of the view for scene calculations.
-    open nonisolated(unsafe) var viewSize: CGSize = .zero
+    open nonisolated var viewSize: CGSize {
+        get { viewSizeStorage.withLock { $0 } }
+        set { viewSizeStorage.withLock { $0 = newValue } }
+    }
 
     /// Sets the view size.
     open func setViewSize(_ size: CGSize) {
@@ -86,7 +92,7 @@ open class SKView: SKViewBase {
         super.init()
     }
 
-    deinit {
+    isolated deinit {
         stopRenderLoop()
     }
 
@@ -109,6 +115,9 @@ open class SKView: SKViewBase {
 
         // Reset physics state for the new scene
         if let newScene = scene {
+            if viewSize.width <= 0 || viewSize.height <= 0 {
+                viewSize = newScene.size
+            }
             SKPhysicsEngine.shared.reset(for: newScene)
 
             // Call sceneDidLoad() once when the scene is first presented
@@ -164,7 +173,7 @@ open class SKView: SKViewBase {
     ///   - scene: The scene to convert to.
     /// - Returns: The point converted to scene coordinates.
     open func convert(_ point: CGPoint, to scene: SKScene) -> CGPoint {
-        let viewSize = self.viewSize
+        let viewSize = resolvedViewSize(for: scene)
         let sceneSize = scene.size
 
         // Handle scale mode
@@ -244,7 +253,7 @@ open class SKView: SKViewBase {
     ///   - scene: The scene to convert from.
     /// - Returns: The point converted to view coordinates.
     open func convert(_ point: CGPoint, from scene: SKScene) -> CGPoint {
-        let viewSize = self.viewSize
+        let viewSize = resolvedViewSize(for: scene)
         let sceneSize = scene.size
 
         var scenePoint = point
@@ -314,6 +323,14 @@ open class SKView: SKViewBase {
         return viewPoint
     }
 
+    private func resolvedViewSize(for scene: SKScene) -> CGSize {
+        if viewSize.width > 0, viewSize.height > 0 {
+            return viewSize
+        }
+        precondition(scene.size.width > 0 && scene.size.height > 0, "Coordinate conversion requires a non-zero view or scene size")
+        return scene.size
+    }
+
     // MARK: - Texture Generation
 
     /// Renders a portion of a node's contents to a texture.
@@ -333,20 +350,18 @@ open class SKView: SKViewBase {
         let bytesPerRow = width * bytesPerPixel
         var pixelData = Data(count: bytesPerRow * height)
 
-        guard let colorSpace = .deviceRGB as CGColorSpace?,
-              let context = pixelData.withUnsafeMutableBytes({ buffer -> CGContext? in
-                  CGContext(
-                      data: buffer.baseAddress,
-                      width: width,
-                      height: height,
-                      bitsPerComponent: 8,
-                      bytesPerRow: bytesPerRow,
-                      space: colorSpace,
-                      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-                  )
-              }) else {
-            return nil
-        }
+        return pixelData.withUnsafeMutableBytes { buffer -> SKTexture? in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: .deviceRGB,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            ) else {
+                return nil
+            }
 
         // Set up the context
         context.translateBy(x: -crop.origin.x, y: -crop.origin.y)
@@ -379,7 +394,8 @@ open class SKView: SKViewBase {
             return nil
         }
 
-        return SKTexture(cgImage: cgImage)
+            return SKTexture(cgImage: cgImage)
+        }
     }
 
     /// Renders a node's contents to a texture.
@@ -508,14 +524,7 @@ open class SKView: SKViewBase {
 
     /// Renders a label node to a Core Graphics context.
     private func renderLabelNode(_ label: SKLabelNode, to context: CGContext) {
-        // For WASM, text rendering is done via the WebGPU renderer
-        // This is a simple placeholder for software rendering
-        guard let text = label.text, !text.isEmpty else { return }
-
-        // Set text color
-        context.setFillColor(label.fontColor?.cgColor ?? CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-
-        // Note: Text positioning and actual rendering is handled by WebGPU renderer
+        SKSoftwareLabelRenderer.render(label, to: context)
     }
 
     // MARK: - Render Loop Control
@@ -532,7 +541,7 @@ open class SKView: SKViewBase {
     }
 
     /// Stops the render loop.
-    internal nonisolated func stopRenderLoop() {
+    internal func stopRenderLoop() {
         viewRenderer?.stop()
         viewRenderer = nil
     }

@@ -59,22 +59,22 @@ struct SKTextureAtlasTests {
     }
 
     @Test("Preloading named atlases materializes registered textures")
-    func testPreloadTextureAtlasesNamedLoadsRegisteredFrames() async throws {
+    func testPreloadTextureAtlasesNamedLoadsRegisteredFrames() throws {
         SKResourceLoader.shared.clearAtlases()
         defer { SKResourceLoader.shared.clearAtlases() }
 
         try registerTestAtlas()
 
-        let result = await withCheckedContinuation { continuation in
-            SKTextureAtlas.preloadTextureAtlasesNamed(["heroes"]) { error, atlases in
-                continuation.resume(returning: (error, atlases))
-            }
+        var result: ((any Error)?, [SKTextureAtlas])?
+        SKTextureAtlas.preloadTextureAtlasesNamed(["heroes"]) { error, atlases in
+            result = (error, atlases)
         }
+        let resolvedResult = try #require(result)
 
-        #expect(result.0 == nil)
-        #expect(result.1.count == 1)
+        #expect(resolvedResult.0 == nil)
+        #expect(resolvedResult.1.count == 1)
 
-        guard let atlas = result.1.first else {
+        guard let atlas = resolvedResult.1.first else {
             Issue.record("Expected preloaded atlas")
             return
         }

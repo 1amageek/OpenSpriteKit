@@ -13,7 +13,7 @@ import Foundation
 ///
 /// `SKNode` does not draw any content itself. Its visual counterparts include
 /// `SKSpriteNode`, `SKShapeNode`, `SKLabelNode`, and other drawing nodes.
-open class SKNode: @unchecked Sendable {
+open class SKNode {
 
     // MARK: - Core Animation Layer Backing
 

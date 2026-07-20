@@ -10,7 +10,7 @@
 /// The crop node's children are rendered into a framebuffer, then the mask is rendered into the framebuffer.
 /// When the mask is rendered, SpriteKit uses a special blending mode that only keeps pixels where the mask
 /// was drawn over them.
-open class SKCropNode: SKNode, @unchecked Sendable {
+open class SKCropNode: SKNode {
 
     // MARK: - Properties
 

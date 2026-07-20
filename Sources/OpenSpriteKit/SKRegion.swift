@@ -12,7 +12,7 @@ import Foundation
 /// a particular point lies inside this area. For example, regions are used to define the area
 /// that a physics field can affect. Regions are defined using paths and mathematical shapes
 /// and can also be combined using constructive solid geometry.
-open class SKRegion: @unchecked Sendable {
+open class SKRegion {
 
     // MARK: - Properties
 
@@ -313,7 +313,7 @@ open class SKRegion: @unchecked Sendable {
 /// A region that represents the result of a boolean operation between two regions.
 ///
 /// This class handles containment testing for union, intersection, and difference operations.
-internal final class CompositeRegion: SKRegion, @unchecked Sendable {
+internal final class CompositeRegion: SKRegion {
 
     enum CompositeType {
         case union

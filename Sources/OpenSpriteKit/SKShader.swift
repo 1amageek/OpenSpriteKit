@@ -13,7 +13,7 @@ import simd
 ///
 /// An `SKShader` object holds a custom OpenGL ES fragment shader. Shader objects are
 /// used to customize the drawing behavior of a node.
-open class SKShader: @unchecked Sendable {
+open class SKShader {
 
     // MARK: - Properties
 
@@ -146,7 +146,7 @@ open class SKShader: @unchecked Sendable {
 /// A container for uniform shader data.
 ///
 /// An `SKUniform` object contains a value and a name for passing data into a shader.
-open class SKUniform: @unchecked Sendable {
+open class SKUniform {
 
     // MARK: - Properties
 
@@ -327,7 +327,7 @@ public enum SKUniformType: Int, Sendable, Hashable {
 ///
 /// An `SKAttribute` describes a single attribute in a custom shader. The attribute
 /// defines per-node data that you can pass into the shader.
-open class SKAttribute: @unchecked Sendable {
+open class SKAttribute {
 
     // MARK: - Properties
 

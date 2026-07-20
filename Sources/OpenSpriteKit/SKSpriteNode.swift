@@ -10,7 +10,7 @@ import Foundation
 ///
 /// `SKSpriteNode` is an onscreen graphical element that can be initialized from an image or a solid color.
 /// SpriteKit adds functionality to its ability to display images using the functions discussed below.
-open class SKSpriteNode: SKNode, SKWarpable, @unchecked Sendable {
+open class SKSpriteNode: SKNode, SKWarpable {
 
     // MARK: - Texture Properties
 

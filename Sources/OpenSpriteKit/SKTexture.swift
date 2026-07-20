@@ -7,94 +7,91 @@
 // MARK: - SKTextureCache
 
 import Foundation
+import Synchronization
 /// Internal texture cache to avoid loading duplicate textures.
-/// Thread-safe through NSLock synchronization.
-internal final class SKTextureCache: @unchecked Sendable {
+/// Thread-safe through Mutex synchronization.
+internal final class SKTextureCache: Sendable {
     /// Shared instance of the texture cache.
     static let shared = SKTextureCache()
 
-    /// Cache of loaded textures keyed by image name.
-    private var cache: [String: SKTexture] = [:]
+    private struct State {
+        var cache: [String: CGImage] = [:]
+        var accessOrder: [String] = []
+        var maxEntries: Int?
 
-    /// Access order for simple LRU eviction (oldest at front).
-    private var accessOrder: [String] = []
+        mutating func touch(_ name: String) {
+            accessOrder.removeAll { $0 == name }
+            accessOrder.append(name)
+        }
 
-    /// Optional maximum number of cached textures.
-    private var maxEntries: Int?
+        mutating func evictIfNeeded() {
+            guard let maxEntries, maxEntries >= 0 else { return }
+            while cache.count > maxEntries, let oldest = accessOrder.first {
+                accessOrder.removeFirst()
+                cache.removeValue(forKey: oldest)
+            }
+        }
+    }
 
-    /// Lock for thread-safe access.
-    private let lock = NSLock()
+    private let state = Mutex(State())
 
     private init() {}
 
-    /// Returns a cached texture for the given name, or creates and caches a new one.
-    func texture(forName name: String, create: () -> SKTexture?) -> SKTexture? {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if let cached = cache[name] {
-            touch(name)
+    /// Returns a cached decoded image for the given name, or creates and caches one.
+    func image(forName name: String, create: () -> CGImage?) -> CGImage? {
+        if let cached = state.withLock({ state -> CGImage? in
+            guard let cached = state.cache[name] else { return nil }
+            state.touch(name)
+            return cached
+        }) {
             return cached
         }
 
-        if let texture = create() {
-            cache[name] = texture
-            touch(name)
-            evictIfNeeded()
-            return texture
-        }
+        guard let created = create() else { return nil }
 
-        return nil
+        return state.withLock { state in
+            if let cached = state.cache[name] {
+                state.touch(name)
+                return cached
+            }
+            state.cache[name] = created
+            state.touch(name)
+            state.evictIfNeeded()
+            return created
+        }
     }
 
     /// Removes a texture from the cache.
     func removeTexture(forName name: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        cache.removeValue(forKey: name)
-        accessOrder.removeAll { $0 == name }
+        state.withLock { state in
+            state.cache.removeValue(forKey: name)
+            state.accessOrder.removeAll { $0 == name }
+        }
     }
 
     /// Clears all cached textures.
     func clearCache() {
-        lock.lock()
-        defer { lock.unlock() }
-        cache.removeAll()
-        accessOrder.removeAll()
+        state.withLock { state in
+            state.cache.removeAll()
+            state.accessOrder.removeAll()
+        }
     }
 
     /// Returns whether a texture is cached.
     func isCached(name: String) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return cache[name] != nil
+        state.withLock { $0.cache[name] != nil }
     }
 
     /// Current cache size (for diagnostics).
     func cachedCount() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return cache.count
+        state.withLock { $0.cache.count }
     }
 
     /// Sets a maximum number of cached textures (nil for unlimited).
     func setMaxEntries(_ maxEntries: Int?) {
-        lock.lock()
-        defer { lock.unlock() }
-        self.maxEntries = maxEntries
-        evictIfNeeded()
-    }
-
-    private func touch(_ name: String) {
-        accessOrder.removeAll { $0 == name }
-        accessOrder.append(name)
-    }
-
-    private func evictIfNeeded() {
-        guard let maxEntries = maxEntries, maxEntries >= 0 else { return }
-        while cache.count > maxEntries, let oldest = accessOrder.first {
-            accessOrder.removeFirst()
-            cache.removeValue(forKey: oldest)
+        state.withLock { state in
+            state.maxEntries = maxEntries
+            state.evictIfNeeded()
         }
     }
 }
@@ -103,7 +100,7 @@ internal final class SKTextureCache: @unchecked Sendable {
 ///
 /// An `SKTexture` object is a container for texture data. Textures hold image data
 /// and can be applied to sprites or other nodes that need to render images.
-open class SKTexture: @unchecked Sendable {
+open class SKTexture {
 
     // MARK: - Properties
 
@@ -208,6 +205,96 @@ open class SKTexture: @unchecked Sendable {
         return _cgImage
     }
 
+    /// Samples this texture as a normal map using SpriteKit texture coordinates.
+    /// RGB values are decoded from [0, 1] into the signed normal range [-1, 1].
+    internal func velocityNormal(at normalizedPoint: CGPoint) -> vector_float3? {
+        guard normalizedPoint.x >= 0, normalizedPoint.x <= 1,
+              normalizedPoint.y >= 0, normalizedPoint.y <= 1,
+              let image = cgImage(),
+              image.width > 0, image.height > 0,
+              image.bitsPerComponent == 8,
+              let data = image.data ?? image.dataProvider?.data else {
+            return nil
+        }
+
+        let x = normalizedPoint.x * CGFloat(max(image.width - 1, 0))
+        let y = (1 - normalizedPoint.y) * CGFloat(max(image.height - 1, 0))
+
+        if filteringMode == .nearest {
+            return Self.decodeVelocityNormal(
+                image: image,
+                data: data,
+                x: Int(x.rounded()),
+                y: Int(y.rounded())
+            )
+        }
+
+        let x0 = Int(floor(x))
+        let y0 = Int(floor(y))
+        let x1 = min(x0 + 1, image.width - 1)
+        let y1 = min(y0 + 1, image.height - 1)
+        guard let n00 = Self.decodeVelocityNormal(image: image, data: data, x: x0, y: y0),
+              let n10 = Self.decodeVelocityNormal(image: image, data: data, x: x1, y: y0),
+              let n01 = Self.decodeVelocityNormal(image: image, data: data, x: x0, y: y1),
+              let n11 = Self.decodeVelocityNormal(image: image, data: data, x: x1, y: y1) else {
+            return nil
+        }
+
+        let tx = Float(x - CGFloat(x0))
+        let ty = Float(y - CGFloat(y0))
+        let top = n00 + (n10 - n00) * tx
+        let bottom = n01 + (n11 - n01) * tx
+        return top + (bottom - top) * ty
+    }
+
+    private static func decodeVelocityNormal(
+        image: CGImage,
+        data: Data,
+        x: Int,
+        y: Int
+    ) -> vector_float3? {
+        guard x >= 0, x < image.width, y >= 0, y < image.height else { return nil }
+
+        let bytesPerPixel = image.bitsPerPixel / 8
+        guard bytesPerPixel == 3 || bytesPerPixel == 4 else { return nil }
+        let offset = y * image.bytesPerRow + x * bytesPerPixel
+        guard offset >= 0, offset + bytesPerPixel <= data.count else { return nil }
+
+        return data.withUnsafeBytes { rawBytes -> vector_float3? in
+            guard let baseAddress = rawBytes.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return nil
+            }
+
+            let red: UInt8
+            let green: UInt8
+            let blue: UInt8
+            if bytesPerPixel == 4 {
+                switch image.alphaInfo {
+                case .premultipliedFirst, .first, .noneSkipFirst:
+                    red = baseAddress[offset + 1]
+                    green = baseAddress[offset + 2]
+                    blue = baseAddress[offset + 3]
+                case .premultipliedLast, .last, .noneSkipLast, .none:
+                    red = baseAddress[offset]
+                    green = baseAddress[offset + 1]
+                    blue = baseAddress[offset + 2]
+                case .alphaOnly:
+                    return nil
+                }
+            } else {
+                red = baseAddress[offset]
+                green = baseAddress[offset + 1]
+                blue = baseAddress[offset + 2]
+            }
+
+            return vector_float3(
+                Float(red) / 127.5 - 1,
+                Float(green) / 127.5 - 1,
+                Float(blue) / 127.5 - 1
+            )
+        }
+    }
+
     /// The name of the image used to create this texture (for caching purposes).
     internal var imageName: String?
 
@@ -225,19 +312,12 @@ open class SKTexture: @unchecked Sendable {
     /// ```
     public convenience init(imageNamed name: String) {
         // Check cache first
-        if let cached = SKTextureCache.shared.texture(forName: name, create: {
-            // Create new texture if not cached
-            guard let image = SKResourceLoader.shared.image(forName: name) else {
-                return nil
-            }
-            let texture = SKTexture(cgImage: image)
-            texture.imageName = name
-            return texture
+        if let cached = SKTextureCache.shared.image(forName: name, create: {
+            SKResourceLoader.shared.image(forName: name)
         }) {
-            // Return cached texture's data by copying
             self.init()
-            self._cgImage = cached.cgImage()
-            self._size = cached._size
+            self._cgImage = cached
+            self._size = CGSize(width: cached.width, height: cached.height)
             self.imageName = name
         } else {
             self.init()
@@ -579,14 +659,13 @@ open class SKTexture: @unchecked Sendable {
     /// will be used immediately after loading.
     ///
     /// - Parameter completionHandler: A block called when preloading is complete.
-    open func preload(completionHandler: @escaping @Sendable () -> Void) {
+    open func preload(completionHandler: @escaping () -> Void) {
         // If already preloaded, call completion immediately
         guard !isPreloaded else {
             completionHandler()
             return
         }
 
-        // Capture cgImage before async block
         guard let cgImage = self.cgImage() else {
             completionHandler()
             return
@@ -599,36 +678,6 @@ open class SKTexture: @unchecked Sendable {
         let bytesPerRow = width * bytesPerPixel
         let totalBytes = height * bytesPerRow
 
-        #if canImport(Dispatch)
-        DispatchQueue.global(qos: .userInitiated).async {
-            var pixelData = Data(count: totalBytes)
-
-            pixelData.withUnsafeMutableBytes { buffer in
-                guard let context = CGContext(
-                    data: buffer.baseAddress,
-                    width: width,
-                    height: height,
-                    bitsPerComponent: 8,
-                    bytesPerRow: bytesPerRow,
-                    space: .deviceRGB,
-                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-                ) else {
-                    return
-                }
-
-                // Draw the image into the context, forcing decoding
-                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                // Store decoded data and mark as preloaded
-                self?.decodedData = pixelData
-                self?.isPreloaded = true
-                completionHandler()
-            }
-        }
-        #else
-        // WASM: Synchronous preload (no threading)
         var pixelData = Data(count: totalBytes)
 
         pixelData.withUnsafeMutableBytes { buffer in
@@ -649,7 +698,6 @@ open class SKTexture: @unchecked Sendable {
         self.decodedData = pixelData
         self.isPreloaded = true
         completionHandler()
-        #endif
     }
 
     /// Preloads multiple textures into memory.
@@ -657,31 +705,16 @@ open class SKTexture: @unchecked Sendable {
     /// - Parameters:
     ///   - textures: The textures to preload.
     ///   - completionHandler: A block called when preloading is complete.
-    public class func preload(_ textures: [SKTexture], withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+    public class func preload(_ textures: [SKTexture], withCompletionHandler completionHandler: @escaping () -> Void) {
         guard !textures.isEmpty else {
             completionHandler()
             return
         }
 
-        #if canImport(Dispatch)
-        // Preload all textures concurrently
-        let group = DispatchGroup()
-        for texture in textures {
-            group.enter()
-            texture.preload {
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            completionHandler()
-        }
-        #else
-        // WASM: Preload synchronously (each preload is sync on WASM)
         for texture in textures {
             texture.preload {}
         }
         completionHandler()
-        #endif
     }
 
     /// Removes the cached decoded data to free memory.
@@ -808,33 +841,18 @@ open class SKTexture: @unchecked Sendable {
     /// sprite.texture = texture
     /// ```
     public static func load(from url: URL) async throws -> SKTexture {
-        #if canImport(Dispatch)
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let data = try Data(contentsOf: url)
-                    guard let texture = SKTexture(imageData: data) else {
-                        continuation.resume(throwing: SKResourceError.decodingFailed)
-                        return
-                    }
-                    continuation.resume(returning: texture)
-                } catch {
-                    continuation.resume(throwing: SKResourceError.networkFailed)
-                }
-            }
-        }
-        #else
-        // WASM: Load synchronously
+        let data: Data
         do {
-            let data = try Data(contentsOf: url)
-            guard let texture = SKTexture(imageData: data) else {
-                throw SKResourceError.decodingFailed
-            }
-            return texture
+            data = try await Task.detached {
+                try Data(contentsOf: url)
+            }.value
         } catch {
             throw SKResourceError.networkFailed
         }
-        #endif
+        guard let texture = SKTexture(imageData: data) else {
+            throw SKResourceError.decodingFailed
+        }
+        return texture
     }
 
     /// Returns metadata about an image file without fully decoding it.

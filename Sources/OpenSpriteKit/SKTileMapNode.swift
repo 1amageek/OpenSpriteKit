@@ -101,7 +101,7 @@ public struct SKTileAdjacencyMask: OptionSet, Sendable, Hashable {
 // MARK: - SKTileDefinition
 
 /// A single tile that can be placed in a tile map.
-open class SKTileDefinition: @unchecked Sendable {
+open class SKTileDefinition {
 
     /// The textures used for this tile.
     open var textures: [SKTexture] = []
@@ -194,7 +194,7 @@ public enum SKTileDefinitionRotation: UInt, Sendable, Hashable {
 // MARK: - SKTileGroupRule
 
 /// A rule that describes how tiles should be placed in a tile map.
-open class SKTileGroupRule: @unchecked Sendable {
+open class SKTileGroupRule {
 
     /// The adjacency mask for this rule.
     open var adjacency: SKTileAdjacencyMask = []
@@ -228,7 +228,7 @@ open class SKTileGroupRule: @unchecked Sendable {
 // MARK: - SKTileGroup
 
 /// A set of related tile definitions and rules.
-open class SKTileGroup: @unchecked Sendable {
+open class SKTileGroup {
 
     /// The rules for this tile group.
     open var rules: [SKTileGroupRule] = []
@@ -266,7 +266,7 @@ open class SKTileGroup: @unchecked Sendable {
 // MARK: - SKTileSet
 
 /// A container for tile groups that define a theme.
-open class SKTileSet: @unchecked Sendable {
+open class SKTileSet {
 
     /// The type of this tile set.
     open var type: SKTileSetType = .grid
@@ -497,7 +497,7 @@ open class SKTileSet: @unchecked Sendable {
 // MARK: - SKTileMapNode
 
 /// A node that renders a two-dimensional grid of tiles.
-open class SKTileMapNode: SKNode, @unchecked Sendable {
+open class SKTileMapNode: SKNode {
 
     // MARK: - Properties
 

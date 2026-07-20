@@ -19,7 +19,7 @@
 /// )
 /// node.reachConstraints = constraints
 /// ```
-open class SKReachConstraints: @unchecked Sendable {
+open class SKReachConstraints {
 
     // MARK: - Properties
 

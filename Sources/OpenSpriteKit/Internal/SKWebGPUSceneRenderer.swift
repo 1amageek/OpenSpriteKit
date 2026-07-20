@@ -24,7 +24,7 @@ import JavaScriptKit
 /// renderer.render(layer: scene.layer)
 /// ```
 ///
-internal final class SKWebGPUSceneRenderer: SKSceneRendererDelegate, @unchecked Sendable {
+internal final class SKWebGPUSceneRenderer: SKSceneRendererDelegate {
 
     // MARK: - Properties
 
@@ -51,8 +51,10 @@ internal final class SKWebGPUSceneRenderer: SKSceneRendererDelegate, @unchecked 
         self.webGPURenderer = renderer
     }
 
-    func render(layer: CALayer) {
-        webGPURenderer?.render(layer: layer)
+    func render(layer: CALayer) -> SKRendererError? {
+        guard let webGPURenderer else { return .notInitialized }
+        webGPURenderer.render(layer: layer)
+        return nil
     }
 
     func resize(width: Int, height: Int) {

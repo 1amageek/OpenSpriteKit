@@ -11,7 +11,7 @@ import Foundation
 /// An `SKConstraint` object describes a mathematical constraint on a node's position
 /// or orientation. Constraints are evaluated each time a new frame is processed for a scene,
 /// after any actions have been processed but before the physics simulation is processed.
-open class SKConstraint: @unchecked Sendable {
+open class SKConstraint {
 
     // MARK: - Properties
 

@@ -25,7 +25,7 @@ import Foundation
 /// // Get a texture from the atlas
 /// let idleTexture = atlas.textureNamed("player_idle")
 /// ```
-open class SKTextureAtlas: @unchecked Sendable {
+open class SKTextureAtlas {
 
     // MARK: - Properties
 
@@ -188,7 +188,7 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// and ready before they're needed for rendering.
     ///
     /// - Parameter completionHandler: A block called when preloading completes.
-    open func preload(completionHandler: @escaping @Sendable () -> Void) {
+    open func preload(completionHandler: @escaping () -> Void) {
         guard !isPreloaded else {
             completionHandler()
             return
@@ -217,55 +217,16 @@ open class SKTextureAtlas: @unchecked Sendable {
     /// - Parameters:
     ///   - atlases: An array of texture atlases to preload.
     ///   - completionHandler: A block called when all atlases have been preloaded.
-    public class func preloadTextureAtlases(_ atlases: [SKTextureAtlas], withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+    public class func preloadTextureAtlases(_ atlases: [SKTextureAtlas], withCompletionHandler completionHandler: @escaping () -> Void) {
         guard !atlases.isEmpty else {
             completionHandler()
             return
         }
 
-        #if arch(wasm32)
-        // WASM: Simple counter-based implementation (no GCD available)
-        final class Counter: @unchecked Sendable {
-            var count: Int
-            let total: Int
-            let completion: @Sendable () -> Void
-
-            init(total: Int, completion: @escaping @Sendable () -> Void) {
-                self.count = 0
-                self.total = total
-                self.completion = completion
-            }
-
-            func increment() {
-                count += 1
-                if count >= total {
-                    completion()
-                }
-            }
-        }
-
-        let counter = Counter(total: atlases.count, completion: completionHandler)
-
         for atlas in atlases {
-            atlas.preload {
-                counter.increment()
-            }
+            atlas.preload {}
         }
-        #else
-        // Native: Use DispatchGroup for thread-safe coordination
-        let group = DispatchGroup()
-
-        for atlas in atlases {
-            group.enter()
-            atlas.preload {
-                group.leave()
-            }
-        }
-
-        group.notify(queue: .main) {
-            completionHandler()
-        }
-        #endif
+        completionHandler()
     }
 
     /// Loads the textures of multiple atlases into memory, calling a completion handler after the task completes.
@@ -274,7 +235,7 @@ open class SKTextureAtlas: @unchecked Sendable {
     ///   - atlasNames: An array of atlas names to load and preload.
     ///   - completionHandler: A block called when all atlases have been loaded and preloaded.
     ///     The block receives an optional error and the loaded atlases.
-    public class func preloadTextureAtlasesNamed(_ atlasNames: [String], withCompletionHandler completionHandler: @escaping @Sendable ((any Error)?, [SKTextureAtlas]) -> Void) {
+    public class func preloadTextureAtlasesNamed(_ atlasNames: [String], withCompletionHandler completionHandler: @escaping ((any Error)?, [SKTextureAtlas]) -> Void) {
         guard !atlasNames.isEmpty else {
             completionHandler(nil, [])
             return

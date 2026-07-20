@@ -13,7 +13,7 @@ import Foundation
 ///
 /// The camera's position in the scene's coordinate system determines which portion of the scene is visible.
 /// You can also rotate and scale the camera to change the view.
-open class SKCameraNode: SKNode, @unchecked Sendable {
+open class SKCameraNode: SKNode {
 
     // MARK: - Initializers
 

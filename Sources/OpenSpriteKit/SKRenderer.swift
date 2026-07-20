@@ -9,6 +9,11 @@ import Foundation
 import JavaScriptKit
 #endif
 
+public enum SKRendererError: Error, Equatable, Sendable {
+    case notInitialized
+    case unsupportedPlatform
+}
+
 /// An object that renders a SpriteKit scene without using a view.
 ///
 /// Use an `SKRenderer` object to render SpriteKit content into a graphics context.
@@ -26,7 +31,7 @@ import JavaScriptKit
 /// renderer.render()
 /// ```
 @MainActor
-open class SKRenderer: @unchecked Sendable {
+open class SKRenderer {
 
     // MARK: - Properties
 
@@ -63,6 +68,9 @@ open class SKRenderer: @unchecked Sendable {
 
     /// A Boolean value that indicates whether quad count should be shown.
     open var showsQuadCount: Bool = false
+
+    /// The most recent synchronous rendering failure, if any.
+    public private(set) var lastRenderError: SKRendererError?
 
     // MARK: - Private Properties
 
@@ -198,7 +206,7 @@ open class SKRenderer: @unchecked Sendable {
     /// Call this method after `update(atTime:)` to render the current frame.
     open func render() {
         guard let scene = scene else { return }
-        rendererDelegate.render(layer: scene.layer)
+        lastRenderError = rendererDelegate.render(layer: scene.layer)
     }
 
     /// Renders the scene into the specified render pass.
@@ -210,7 +218,7 @@ open class SKRenderer: @unchecked Sendable {
     ///   - commandQueue: The command queue.
     open func render(withViewport viewport: CGRect, renderCommandEncoder: Any, renderPassDescriptor: Any, commandQueue: Any) {
         guard let scene = scene else { return }
-        rendererDelegate.render(layer: scene.layer)
+        lastRenderError = rendererDelegate.render(layer: scene.layer)
     }
 
     /// Renders the scene into the specified render pass.
@@ -221,7 +229,7 @@ open class SKRenderer: @unchecked Sendable {
     ///   - renderPassDescriptor: The render pass descriptor.
     open func render(withViewport viewport: CGRect, commandBuffer: Any, renderPassDescriptor: Any) {
         guard let scene = scene else { return }
-        rendererDelegate.render(layer: scene.layer)
+        lastRenderError = rendererDelegate.render(layer: scene.layer)
     }
 
     /// Renders the scene to a CGImage.
@@ -236,20 +244,20 @@ open class SKRenderer: @unchecked Sendable {
 
         let bytesPerPixel = 4
         let bytesPerRow = width * bytesPerPixel
-        var pixelData = [UInt8](repeating: 0, count: bytesPerRow * height)
+        var pixelData = Data(count: bytesPerRow * height)
 
-        guard let colorSpace = .deviceRGB as CGColorSpace?,
-              let context = CGContext(
-                  data: &pixelData,
-                  width: width,
-                  height: height,
-                  bitsPerComponent: 8,
-                  bytesPerRow: bytesPerRow,
-                  space: colorSpace,
-                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-              ) else {
-            return nil
-        }
+        return pixelData.withUnsafeMutableBytes { buffer -> CGImage? in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: .deviceRGB,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            ) else {
+                return nil
+            }
 
         // Clear context with scene background color
         let bgColor = scene.backgroundColor.cgColor
@@ -281,7 +289,8 @@ open class SKRenderer: @unchecked Sendable {
             renderNodeWithTransform(item, to: context)
         }
 
-        return context.makeImage()
+            return context.makeImage()
+        }
     }
 
     /// Information needed to render a node with proper z-ordering.
@@ -439,21 +448,7 @@ open class SKRenderer: @unchecked Sendable {
 
     /// Renders a label node to the context.
     private func renderLabelNode(_ label: SKLabelNode, to context: CGContext) {
-        guard let text = label.text, !text.isEmpty else { return }
-
-        // Simple text rendering - in a full implementation this would use
-        // CoreText or similar for proper font rendering
-        context.saveGState()
-
-        // Flip for text rendering (CGContext has inverted Y for text)
-        context.scaleBy(x: 1, y: -1)
-
-        _ = label.fontSize
-        context.setFillColor(label.fontColor?.cgColor ?? CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-
-        // Note: Text positioning and actual rendering is handled by WebGPU renderer
-
-        context.restoreGState()
+        SKSoftwareLabelRenderer.render(label, to: context)
     }
 
     // MARK: - Cleanup

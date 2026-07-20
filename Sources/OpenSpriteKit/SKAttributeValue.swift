@@ -31,7 +31,7 @@ import simd
 /// sprite2.setValue(SKAttributeValue(vectorFloat2: vector_float2(200, 50)),
 ///                  forAttribute: "a_size")
 /// ```
-open class SKAttributeValue: @unchecked Sendable {
+open class SKAttributeValue {
 
     // MARK: - Properties
 
