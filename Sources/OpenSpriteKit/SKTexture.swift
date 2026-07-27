@@ -14,8 +14,8 @@ internal final class SKTextureCache: Sendable {
     /// Shared instance of the texture cache.
     static let shared = SKTextureCache()
 
-    private struct State {
-        var cache: [String: CGImage] = [:]
+    private struct State: Sendable {
+        var cache: [String: SKRegisteredImage] = [:]
         var accessOrder: [String] = []
         var maxEntries: Int?
 
@@ -39,17 +39,20 @@ internal final class SKTextureCache: Sendable {
 
     /// Returns a cached decoded image for the given name, or creates and caches one.
     func image(forName name: String, create: () -> CGImage?) -> CGImage? {
-        if let cached = state.withLock({ state -> CGImage? in
+        if let cached = state.withLock({ state -> SKRegisteredImage? in
             guard let cached = state.cache[name] else { return nil }
             state.touch(name)
             return cached
         }) {
-            return cached
+            return cached.makeImage()
         }
 
-        guard let created = create() else { return nil }
+        guard let createdImage = create(),
+              let created = SKRegisteredImage(createdImage) else {
+            return nil
+        }
 
-        return state.withLock { state in
+        let cached = state.withLock { state in
             if let cached = state.cache[name] {
                 state.touch(name)
                 return cached
@@ -59,6 +62,7 @@ internal final class SKTextureCache: Sendable {
             state.evictIfNeeded()
             return created
         }
+        return cached.makeImage()
     }
 
     /// Removes a texture from the cache.

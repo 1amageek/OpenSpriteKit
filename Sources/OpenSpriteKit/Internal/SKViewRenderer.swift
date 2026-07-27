@@ -88,7 +88,12 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
 
         // Create display link with self as delegate
         displayLink = CADisplayLink(target: self, selector: Selector(("displayLinkDidFire:")))
-        displayLink?.preferredFramesPerSecond = view?.preferredFramesPerSecond ?? 60
+        let frameRate = Float(max(view?.preferredFramesPerSecond ?? 60, 1))
+        displayLink?.preferredFrameRateRange = CAFrameRateRange(
+            minimum: frameRate,
+            maximum: frameRate,
+            preferred: frameRate
+        )
         displayLink?.add(to: .main, forMode: .default)
     }
 
@@ -131,13 +136,8 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
 
     /// Renders both scenes during a transition.
     private func renderTransition(currentTime: TimeInterval) {
-        // Render both scenes during transition via the delegate
-        if let transitionFromScene = SKTransitionManager.shared.fromScene {
-            handleRenderingError(rendererDelegate.render(layer: transitionFromScene.layer))
-        }
-        if let transitionToScene = SKTransitionManager.shared.toScene {
-            handleRenderingError(rendererDelegate.render(layer: transitionToScene.layer))
-        }
+        guard let transitionLayer = SKTransitionManager.shared.renderLayer else { return }
+        handleRenderingError(rendererDelegate.render(layer: transitionLayer))
     }
 
     // MARK: - Frame Cycle

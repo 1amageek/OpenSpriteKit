@@ -29,10 +29,10 @@ internal final class SKResourceLoader: Sendable {
 
     // MARK: - Properties
 
-    private struct State {
+    private struct State: Sendable {
         var imageRegistry: [String: Data] = [:]
-        var cgImageRegistry: [String: CGImage] = [:]
-        var atlasRegistry: [String: AtlasData] = [:]
+        var cgImageRegistry: [String: SKRegisteredImage] = [:]
+        var atlasRegistry: [String: RegisteredAtlas] = [:]
         var actionRegistry: [String: Data] = [:]
         var sceneRegistry: [String: Data] = [:]
         var shaderRegistry: [String: String] = [:]
@@ -53,11 +53,29 @@ internal final class SKResourceLoader: Sendable {
         }
     }
 
+    private struct RegisteredAtlas: Sendable {
+        let image: SKRegisteredImage
+        let frames: [String: CGRect]
+
+        init?(_ atlas: AtlasData) {
+            guard let image = SKRegisteredImage(atlas.image) else { return nil }
+            self.image = image
+            self.frames = atlas.frames
+        }
+
+        func makeAtlasData() -> AtlasData? {
+            guard let image = image.makeImage() else { return nil }
+            return AtlasData(image: image, frames: frames)
+        }
+    }
+
     // MARK: - Initialization
 
     private init() {}
 
-    private func withLock<T>(_ body: (inout sending State) throws -> sending T) rethrows -> sending T {
+    private func withLock<T: Sendable>(
+        _ body: (inout sending State) throws -> sending T
+    ) rethrows -> sending T {
         try state.withLock(body)
     }
 
@@ -153,6 +171,10 @@ internal final class SKResourceLoader: Sendable {
     ///   - image: The CGImage to register.
     ///   - name: The name to associate with the image.
     func registerImage(_ image: CGImage, forName name: String) {
+        guard let image = SKRegisteredImage(image) else {
+            SKDiagnostics.logWarning("Unable to register image without owned pixel data: \(name)")
+            return
+        }
         withLock { state in
             state.cgImageRegistry[name] = image
         }
@@ -163,7 +185,7 @@ internal final class SKResourceLoader: Sendable {
     /// - Parameter name: The name of the registered image.
     /// - Returns: The CGImage, or nil if not found.
     func image(forName name: String) -> CGImage? {
-        let resource = withLock { state -> (CGImage?, Data?) in
+        let resource = withLock { state -> (SKRegisteredImage?, Data?) in
             if let image = state.cgImageRegistry[name] {
                 return (image, nil)
             }
@@ -178,7 +200,7 @@ internal final class SKResourceLoader: Sendable {
             }
             return (nil, nil)
         }
-        if let image = resource.0 { return image }
+        if let image = resource.0 { return image.makeImage() }
         return resource.1.flatMap(decodeImage)
     }
 
@@ -221,6 +243,10 @@ internal final class SKResourceLoader: Sendable {
     ///   - atlas: The atlas data containing the image and frame definitions.
     ///   - name: The name to associate with the atlas.
     func registerAtlas(_ atlas: AtlasData, forName name: String) {
+        guard let atlas = RegisteredAtlas(atlas) else {
+            SKDiagnostics.logWarning("Unable to register atlas without owned pixel data: \(name)")
+            return
+        }
         withLock { state in
             state.atlasRegistry[name] = atlas
         }
@@ -235,9 +261,7 @@ internal final class SKResourceLoader: Sendable {
     func registerAtlas(imageData: Data, frames: [String: CGRect], forName name: String) {
         if let image = decodeImage(from: imageData) {
             let atlas = AtlasData(image: image, frames: frames)
-            withLock { state in
-                state.atlasRegistry[name] = atlas
-            }
+            registerAtlas(atlas, forName: name)
         }
     }
 
@@ -246,9 +270,10 @@ internal final class SKResourceLoader: Sendable {
     /// - Parameter name: The name of the registered atlas.
     /// - Returns: The atlas data, or nil if not found.
     func atlas(forName name: String) -> AtlasData? {
-        withLock { state in
+        let atlas = withLock { state in
             state.atlasRegistry[name] ?? state.atlasRegistry["\(name).atlas"]
         }
+        return atlas?.makeAtlasData()
     }
 
     // MARK: - Action Registration
@@ -385,8 +410,11 @@ internal final class SKResourceLoader: Sendable {
         guard let image = decodeImage(from: response) else {
             throw SKResourceError.decodingFailed
         }
+        guard let registeredImage = SKRegisteredImage(image) else {
+            throw SKResourceError.decodingFailed
+        }
         withLock { state in
-            state.cgImageRegistry[name] = image
+            state.cgImageRegistry[name] = registeredImage
         }
         return image
     }

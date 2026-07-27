@@ -15,7 +15,7 @@ import Foundation
 open class SKEffectNode: SKNode, SKWarpable {
 
     /// Shared Core Image context to avoid per-frame allocations.
-    private static let sharedCIContext = CIContext(options: nil)
+    @MainActor private static let sharedCIContext = CIContext(options: nil)
 
     // MARK: - Filter Properties
 
@@ -126,6 +126,7 @@ open class SKEffectNode: SKNode, SKWarpable {
     ///
     /// - Parameter inputImage: The image to filter.
     /// - Returns: The filtered image, or the input image if no filter is applied.
+    @MainActor
     internal func applyFilter(to inputImage: CGImage) -> CGImage? {
         guard shouldEnableEffects, let ciFilter = filter else {
             return inputImage

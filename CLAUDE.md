@@ -70,40 +70,37 @@ perl -e 'alarm 30; exec @ARGV' -- \
 
 This library targets WASM. Follow these steps to build for WebAssembly:
 
-#### 1. Install Swift 6.3.1+ with swiftly
+#### 1. Install the pinned Swift 6.4 development snapshot with swiftly
 
 ```bash
 # Install swiftly (if not already installed)
 # See: https://www.swift.org/install/
 
-# Install Swift 6.3.1
-swiftly install 6.3.1
+# Install the workspace baseline
+swiftly install swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-17-a
 
 # Select the toolchain
-swiftly use 6.3.1
+swiftly use swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-17-a
 ```
 
 #### 2. Install the WASM SDK
 
-```bash
-Install the matching Swift 6.3.1 WASM SDK using the Swift SDK installation workflow.
-```
+Install the matching `release/6.4.x` WASM SDK from the same snapshot date.
 
 #### 3. Verify SDK installation
 
 ```bash
-swift sdk list
-# Should show: swift-6.3.1-RELEASE_wasm
+TOOLCHAINS=org.swift.64202607171a xcrun swift sdk list
+# Must show: swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-17-a_wasm
 ```
 
 #### 4. Build for WASM
 
 ```bash
 # Standard WASM build
-swift build --swift-sdk swift-6.3.1-RELEASE_wasm
+TOOLCHAINS=org.swift.64202607171a xcrun swift build \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-17-a_wasm
 
-# Embedded Swift mode (smaller binaries)
-swift build --swift-sdk swift-6.3.1-RELEASE_wasm-embedded
 ```
 
 **Reference**: https://www.swift.org/documentation/articles/wasm-getting-started.html
@@ -116,7 +113,7 @@ This library provides standalone implementations of SpriteKit types for WASM env
 
 ```swift
 // Example: SKNode API (Pure Swift, no NSObject)
-open class SKNode: @unchecked Sendable {
+open class SKNode {
     public var position: CGPoint
     public var zPosition: CGFloat
     public var xScale: CGFloat
@@ -501,7 +498,7 @@ scene.addChild(sprite)
 
 ## Protocol Conformances
 
-- **Node classes**: Pure Swift classes with `@unchecked Sendable`, no NSObject/NSCopying/NSSecureCoding
+- **Node classes**: Pure Swift classes isolated to their owning executor; use `Mutex<State>` for genuinely shared mutable state
 - **Value types**: Should conform to `Sendable`, `Hashable`, `Equatable`, `Codable`
 - **Copying**: Use `func copy() -> Self` method instead of `NSCopying`
 - **Serialization**: Use `Codable` or `SKSParser` instead of `NSSecureCoding`
@@ -533,7 +530,7 @@ scene.addChild(sprite)
 
 ```swift
 // ✅ CORRECT - Pure Swift
-open class SKNode: @unchecked Sendable {
+open class SKNode {
     public init() {}
 
     open var userData: [String: Any]?

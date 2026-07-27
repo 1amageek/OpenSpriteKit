@@ -22,6 +22,7 @@
 /// - On WASM: `SKWebGPUSceneRenderer` provides the WebGPU implementation
 /// - For native tests: `SKNullSceneRenderer` reports unsupported GPU rendering
 ///
+@MainActor
 internal protocol SKSceneRendererDelegate: AnyObject {
 
     // MARK: - Initialization
@@ -32,7 +33,7 @@ internal protocol SKSceneRendererDelegate: AnyObject {
     /// the rendering context. It must be called before any rendering operations.
     ///
     /// - Throws: An error if initialization fails (e.g., WebGPU not available).
-    @MainActor func initialize() async throws
+    func initialize() async throws
 
     // MARK: - Rendering
 

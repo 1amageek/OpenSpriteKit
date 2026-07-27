@@ -8,7 +8,7 @@ OpenSpriteKit enables cross-platform Swift applications to use SpriteKit APIs in
 
 ## Requirements
 
-- Swift 6.3.1+
+- Swift 6.4 development snapshot or newer
 - For native platforms: macOS 15+, iOS 18+, tvOS 18+, watchOS 11+, visionOS 2+
 - For WASM: SwiftWasm toolchain
 
@@ -20,7 +20,7 @@ Add OpenSpriteKit to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/aspect-team/OpenSpriteKit.git", from: "1.0.0")
+    .package(url: "https://github.com/1amageek/OpenSpriteKit.git", from: "1.0.0")
 ]
 ```
 
@@ -58,11 +58,13 @@ SpriteKit feature. The current verified baseline is:
 
 | Evidence | Result |
 |---|---|
-| Native package | 456 tests passed |
+| Native package | 460 tests passed |
+| Swift 6.4 WASM build | `OpenSpriteKit` target compiled successfully |
 | Package browser smoke | Scene, action, rendering, and pixel assertions passed |
 | `megaman` release-WASM E2E | 33 automated scenarios passed; 1 capture-only scenario is intentionally skipped |
 
-The node tree, CALayer-backed 2D rendering, actions, reparenting, common
+The node tree, CALayer-backed 2D rendering, single-pass scene transition
+composition, actions, reparenting, common
 physics/input paths, texture-backed velocity fields, browser/native audio
 control, and game-scene execution are active. The software CGImage path renders
 sprites, shapes, and deterministic bitmap labels. Known gaps include a
@@ -162,8 +164,9 @@ perl -e 'alarm 30; exec @ARGV' -- \
   xcodebuild test -scheme OpenSpriteKit -destination 'platform=macOS' \
   -only-testing:OpenSpriteKitTests
 
-# Build for WASM
-swift build --swift-sdk swift-6.3.1-RELEASE_wasm
+# Build for WASM with the pinned Swift 6.4 toolchain and matching SDK
+TOOLCHAINS=org.swift.64202607171a xcrun swift build \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-17-a_wasm
 ```
 
 ## End-to-End Tests

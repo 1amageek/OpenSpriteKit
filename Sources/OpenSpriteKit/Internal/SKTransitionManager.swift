@@ -14,13 +14,19 @@ internal final class SKTransitionManager {
 
     static let shared = SKTransitionManager()
 
-    private init() {}
+    internal init() {}
 
     // MARK: - Transition State
 
     private var isTransitioning: Bool = false
     private var startTime: TimeInterval = 0
     private var currentTransition: SKTransition?
+    private var compositionLayer: CALayer?
+    private var fadeLayer: CALayer?
+    private var fromSceneState: SceneState?
+    private var toSceneState: SceneState?
+
+    var renderLayer: CALayer? { compositionLayer }
 
     /// The scene being transitioned from (accessible during transitions).
     private(set) var fromScene: SKScene?
@@ -48,6 +54,8 @@ internal final class SKTransitionManager {
         self.toScene = toScene
         self.view = view
         self.startTime = CACurrentMediaTime()
+        self.fromSceneState = SceneState(scene: fromScene)
+        self.toSceneState = SceneState(scene: toScene)
 
         // Pause scenes according to transition settings
         if transition.pausesOutgoingScene {
@@ -68,8 +76,12 @@ internal final class SKTransitionManager {
 
         toScene.didMove(to: view)
 
-        // Set initial state for the incoming scene
-        setupInitialState(for: transition, toScene: toScene)
+        configureCompositionLayer(
+            for: transition,
+            fromScene: fromScene,
+            toScene: toScene
+        )
+        setupInitialState(for: transition, fromScene: fromScene, toScene: toScene)
     }
 
     /// Called each frame during a transition.
@@ -86,7 +98,12 @@ internal final class SKTransitionManager {
         }
 
         let elapsed = currentTime - startTime
-        let progress = min(Float(elapsed / transition.duration), 1.0)
+        let progress: Float
+        if transition.duration <= 0 {
+            progress = 1
+        } else {
+            progress = min(max(Float(elapsed / transition.duration), 0), 1)
+        }
 
         // Apply timing function
         let easedProgress = applyEasing(progress)
@@ -105,14 +122,24 @@ internal final class SKTransitionManager {
 
     // MARK: - Transition Helpers
 
-    private func setupInitialState(for transition: SKTransition, toScene: SKScene) {
+    private func setupInitialState(
+        for transition: SKTransition,
+        fromScene: SKScene,
+        toScene: SKScene
+    ) {
         let type = transition.transitionType
+        guard let fromState = fromSceneState, let toState = toSceneState else { return }
 
         switch type {
         case .crossFade:
             toScene.alpha = 0
 
-        case .fade, .fadeIn:
+        case .fade:
+            fromScene.alpha = fromState.alpha
+            toScene.alpha = 0
+            fadeLayer?.opacity = 0
+
+        case .fadeIn:
             toScene.alpha = 0
 
         case .fadeOut:
@@ -121,15 +148,15 @@ internal final class SKTransitionManager {
 
         case .moveIn(let direction):
             let offset = offsetForDirection(direction, size: toScene.size)
-            toScene.position = offset
+            toScene.position = toState.position + offset
 
         case .push(let direction):
             let offset = offsetForDirection(direction, size: toScene.size)
-            toScene.position = offset
+            toScene.position = toState.position + offset
 
         case .reveal(_):
             // Outgoing scene moves to reveal incoming scene underneath
-            toScene.zPosition = -1
+            toScene.zPosition = min(fromState.zPosition, toState.zPosition) - 1
 
         case .flip(_):
             preconditionFailure("Unavailable flip transition reached the renderer")
@@ -154,58 +181,59 @@ internal final class SKTransitionManager {
     private func updateTransition(_ transition: SKTransition, fromScene: SKScene, toScene: SKScene, progress: Float) {
         let type = transition.transitionType
         let p = CGFloat(progress)
+        guard let fromState = fromSceneState, let toState = toSceneState else { return }
 
         switch type {
         case .crossFade:
-            fromScene.alpha = 1 - p
-            toScene.alpha = p
+            fromScene.alpha = fromState.alpha * (1 - p)
+            toScene.alpha = toState.alpha * p
 
-        case .fade(_):
-            // First half: fade out to color
-            // Second half: fade in from color
+        case .fade:
             if progress < 0.5 {
                 let fadeOut = CGFloat(progress * 2)
-                fromScene.alpha = 1 - fadeOut
+                fromScene.alpha = fromState.alpha
                 toScene.alpha = 0
+                fadeLayer?.opacity = Float(fadeOut)
             } else {
                 let fadeIn = CGFloat((progress - 0.5) * 2)
                 fromScene.alpha = 0
-                toScene.alpha = fadeIn
+                toScene.alpha = toState.alpha
+                fadeLayer?.opacity = Float(1 - fadeIn)
             }
 
         case .fadeIn:
-            toScene.alpha = p
+            toScene.alpha = toState.alpha * p
 
         case .fadeOut:
-            fromScene.alpha = 1 - p
+            fromScene.alpha = fromState.alpha * (1 - p)
             if progress >= 0.5 {
-                toScene.alpha = 1
+                toScene.alpha = toState.alpha
             }
 
         case .moveIn(let direction):
             let fullOffset = offsetForDirection(direction, size: toScene.size)
             toScene.position = CGPoint(
-                x: fullOffset.x * (1 - p),
-                y: fullOffset.y * (1 - p)
+                x: toState.position.x + fullOffset.x * (1 - p),
+                y: toState.position.y + fullOffset.y * (1 - p)
             )
 
         case .push(let direction):
             let fullOffset = offsetForDirection(direction, size: toScene.size)
             toScene.position = CGPoint(
-                x: fullOffset.x * (1 - p),
-                y: fullOffset.y * (1 - p)
+                x: toState.position.x + fullOffset.x * (1 - p),
+                y: toState.position.y + fullOffset.y * (1 - p)
             )
             let outOffset = offsetForDirection(oppositeDirection(direction), size: fromScene.size)
             fromScene.position = CGPoint(
-                x: outOffset.x * p,
-                y: outOffset.y * p
+                x: fromState.position.x + outOffset.x * p,
+                y: fromState.position.y + outOffset.y * p
             )
 
         case .reveal(let direction):
             let outOffset = offsetForDirection(direction, size: fromScene.size)
             fromScene.position = CGPoint(
-                x: outOffset.x * p,
-                y: outOffset.y * p
+                x: fromState.position.x + outOffset.x * p,
+                y: fromState.position.y + outOffset.y * p
             )
 
         case .flip(_):
@@ -224,7 +252,7 @@ internal final class SKTransitionManager {
             preconditionFailure("Unavailable Core Image transition reached the renderer")
 
         case .none:
-            toScene.alpha = 1
+            toScene.alpha = toState.alpha
         }
     }
 
@@ -233,16 +261,16 @@ internal final class SKTransitionManager {
         fromScene.willMove(from: view)
         fromScene._removeAllActionsRecursivelyForCleanup()
         fromScene._view = nil
-        fromScene.position = .zero
-        fromScene.alpha = 1
+        fromScene.layer.removeFromSuperlayer()
+        toScene.layer.removeFromSuperlayer()
+        fadeLayer?.removeFromSuperlayer()
+        fromSceneState?.restore(scene: fromScene)
 
         // Reset physics state for outgoing scene
         SKPhysicsEngine.shared.reset(for: fromScene)
 
         // Restore incoming scene state
-        toScene.position = .zero
-        toScene.alpha = 1
-        toScene.zPosition = 0
+        toSceneState?.restore(scene: toScene)
 
         // Reset physics state for incoming scene (clear any stale contact data)
         SKPhysicsEngine.shared.reset(for: toScene)
@@ -257,6 +285,10 @@ internal final class SKTransitionManager {
         // Reset state
         isTransitioning = false
         currentTransition = nil
+        compositionLayer = nil
+        fadeLayer = nil
+        fromSceneState = nil
+        toSceneState = nil
         self.fromScene = nil
         self.toScene = nil
         self.view = nil
@@ -294,5 +326,69 @@ internal final class SKTransitionManager {
             let f = (2 * t - 2)
             return 0.5 * f * f * f + 1
         }
+    }
+
+    private func configureCompositionLayer(
+        for transition: SKTransition,
+        fromScene: SKScene,
+        toScene: SKScene
+    ) {
+        let size = CGSize(
+            width: max(fromScene.size.width, toScene.size.width),
+            height: max(fromScene.size.height, toScene.size.height)
+        )
+        let composition = CALayer()
+        composition.anchorPoint = .zero
+        composition.bounds = CGRect(origin: .zero, size: size)
+
+        switch transition.transitionType {
+        case .reveal, .doorsOpen, .doorway:
+            composition.addSublayer(toScene.layer)
+            composition.addSublayer(fromScene.layer)
+        default:
+            composition.addSublayer(fromScene.layer)
+            composition.addSublayer(toScene.layer)
+        }
+
+        if case let .fade(color) = transition.transitionType {
+            let overlay = CALayer()
+            overlay.anchorPoint = .zero
+            overlay.bounds = composition.bounds
+            overlay.backgroundColor = color.cgColor
+            overlay.opacity = 0
+            composition.addSublayer(overlay)
+            fadeLayer = overlay
+        }
+        compositionLayer = composition
+    }
+
+    private struct SceneState {
+        let position: CGPoint
+        let alpha: CGFloat
+        let zPosition: CGFloat
+        let xScale: CGFloat
+        let yScale: CGFloat
+
+        init(scene: SKScene) {
+            position = scene.position
+            alpha = scene.alpha
+            zPosition = scene.zPosition
+            xScale = scene.xScale
+            yScale = scene.yScale
+        }
+
+        func restore(scene: SKScene) {
+            scene.position = position
+            scene.alpha = alpha
+            scene.zPosition = zPosition
+            scene.xScale = xScale
+            scene.yScale = yScale
+        }
+    }
+}
+
+private extension CGPoint {
+    static func + (lhs: CGPoint, rhs: CGPoint) -> CGPoint {
+        CGPoint(x: lhs.x + rhs.x, y: lhs.y + rhs.y)
     }
 }
