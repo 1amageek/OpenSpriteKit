@@ -146,6 +146,7 @@ This library depends on:
 - **OpenCoreImage** for types like:
   - `CIImage`, `CIFilter`, `CIContext`
   - Filter effects and image processing
+- **OpenFoundation** for the shared Foundation-compatible value boundary
 
 ### DO NOT add imports in source files
 
@@ -512,7 +513,12 @@ scene.addChild(sprite)
 
 ### Pure Swift Implementation (No Objective-C Dependencies)
 
-**This library is WASM-only. All Objective-C/Foundation dependencies must be eliminated.**
+**This library is WASM-only. Objective-C runtime dependencies and direct system-Foundation selection must be eliminated.**
+
+Foundation-compatible values enter through `OpenFoundation`. Named resource and URL
+I/O enters through `SKResourceProviding`, and property-list decoding enters through
+`SKPropertyListDecoding`. Domain types must not call `Bundle`, `Data(contentsOf:)`,
+or `PropertyListSerialization` directly.
 
 #### Prohibited Types and Patterns
 
@@ -716,10 +722,10 @@ import WASILibc
 #endif
 ```
 
-Math functions like `sin()`, `cos()`, etc. are already available through Foundation, which is re-exported from `OpenSpriteKit.swift`. Just use them directly without any module prefix.
+Math functions like `sin()`, `cos()`, etc. are available through OpenFoundation, which is re-exported from `OpenSpriteKit.swift`. Use them directly without a module prefix.
 
 ```swift
-// ✅ CORRECT - Foundation provides math functions
+// ✅ CORRECT - OpenFoundation provides the shared math surface
 let angle = sin(Double(zRotation))
 let cosAngle = cos(Double(zRotation))
 ```

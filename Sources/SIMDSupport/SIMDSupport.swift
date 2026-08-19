@@ -6,7 +6,7 @@
 #if canImport(simd)
 @_exported import simd
 #else
-import Foundation
+import OpenFoundation
 
 // MARK: - Vector Type Aliases
 

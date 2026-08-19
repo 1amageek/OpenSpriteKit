@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 import Synchronization
 
 /// Manages the execution of SKActions on nodes.

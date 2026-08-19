@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// A node that's defined in an archived `.sks` file.
 ///
@@ -132,7 +132,7 @@ open class SKReferenceNode: SKNode {
     private func loadNode(from url: URL) -> SKNode? {
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try SKResourceLoader.shared.data(contentsOf: url)
         } catch {
             SKDiagnostics.logWarning("Failed to load reference node data from \(url): \(error)")
             return nil
@@ -145,24 +145,10 @@ open class SKReferenceNode: SKNode {
     /// - Parameter filename: The name of the archived file.
     /// - Returns: The loaded node, or nil if loading failed.
     private func loadNode(named filename: String) -> SKNode? {
-        // Try with and without extension
-        let nameWithoutExtension = (filename as NSString).deletingPathExtension
-        let fileExtension = (filename as NSString).pathExtension
-
-        var url: URL?
-
-        if !fileExtension.isEmpty {
-            url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: fileExtension)
-        } else {
-            // Try .sks extension by default
-            url = Bundle.main.url(forResource: filename, withExtension: "sks")
-        }
-
-        guard let fileURL = url else {
+        guard let data = SKResourceLoader.shared.sceneData(forName: filename) else {
             return nil
         }
-
-        return loadNode(from: fileURL)
+        return unarchiveNode(from: data)
     }
 
     /// Unarchives a node from data using SKSParser.

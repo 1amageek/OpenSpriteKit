@@ -6,7 +6,7 @@
 
 // MARK: - SKTextureCache
 
-import Foundation
+import OpenFoundation
 import Synchronization
 /// Internal texture cache to avoid loading duplicate textures.
 /// Thread-safe through Mutex synchronization.
@@ -152,6 +152,17 @@ open class SKTexture {
     /// Internal storage for the CGImage.
     internal var _cgImage: CGImage?
 
+    /// An immutable Core Image recipe awaiting evaluation by an owning renderer.
+    ///
+    /// Texture objects do not own a `CIContext`; a view or offscreen renderer
+    /// resolves this recipe before submitting the layer tree.
+    internal var _pendingCIImage: CIImage?
+
+    /// A construction failure that cannot be represented by SpriteKit's
+    /// nonfailable texture transformation API. The owning renderer surfaces it
+    /// through `SKRendererError` instead of displaying the unfiltered source.
+    internal var _imagePreparationError: SKRendererError?
+
     /// Reference to parent texture for subtextures created with init(rect:in:).
     /// This ensures the parent stays alive and we can crop from it.
     internal var _parentTexture: SKTexture?
@@ -207,6 +218,52 @@ open class SKTexture {
         }
 
         return _cgImage
+    }
+
+    /// Whether this texture or its parent requires renderer-owned preparation.
+    internal var requiresImagePreparation: Bool {
+        _pendingCIImage != nil || _imagePreparationError != nil || (_parentTexture?.requiresImagePreparation ?? false)
+    }
+
+    /// Resolves a pending Core Image recipe using the context owned by the
+    /// active SpriteKit renderer.
+    @MainActor
+    internal func prepareImage(using renderer: any SKImageRendering) async throws {
+        if let error = _imagePreparationError {
+            throw error
+        }
+
+        if let parent = _parentTexture {
+            try await parent.prepareImage(using: renderer)
+            _cachedCroppedImage = nil
+            guard cgImage() != nil else {
+                throw SKRendererError.imageProcessingFailed("A subtexture could not crop its prepared parent image")
+            }
+            return
+        }
+
+        guard let image = _pendingCIImage else { return }
+        let extent = image.extent
+        guard extent.origin.x.isFinite,
+              extent.origin.y.isFinite,
+              extent.width.isFinite,
+              extent.height.isFinite,
+              extent.width > 0,
+              extent.height > 0 else {
+            throw SKRendererError.imageProcessingFailed("A filtered texture requires a finite, non-empty output extent")
+        }
+
+        do {
+            let renderedImage = try await renderer.render(image, from: extent)
+            _cgImage = renderedImage
+            _size = CGSize(width: renderedImage.width, height: renderedImage.height)
+            _pendingCIImage = nil
+            _imagePreparationError = nil
+        } catch let error as SKRendererError {
+            throw error
+        } catch {
+            throw SKRendererError.imageProcessingFailed(String(describing: error))
+        }
     }
 
     /// Samples this texture as a normal map using SpriteKit texture coordinates.
@@ -453,18 +510,6 @@ open class SKTexture {
         self._parentTexture = texture
     }
 
-    /// Creates a texture from a CIImage.
-    ///
-    /// - Parameter image: The Core Image image to use as the texture source.
-    public init(image: CIImage) {
-        self._size = image.extent.size
-        // Render CIImage to CGImage
-        let context = CIContext()
-        if let cgImage = context.createCGImage(image, from: image.extent) {
-            self._cgImage = cgImage
-        }
-    }
-
     /// Creates a texture with a noise pattern.
     ///
     /// - Parameters:
@@ -559,7 +604,7 @@ open class SKTexture {
                                         octaves: octaves, seed: 2000)
 
                     // Normalize and encode as RGB (normal map format)
-                    let length = Foundation.sqrt(nx * nx + ny * ny + nz * nz)
+                    let length = sqrt(nx * nx + ny * ny + nz * nz)
                     let normalizedX = length > 0 ? nx / length : 0
                     let normalizedY = length > 0 ? ny / length : 0
                     let normalizedZ = length > 0 ? nz / length : 1
@@ -597,10 +642,10 @@ open class SKTexture {
 
     /// 2D noise function using value noise approximation.
     private class func noise2D(x: Double, y: Double) -> Double {
-        let xi = Int(Foundation.floor(x))
-        let yi = Int(Foundation.floor(y))
-        let xf = x - Foundation.floor(x)
-        let yf = y - Foundation.floor(y)
+        let xi = Int(floor(x))
+        let yi = Int(floor(y))
+        let xf = x - floor(x)
+        let yf = y - floor(y)
 
         // Smoothstep interpolation
         let u = xf * xf * (3.0 - 2.0 * xf)
@@ -643,6 +688,8 @@ open class SKTexture {
         textureCopy.filteringMode = filteringMode
         textureCopy.usesMipmaps = usesMipmaps
         textureCopy._cgImage = _cgImage
+        textureCopy._pendingCIImage = _pendingCIImage
+        textureCopy._imagePreparationError = _imagePreparationError
         textureCopy._parentTexture = _parentTexture
         textureCopy._cachedCroppedImage = _cachedCroppedImage
         return textureCopy
@@ -754,28 +801,44 @@ open class SKTexture {
     /// - Parameter filter: The filter to apply.
     /// - Returns: A new texture with the filter applied.
     open func applying(_ filter: CIFilter) -> SKTexture {
-        guard let cgImage = self.cgImage() else {
-            return self.copy()
+        let inputImage: CIImage
+        if let pendingImage = _pendingCIImage {
+            inputImage = pendingImage
+        } else if let cgImage = self.cgImage() {
+            inputImage = CIImage(cgImage: cgImage)
+        } else {
+            let failedTexture = SKTexture()
+            failedTexture._size = _size
+            failedTexture.filteringMode = filteringMode
+            failedTexture.usesMipmaps = usesMipmaps
+            failedTexture._imagePreparationError = .imageProcessingFailed("SKTexture.applying(_:) requires image content")
+            return failedTexture
         }
-
-        // Create CIImage from CGImage
-        let inputImage = CIImage(cgImage: cgImage)
 
         // Apply filter
         filter.setValue(inputImage, forKey: kCIInputImageKey)
 
         guard let outputImage = filter.outputImage else {
-            return self.copy()
+            let failedTexture = SKTexture()
+            failedTexture._size = _size
+            failedTexture.filteringMode = filteringMode
+            failedTexture.usesMipmaps = usesMipmaps
+            failedTexture._imagePreparationError = .imageProcessingFailed("Core Image filter \(filter.name) produced no output image")
+            return failedTexture
         }
 
-        // Render filtered image to CGImage
-        let context = CIContext()
-        guard let filteredCGImage = context.createCGImage(outputImage, from: outputImage.extent) else {
-            return self.copy()
+        // Preserve the lazy Core Image recipe. The view/offscreen renderer that
+        // owns the GPU evaluation context resolves it before drawing.
+        let newTexture = SKTexture()
+        newTexture._pendingCIImage = outputImage
+        if outputImage.extent.width.isFinite,
+           outputImage.extent.height.isFinite,
+           outputImage.extent.width > 0,
+           outputImage.extent.height > 0 {
+            newTexture._size = outputImage.extent.size
+        } else {
+            newTexture._size = _size
         }
-
-        // Create new texture with filtered image
-        let newTexture = SKTexture(cgImage: filteredCGImage)
         newTexture.filteringMode = self.filteringMode
         newTexture.usesMipmaps = self.usesMipmaps
         return newTexture
@@ -822,7 +885,7 @@ open class SKTexture {
     public convenience init?(contentsOf url: URL) {
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try SKResourceLoader.shared.data(contentsOf: url)
         } catch {
             SKDiagnostics.logWarning("Failed to load texture data from \(url): \(error)")
             return nil
@@ -848,7 +911,7 @@ open class SKTexture {
         let data: Data
         do {
             data = try await Task.detached {
-                try Data(contentsOf: url)
+                try SKResourceLoader.shared.data(contentsOf: url)
             }.value
         } catch {
             throw SKResourceError.networkFailed

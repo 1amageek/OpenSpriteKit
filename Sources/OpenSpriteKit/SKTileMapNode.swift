@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 // MARK: - SKTileSetType
 
@@ -317,26 +317,6 @@ open class SKTileSet {
             return
         }
 
-        // Try to load from bundle (native platforms)
-        let nameWithoutExtension = name.hasSuffix(".sks") ? String(name.dropLast(4)) : name
-
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
-            let data: Data
-            do {
-                data = try Data(contentsOf: url)
-            } catch {
-                SKDiagnostics.logWarning("Failed to load tile set data from \(url): \(error)")
-                return nil
-            }
-            if let parsed = Self.parseTileSet(from: data) {
-                self.init(tileGroups: parsed.tileGroups, tileSetType: parsed.type)
-                self.name = parsed.name
-                self.defaultTileSize = parsed.defaultTileSize
-                self.defaultTileGroup = parsed.defaultTileGroup
-                return
-            }
-        }
-
         return nil
     }
 
@@ -346,7 +326,7 @@ open class SKTileSet {
     public convenience init?(from url: URL) {
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try SKResourceLoader.shared.data(contentsOf: url)
         } catch {
             SKDiagnostics.logWarning("Failed to load tile set data from \(url): \(error)")
             return nil
@@ -365,7 +345,7 @@ open class SKTileSet {
         // Parse as property list
         let rawPlist: Any
         do {
-            rawPlist = try PropertyListSerialization.propertyList(from: data, format: nil)
+            rawPlist = try SKPropertyListAccess.decoder.propertyList(from: data)
         } catch {
             SKDiagnostics.logWarning("Failed to parse tile set property list: \(error)")
             return nil

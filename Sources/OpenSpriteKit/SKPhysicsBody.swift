@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// The shape type for a physics body collision shape.
 internal enum SKPhysicsBodyShape {

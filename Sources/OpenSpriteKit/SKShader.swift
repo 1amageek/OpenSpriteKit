@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 #if canImport(simd)
 import simd
 #endif
@@ -67,40 +67,6 @@ open class SKShader {
             return
         }
 
-        // Try to load from bundle (native platforms)
-        let nameWithoutExtension: String
-        let ext: String
-
-        if name.contains(".") {
-            let components = name.split(separator: ".", maxSplits: 1)
-            nameWithoutExtension = String(components[0])
-            ext = components.count > 1 ? String(components[1]) : "fsh"
-        } else {
-            nameWithoutExtension = name
-            ext = "fsh"
-        }
-
-        // Try with specified or default extension
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: ext) {
-            do {
-                self.source = try String(contentsOf: url, encoding: .utf8)
-                return
-            } catch {
-                SKDiagnostics.logWarning("Failed to load shader source from \(url): \(error)")
-            }
-        }
-
-        // Try common shader extensions
-        for shaderExt in ["fsh", "frag", "glsl", "metal"] where shaderExt != ext {
-            if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: shaderExt) {
-                do {
-                    self.source = try String(contentsOf: url, encoding: .utf8)
-                    return
-                } catch {
-                    SKDiagnostics.logWarning("Failed to load shader source from \(url): \(error)")
-                }
-            }
-        }
     }
 
     // MARK: - Copying

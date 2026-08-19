@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// The base class of all SpriteKit nodes.
 ///
@@ -64,6 +64,7 @@ open class SKNode {
     open var position: CGPoint = .zero {
         didSet {
             layer.position = position
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -74,6 +75,7 @@ open class SKNode {
     open var zPosition: CGFloat = 0.0 {
         didSet {
             layer.zPosition = zPosition
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -83,6 +85,7 @@ open class SKNode {
     open var zRotation: CGFloat = 0.0 {
         didSet {
             updateLayerTransform()
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -92,6 +95,7 @@ open class SKNode {
     open var xScale: CGFloat = 1.0 {
         didSet {
             updateLayerTransform()
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -101,6 +105,7 @@ open class SKNode {
     open var yScale: CGFloat = 1.0 {
         didSet {
             updateLayerTransform()
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -163,6 +168,7 @@ open class SKNode {
     open var alpha: CGFloat = 1.0 {
         didSet {
             layer.opacity = Float(alpha)
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -172,6 +178,7 @@ open class SKNode {
     open var isHidden: Bool = false {
         didSet {
             layer.isHidden = isHidden
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -250,37 +257,13 @@ open class SKNode {
     /// - Parameter filename: The name of the archive file (without the `.sks` extension).
     /// - Returns: A new node loaded from the archive, or `nil` if the file could not be loaded.
     public convenience init?(fileNamed filename: String) {
-        // Try to load from registered scene data first (WASM)
-        if let data = SKResourceLoader.shared.sceneData(forName: filename) {
-            if let node = Self.unarchive(from: data) as? Self {
-                self.init()
-                // Copy properties from loaded node
-                self.copyProperties(from: node)
-                return
-            }
+        guard let data = SKResourceLoader.shared.sceneData(forName: filename),
+              let node = Self.unarchive(from: data) as? Self else {
+            return nil
         }
 
-        // Try to load from bundle (native platforms)
-        let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
-
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
-            let data: Data
-            do {
-                data = try Data(contentsOf: url)
-            } catch {
-                SKDiagnostics.logWarning("Failed to load node data from \(url): \(error)")
-                self.init()
-                return
-            }
-            if let node = Self.unarchive(from: data) as? Self {
-                self.init()
-                self.copyProperties(from: node)
-                return
-            }
-        }
-
-        // Fallback: return empty node
         self.init()
+        self.copyProperties(from: node)
     }
 
     /// Creates a new node by loading an archive file with secure coding.
@@ -289,27 +272,12 @@ open class SKNode {
     ///   - filename: The name of the archive file (without the `.sks` extension).
     ///   - classes: A set of classes that are allowed to be unarchived.
     /// - Throws: An error if the archive could not be loaded.
+    // FIXME(INCOMPLETE_IMPLEMENTATION): The production secure-loading path currently parses SKS data
+    // without enforcing the allowed-class set. Do not claim secure-unarchive parity until archive
+    // class identities are preserved and disallowed classes fail with behavior tests.
     public convenience init(fileNamed filename: String, securelyWithClasses classes: Set<AnyHashable>) throws {
         // Try to load from registered scene data first (WASM)
         if let data = SKResourceLoader.shared.sceneData(forName: filename) {
-            if let node = try Self.unarchiveSecurely(from: data, classes: classes) as? Self {
-                self.init()
-                self.copyProperties(from: node)
-                return
-            }
-        }
-
-        // Try to load from bundle (native platforms)
-        let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
-
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
-            let data: Data
-            do {
-                data = try Data(contentsOf: url)
-            } catch {
-                SKDiagnostics.logWarning("Failed to load node data from \(url): \(error)")
-                throw SKResourceError.notFound
-            }
             if let node = try Self.unarchiveSecurely(from: data, classes: classes) as? Self {
                 self.init()
                 self.copyProperties(from: node)
@@ -487,6 +455,7 @@ open class SKNode {
         // Sync layer hierarchy
         layer.addSublayer(node.layer)
         propagateSceneToChildren(node)
+        invalidateEffectCacheInAncestors()
     }
 
     /// Inserts a node into a specific position in the receiver's list of child nodes.
@@ -508,6 +477,7 @@ open class SKNode {
         // Sync layer hierarchy
         layer.insertSublayer(node.layer, at: UInt32(index))
         propagateSceneToChildren(node)
+        invalidateEffectCacheInAncestors()
     }
 
     /// Removes the receiving node from its parent.
@@ -533,6 +503,19 @@ open class SKNode {
         self.parent = nil
         self.scene = nil
         clearSceneFromChildren()
+        parent.invalidateEffectCacheInAncestors()
+    }
+
+    /// Invalidates every rasterized effect framebuffer that depends on this
+    /// node's visual state.
+    internal func invalidateEffectCacheInAncestors() {
+        var current: SKNode? = self
+        while let node = current {
+            if let effectNode = node as? SKEffectNode {
+                effectNode.invalidateFilterCache()
+            }
+            current = node.parent
+        }
     }
 
     /// Recursively removes all actions from this node and its descendants.
@@ -560,6 +543,7 @@ open class SKNode {
             child.clearSceneFromChildren()
         }
         children.removeAll()
+        invalidateEffectCacheInAncestors()
     }
 
     /// Removes a list of children from the receiving node.

@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// An object that organizes all of the active SpriteKit content.
 ///
@@ -150,19 +150,6 @@ open class SKScene: SKEffectNode {
     /// - Returns: A new scene, or nil if the file could not be loaded.
     public class func scene(fileNamed filename: String) -> Self? {
         if let data = SKResourceLoader.shared.sceneData(forName: filename) {
-            return SKSParser.scene(from: data) as? Self
-        }
-
-        let nameWithoutExtension = filename.hasSuffix(".sks") ? String(filename.dropLast(4)) : filename
-
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
-            let data: Data
-            do {
-                data = try Data(contentsOf: url)
-            } catch {
-                SKDiagnostics.logWarning("Failed to load scene data from \(url): \(error)")
-                return nil
-            }
             return SKSParser.scene(from: data) as? Self
         }
 

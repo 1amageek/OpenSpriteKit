@@ -22,12 +22,15 @@ let package = Package(
         .package(path: "../OpenCoreGraphics"),
         .package(path: "../OpenCoreImage"),
         .package(path: "../OpenCoreAnimation"),
-        .package(path: "../OpenImageIO")
+        .package(path: "../OpenImageIO"),
+        .package(path: "../OpenFoundation")
     ],
     targets: [
         .target(
             name: "SIMDSupport",
-            dependencies: []
+            dependencies: [
+                .product(name: "OpenFoundation", package: "OpenFoundation")
+            ]
         ),
         .target(
             name: "OpenSpriteKit",
@@ -37,6 +40,7 @@ let package = Package(
                 "OpenCoreImage",
                 "OpenCoreAnimation",
                 "OpenImageIO",
+                .product(name: "OpenFoundation", package: "OpenFoundation"),
             ]
         ),
         .testTarget(

@@ -1,4 +1,4 @@
-import Foundation
+import OpenFoundation
 
 internal struct SKRegisteredImage: Sendable {
     let width: Int

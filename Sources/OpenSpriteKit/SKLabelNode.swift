@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// Line break modes for text rendering.
 public enum NSLineBreakMode: Int, Sendable, Hashable {

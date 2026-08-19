@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// Methods that, when implemented, allow any class to participate in the SpriteKit render loop callbacks.
 ///

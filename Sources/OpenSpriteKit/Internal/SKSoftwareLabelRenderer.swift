@@ -1,7 +1,7 @@
 // SKSoftwareLabelRenderer.swift
 // OpenSpriteKit
 
-import Foundation
+import OpenFoundation
 
 /// Deterministic bitmap text renderer used by the CGImage software path.
 /// Browser presentation continues to use CATextLayer and Canvas2D for full font shaping.

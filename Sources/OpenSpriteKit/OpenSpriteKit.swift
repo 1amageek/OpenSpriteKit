@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-@_exported import Foundation
+@_exported import OpenFoundation
 
 // Re-export SIMD types from SIMDSupport module
 @_exported import SIMDSupport

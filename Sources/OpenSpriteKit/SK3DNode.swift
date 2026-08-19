@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 // OpenSpriteKit has no SceneKit-compatible scene, camera, hit-result, or offscreen
 // renderer contract. The type is unavailable until all four are implemented; callers

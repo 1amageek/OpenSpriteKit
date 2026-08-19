@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// A node that determines which portion of the scene is visible in the view.
 ///
@@ -94,8 +94,8 @@ open class SKCameraNode: SKNode {
 
         // If camera is rotated, we need to calculate the bounding box of the rotated rectangle
         if zRotation != 0 {
-            let cos = Foundation.cos(Double(zRotation))
-            let sin = Foundation.sin(Double(zRotation))
+            let cos = cos(Double(zRotation))
+            let sin = sin(Double(zRotation))
 
             // Calculate corners of the unrotated rectangle relative to camera position
             let corners = [

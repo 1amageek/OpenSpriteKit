@@ -5,7 +5,7 @@
 //  Created by 1amageek on 2025/12/22.
 //
 
-import Foundation
+import OpenFoundation
 // MARK: - SKTransition
 
 /// An object used to perform an animated transition to a new scene.

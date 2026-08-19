@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// A mathematical shape that can be stroked or filled.
 ///
@@ -260,8 +260,8 @@ open class SKShapeNode: SKNode {
         }
 
         // With rotation, calculate the bounding box of the rotated rectangle
-        let cosVal = Foundation.cos(Double(zRotation))
-        let sinVal = Foundation.sin(Double(zRotation))
+        let cosVal = cos(Double(zRotation))
+        let sinVal = sin(Double(zRotation))
 
         // Calculate the four corners of the scaled path bounds
         let corners = [
@@ -693,6 +693,12 @@ open class SKShapeNode: SKNode {
 
         // Use layer-based texture tiling
         applyStrokeTextureViaLayer(cgImage)
+    }
+
+    /// Refreshes texture-backed layer state after renderer-owned image preparation.
+    internal func updateTextureLayers() {
+        updateFillWithTexture()
+        updateStrokeWithTexture()
     }
 
     // MARK: - Texture Layer Methods

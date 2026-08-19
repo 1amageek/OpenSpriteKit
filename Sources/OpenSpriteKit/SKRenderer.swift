@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 #if arch(wasm32)
 import JavaScriptKit
 #endif
@@ -12,6 +12,7 @@ import JavaScriptKit
 public enum SKRendererError: Error, Equatable, Sendable {
     case notInitialized
     case unsupportedPlatform
+    case imageProcessingFailed(String)
 }
 
 /// An object that renders a SpriteKit scene without using a view.
@@ -80,6 +81,12 @@ open class SKRenderer {
     /// The internal scene renderer delegate.
     private let rendererDelegate: SKSceneRendererDelegate
 
+    /// Renderer-scoped Core Image preparation and cache owner.
+    private let imageProcessor: SKSceneImageProcessor
+
+    /// An asynchronous preparation/render submission started by `render()`.
+    private var renderTask: Task<Void, Never>?
+
     // MARK: - Initializers
 
     /// Creates a renderer for the specified device.
@@ -87,11 +94,13 @@ open class SKRenderer {
     /// - Parameter device: The GPU device to use for rendering.
     public init(device: Any) {
         self.rendererDelegate = SKNullSceneRenderer()
+        self.imageProcessor = SKSceneImageProcessor(imageRenderer: SKCoreImageRenderer())
     }
 
     /// Creates a new renderer.
     public init() {
         self.rendererDelegate = SKNullSceneRenderer()
+        self.imageProcessor = SKSceneImageProcessor(imageRenderer: SKCoreImageRenderer())
     }
 
     #if arch(wasm32)
@@ -100,6 +109,7 @@ open class SKRenderer {
     /// - Parameter canvas: The JavaScript canvas element to render to.
     public init(canvas: JSObject) {
         self.rendererDelegate = SKWebGPUSceneRenderer(canvas: canvas)
+        self.imageProcessor = SKSceneImageProcessor(imageRenderer: SKCoreImageRenderer())
     }
     #endif
 
@@ -206,7 +216,7 @@ open class SKRenderer {
     /// Call this method after `update(atTime:)` to render the current frame.
     open func render() {
         guard let scene = scene else { return }
-        lastRenderError = rendererDelegate.render(layer: scene.layer)
+        submitRender(of: scene)
     }
 
     /// Renders the scene into the specified render pass.
@@ -218,7 +228,7 @@ open class SKRenderer {
     ///   - commandQueue: The command queue.
     open func render(withViewport viewport: CGRect, renderCommandEncoder: Any, renderPassDescriptor: Any, commandQueue: Any) {
         guard let scene = scene else { return }
-        lastRenderError = rendererDelegate.render(layer: scene.layer)
+        submitRender(of: scene)
     }
 
     /// Renders the scene into the specified render pass.
@@ -229,7 +239,54 @@ open class SKRenderer {
     ///   - renderPassDescriptor: The render pass descriptor.
     open func render(withViewport viewport: CGRect, commandBuffer: Any, renderPassDescriptor: Any) {
         guard let scene = scene else { return }
-        lastRenderError = rendererDelegate.render(layer: scene.layer)
+        submitRender(of: scene)
+    }
+
+    /// Prepares Core Image-backed resources and renders after their asynchronous
+    /// WebGPU work has completed.
+    ///
+    /// This portable operation is the explicit completion/error contract for
+    /// callers that need to know when a filtered frame was actually submitted.
+    open func renderAsync() async throws {
+        guard let scene else { return }
+        renderTask?.cancel()
+        renderTask = nil
+        lastRenderError = nil
+
+        if let error = await imageProcessor.prepareFrameImages(in: scene) {
+            lastRenderError = error
+            throw error
+        }
+        guard !Task.isCancelled else { return }
+
+        if let error = rendererDelegate.render(layer: scene.layer) {
+            lastRenderError = error
+            throw error
+        }
+    }
+
+    private func submitRender(of scene: SKScene) {
+        lastRenderError = nil
+        guard imageProcessor.requiresPreparation(in: scene) else {
+            lastRenderError = rendererDelegate.render(layer: scene.layer)
+            return
+        }
+
+        renderTask?.cancel()
+        renderTask = Task { @MainActor [weak self, weak scene] in
+            guard let self, let scene, self.scene === scene else { return }
+            if let error = await self.imageProcessor.prepareFrameImages(in: scene) {
+                self.lastRenderError = error
+                self.renderTask = nil
+                return
+            }
+            guard !Task.isCancelled, self.scene === scene else {
+                self.renderTask = nil
+                return
+            }
+            self.lastRenderError = self.rendererDelegate.render(layer: scene.layer)
+            self.renderTask = nil
+        }
     }
 
     /// Renders the scene to a CGImage.
@@ -455,7 +512,10 @@ open class SKRenderer {
 
     /// Releases resources held by the renderer.
     open func invalidate() {
+        renderTask?.cancel()
+        renderTask = nil
         scene = nil
         rendererDelegate.invalidate()
+        imageProcessor.clearCaches()
     }
 }

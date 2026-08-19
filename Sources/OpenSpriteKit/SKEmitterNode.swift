@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// A source of various particle effects.
 ///
@@ -53,7 +53,7 @@ open class SKEmitterNode: SKNode {
         emitterCell.alphaSpeed = Float(particleAlphaSpeed)
         emitterCell.alphaRange = Float(particleAlphaRange)
         emitterCell.color = particleColor.cgColor
-        emitterCell.contents = particleTexture?.cgImage
+        emitterCell.contents = particleTexture?.cgImage()
 
         // Set the emitter cell
         emitterLayer.emitterCells = [emitterCell]
@@ -163,7 +163,14 @@ open class SKEmitterNode: SKNode {
     // MARK: - Particle Texture Properties
 
     /// The texture to use to render a particle.
-    open var particleTexture: SKTexture?
+    open var particleTexture: SKTexture? {
+        didSet { updateEmitterTexture() }
+    }
+
+    /// Refreshes the emitter cell after renderer-owned image preparation.
+    internal func updateEmitterTexture() {
+        emitterCell.contents = particleTexture?.cgImage()
+    }
 
     /// The starting size of each particle.
     open var particleSize: CGSize = .zero
@@ -385,20 +392,6 @@ open class SKEmitterNode: SKNode {
             return parseEmitter(from: data)
         }
 
-        // Try to load from bundle (native platforms)
-        let nameWithoutExtension = name.hasSuffix(".sks") ? String(name.dropLast(4)) : name
-
-        if let url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: "sks") {
-            let data: Data
-            do {
-                data = try Data(contentsOf: url)
-            } catch {
-                SKDiagnostics.logWarning("Failed to load emitter data from \(url): \(error)")
-                return nil
-            }
-            return parseEmitter(from: data)
-        }
-
         return nil
     }
 
@@ -426,7 +419,7 @@ open class SKEmitterNode: SKNode {
 
         // Fallback: try to parse directly as a property list
         do {
-            if let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+            if let plist = try SKPropertyListAccess.decoder.propertyList(from: data) as? [String: Any] {
                 return parseEmitterFromPlist(plist)
             }
         } catch {

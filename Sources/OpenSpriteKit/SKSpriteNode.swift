@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// An image or solid color.
 ///
@@ -21,11 +21,14 @@ open class SKSpriteNode: SKNode, SKWarpable {
                 size = texture.size()
             }
             updateLayerContents()
+            invalidateEffectCacheInAncestors()
         }
     }
 
     /// A texture that specifies the normal map for the sprite.
-    open var normalTexture: SKTexture?
+    open var normalTexture: SKTexture? {
+        didSet { invalidateEffectCacheInAncestors() }
+    }
 
     // MARK: - Size and Position Properties
 
@@ -33,6 +36,7 @@ open class SKSpriteNode: SKNode, SKWarpable {
     open var size: CGSize = .zero {
         didSet {
             updateLayerBounds()
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -43,6 +47,7 @@ open class SKSpriteNode: SKNode, SKWarpable {
     open var anchorPoint: CGPoint = CGPoint(x: 0.5, y: 0.5) {
         didSet {
             layer.anchorPoint = anchorPoint
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -53,6 +58,7 @@ open class SKSpriteNode: SKNode, SKWarpable {
     open var centerRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) {
         didSet {
             layer.contentsCenter = centerRect
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -64,20 +70,13 @@ open class SKSpriteNode: SKNode, SKWarpable {
     }
 
     /// Updates the layer's contents based on the texture.
-    private func updateLayerContents() {
+    internal func updateLayerContents() {
         let cgImage = texture?.cgImage()
         layer.contents = cgImage
         // For subtextures, cgImage() returns the cropped image, so use full rect
         // For regular textures, also use full rect
         layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
 
-        // Debug: track if contents are properly set
-        if let tex = texture {
-            let textureSize = tex.size()
-            if cgImage == nil {
-                print("SKSpriteNode: WARNING - texture has nil cgImage, size=\(textureSize)")
-            }
-        }
     }
 
     // MARK: - Color Properties
@@ -86,6 +85,7 @@ open class SKSpriteNode: SKNode, SKWarpable {
     open var color: SKColor = .white {
         didSet {
             updateLayerBackgroundColor()
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -96,6 +96,7 @@ open class SKSpriteNode: SKNode, SKWarpable {
     open var colorBlendFactor: CGFloat = 0.0 {
         didSet {
             updateLayerBackgroundColor()
+            invalidateEffectCacheInAncestors()
         }
     }
 
@@ -112,7 +113,9 @@ open class SKSpriteNode: SKNode, SKWarpable {
     // MARK: - Blending Properties
 
     /// The blend mode used to draw the sprite into the parent's framebuffer.
-    open var blendMode: SKBlendMode = .alpha
+    open var blendMode: SKBlendMode = .alpha {
+        didSet { invalidateEffectCacheInAncestors() }
+    }
 
     // MARK: - Lighting Properties
 
@@ -138,18 +141,26 @@ open class SKSpriteNode: SKNode, SKWarpable {
     // MARK: - Shader Properties
 
     /// A text file that defines code that does custom per-pixel drawing or colorization.
-    open var shader: SKShader?
+    open var shader: SKShader? {
+        didSet { invalidateEffectCacheInAncestors() }
+    }
 
     /// The values of each attribute associated with the node's attached shader.
-    open var attributeValues: [String: SKAttributeValue] = [:]
+    open var attributeValues: [String: SKAttributeValue] = [:] {
+        didSet { invalidateEffectCacheInAncestors() }
+    }
 
     // MARK: - SKWarpable Conformance
 
     /// The warp geometry applied to this node.
-    open var warpGeometry: SKWarpGeometry?
+    open var warpGeometry: SKWarpGeometry? {
+        didSet { invalidateEffectCacheInAncestors() }
+    }
 
     /// The subdivisions used when rendering warped geometry.
-    open var subdivisionLevels: Int = 1
+    open var subdivisionLevels: Int = 1 {
+        didSet { invalidateEffectCacheInAncestors() }
+    }
 
     // MARK: - Computed Properties
 
@@ -171,8 +182,8 @@ open class SKSpriteNode: SKNode, SKWarpable {
         }
 
         // With rotation, calculate the bounding box of the rotated rectangle
-        let cosVal = Foundation.cos(Double(zRotation))
-        let sinVal = Foundation.sin(Double(zRotation))
+        let cosVal = cos(Double(zRotation))
+        let sinVal = sin(Double(zRotation))
 
         // Calculate the four corners relative to anchor point, then rotate
         let corners = [

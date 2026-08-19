@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 public struct SKDiagnosticsSnapshot: Sendable {
     public let nodeCount: Int
@@ -43,7 +43,7 @@ public final class SKDiagnostics {
     public func tick(scene: SKScene) {
         guard isEnabled else { return }
 
-        let now = Date().timeIntervalSinceReferenceDate
+        let now = CACurrentMediaTime()
         if lastLogTime == 0 || now - lastLogTime >= interval {
             lastLogTime = now
             logStats(scene: scene)

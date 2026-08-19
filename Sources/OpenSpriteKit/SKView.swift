@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 import Synchronization
 #if arch(wasm32)
 import JavaScriptKit
@@ -30,6 +30,12 @@ open class SKView: SKViewBase {
 
     /// The internal renderer that manages the render loop.
     private var viewRenderer: SKViewRenderer?
+
+    /// The most recent rendering failure reported by this view's pipeline.
+    ///
+    /// Image-processing failures are surfaced here instead of silently drawing
+    /// an unfiltered source image.
+    public internal(set) var lastRenderError: SKRendererError?
 
     /// A Boolean value that indicates whether the view pauses the scene when the app becomes inactive.
     open var pauseWhenInactive: Bool = true
@@ -231,8 +237,8 @@ open class SKView: SKViewBase {
 
             // Camera rotation
             if camera.zRotation != 0 {
-                let cos = Foundation.cos(Double(-camera.zRotation))
-                let sin = Foundation.sin(Double(-camera.zRotation))
+                let cos = cos(Double(-camera.zRotation))
+                let sin = sin(Double(-camera.zRotation))
                 let dx = scenePoint.x - camera.position.x
                 let dy = scenePoint.y - camera.position.y
                 scenePoint.x = CGFloat(Double(dx) * cos - Double(dy) * sin) + camera.position.x
@@ -262,8 +268,8 @@ open class SKView: SKViewBase {
         if let camera = scene.camera {
             // Camera rotation (inverse)
             if camera.zRotation != 0 {
-                let cos = Foundation.cos(Double(camera.zRotation))
-                let sin = Foundation.sin(Double(camera.zRotation))
+                let cos = cos(Double(camera.zRotation))
+                let sin = sin(Double(camera.zRotation))
                 let dx = scenePoint.x - camera.position.x
                 let dy = scenePoint.y - camera.position.y
                 scenePoint.x = CGFloat(Double(dx) * cos - Double(dy) * sin) + camera.position.x

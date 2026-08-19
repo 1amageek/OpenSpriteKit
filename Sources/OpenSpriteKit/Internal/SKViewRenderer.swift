@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 #if arch(wasm32)
 import JavaScriptKit
@@ -25,20 +25,27 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
     private weak var view: SKView?
     private var lastUpdateTime: TimeInterval = 0
     private var isRunning: Bool = false
+    private var frameTask: Task<Void, Never>?
 
     /// The internal scene renderer delegate.
     /// Starts with null renderer and is replaced with the appropriate implementation in start().
     private var rendererDelegate: SKSceneRendererDelegate
 
+    /// Renderer-scoped Core Image preparation and cache owner.
+    private let imageProcessor: SKSceneImageProcessor
+
     // MARK: - Initialization
 
-    init() {
+    init(imageRenderer: any SKImageRendering = SKCoreImageRenderer()) {
         self.rendererDelegate = SKNullSceneRenderer()
+        self.imageProcessor = SKSceneImageProcessor(imageRenderer: imageRenderer)
     }
 
     isolated deinit {
         // Directly clean up resources without calling MainActor-isolated methods
         isRunning = false
+        frameTask?.cancel()
+        frameTask = nil
         displayLink?.invalidate()
         displayLink = nil
     }
@@ -74,9 +81,12 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
     /// Stops the render loop and releases resources.
     func stop() {
         isRunning = false
+        frameTask?.cancel()
+        frameTask = nil
         displayLink?.invalidate()
         displayLink = nil
         rendererDelegate.invalidate()
+        imageProcessor.clearCaches()
     }
 
     // MARK: - Display Link
@@ -104,6 +114,7 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         MainActor.assumeIsolated {
             guard isRunning else { return }
             guard let view = view else { return }
+            guard frameTask == nil else { return }
 
             // Check pause state
             if view.isPaused { return }
@@ -111,26 +122,46 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
             let currentTime = displayLink.timestamp
             let deltaTime = lastUpdateTime > 0 ? currentTime - lastUpdateTime : 0
             lastUpdateTime = currentTime
-
-            // Update transition if one is in progress
-            let isTransitioning = SKTransitionManager.shared.update(currentTime: currentTime)
-
-            guard let scene = view.scene else { return }
-
-            #if arch(wasm32)
-            SKDiagnostics.shared.tick(scene: scene)
-            #endif
-
-            // Execute the frame cycle (scene may be different during transition)
-            executeFrameCycle(scene: scene, currentTime: currentTime, deltaTime: deltaTime)
-
-            // Render the scene (and transition if in progress)
-            if isTransitioning {
-                // During transition, render both scenes
-                renderTransition(currentTime: currentTime)
-            } else {
-                renderScene(scene)
+            frameTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.renderFrame(currentTime: currentTime, deltaTime: deltaTime)
+                self.frameTask = nil
             }
+        }
+    }
+
+    /// Executes one complete frame after all asynchronous image resources have
+    /// reached a success or explicit failure state.
+    private func renderFrame(currentTime: TimeInterval, deltaTime: TimeInterval) async {
+        guard isRunning, !Task.isCancelled, let view, let scene = view.scene else { return }
+        view.lastRenderError = nil
+
+        // Resolve recipes already attached to fields and nodes before physics
+        // or user callbacks can sample those textures.
+        if let error = await imageProcessor.prepareTextureImages(in: scene) {
+            view.lastRenderError = error
+        }
+        guard isRunning, !Task.isCancelled else { return }
+
+        let isTransitioning = SKTransitionManager.shared.update(currentTime: currentTime)
+
+        #if arch(wasm32)
+        SKDiagnostics.shared.tick(scene: scene)
+        #endif
+
+        await executeFrameCycle(scene: scene, currentTime: currentTime, deltaTime: deltaTime)
+        guard isRunning, !Task.isCancelled else { return }
+
+        // User callbacks and actions may have replaced filters or textures.
+        if let error = await imageProcessor.prepareFrameImages(in: scene) {
+            view.lastRenderError = error
+        }
+        guard isRunning, !Task.isCancelled else { return }
+
+        if isTransitioning {
+            renderTransition(currentTime: currentTime)
+        } else {
+            renderScene(scene)
         }
     }
 
@@ -157,7 +188,7 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
     ///
     /// - Note: If a delegate is set on the scene, the delegate's methods are called
     ///   **instead of** the scene's methods (not in addition to).
-    private func executeFrameCycle(scene: SKScene, currentTime: TimeInterval, deltaTime: TimeInterval) {
+    private func executeFrameCycle(scene: SKScene, currentTime: TimeInterval, deltaTime: TimeInterval) async {
         let delegate = scene.delegate
 
         // 1. User update - delegate replaces scene method if set
@@ -200,13 +231,10 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
             scene.didApplyConstraints()
         }
 
-        // 9. Process effect nodes (apply CIFilters)
-        processEffectNodes(for: scene)
-
-        // 10. Apply lighting
+        // 9. Apply lighting
         applyLighting(for: scene)
 
-        // 11. Final callback - delegate replaces scene method if set
+        // 10. Final callback - delegate replaces scene method if set
         if let delegate = delegate {
             delegate.didFinishUpdate(for: scene)
         } else {
@@ -413,78 +441,6 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
         return color.blue
     }
 
-    // MARK: - Effect Node Processing
-
-    private func processEffectNodes(for scene: SKScene) {
-        processEffectNodesRecursively(node: scene)
-    }
-
-    private func processEffectNodesRecursively(node: SKNode) {
-        // Process effect nodes
-        if let effectNode = node as? SKEffectNode {
-            processEffectNode(effectNode)
-        }
-
-        // Recurse to children
-        for child in node.children {
-            processEffectNodesRecursively(node: child)
-        }
-    }
-
-    private func processEffectNode(_ effectNode: SKEffectNode) {
-        guard effectNode.shouldEnableEffects, effectNode.filter != nil else {
-            // No filter to apply, clear any cached image
-            effectNode._cachedFilteredImage = nil
-            effectNode.layer.contents = nil
-            setChildLayersHidden(false, for: effectNode)
-            return
-        }
-
-        // If rasterized and cache is valid, skip processing
-        if effectNode.shouldRasterize && !effectNode._needsFilterUpdate {
-            if let cachedImage = effectNode._cachedFilteredImage {
-                effectNode.layer.contents = cachedImage
-                setChildLayersHidden(true, for: effectNode)
-                return
-            }
-        }
-
-        // Calculate the size for rendering
-        let frame = effectNode.calculateAccumulatedFrame()
-        guard !frame.isEmpty else {
-            effectNode.layer.contents = nil
-            effectNode._cachedFilteredImage = nil
-            setChildLayersHidden(false, for: effectNode)
-            return
-        }
-
-        // Render children to an offscreen image
-        guard let childImage = effectNode.renderChildrenToImage(size: frame.size) else {
-            effectNode.layer.contents = nil
-            effectNode._cachedFilteredImage = nil
-            setChildLayersHidden(false, for: effectNode)
-            return
-        }
-
-        // Apply the filter
-        if let filteredImage = effectNode.applyFilter(to: childImage) {
-            // Update the effect node's layer contents with the filtered image
-            effectNode.layer.contents = filteredImage
-            effectNode.layer.bounds = CGRect(origin: .zero, size: frame.size)
-            setChildLayersHidden(true, for: effectNode)
-        } else {
-            effectNode.layer.contents = nil
-            effectNode._cachedFilteredImage = nil
-            setChildLayersHidden(false, for: effectNode)
-        }
-    }
-
-    private func setChildLayersHidden(_ hidden: Bool, for node: SKNode) {
-        for child in node.children {
-            child.layer.isHidden = hidden
-        }
-    }
-
     // MARK: - Rendering
 
     private func renderScene(_ scene: SKScene) {
@@ -497,6 +453,7 @@ internal final class SKViewRenderer: CADisplayLinkDelegate {
 
     private func handleRenderingError(_ error: SKRendererError?) {
         guard let error else { return }
+        view?.lastRenderError = error
         SKDiagnostics.logWarning("Scene rendering stopped: \(error)")
         isRunning = false
     }

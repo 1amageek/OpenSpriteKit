@@ -70,6 +70,10 @@ control, and game-scene execution are active. The software CGImage path renders
 sprites, shapes, and deterministic bitmap labels. Known gaps include a
 SceneKit-compatible 3D runtime, full typographic shaping in the software path,
 unsupported archive classes, and filter behavior inherited from lower layers.
+Core Image evaluation is owned per `SKViewRenderer`/`SKRenderer`; effect nodes
+and filtered textures submit immutable image recipes to that owner and surface
+typed failures instead of silently substituting unfiltered pixels. See
+[`DESIGN.md`](DESIGN.md) for the browser-async compatibility contract.
 `SK3DNode`, perspective flip transitions, split-scene door transitions, and
 dual-scene Core Image transitions are explicitly unavailable instead of being
 reported as successful cross-fades or empty renders.
@@ -80,7 +84,7 @@ reported as successful cross-fades or empty renders.
 
 | Type | Status |
 |------|--------|
-| `SKNode` | Implemented |
+| `SKNode` | Partial: secure archive allowed-class enforcement remains incomplete |
 | `SKScene` | Implemented |
 | `SKSpriteNode` | Implemented |
 | `SKShapeNode` | Implemented |
@@ -192,6 +196,14 @@ claim of complete SpriteKit behavioral or rendering parity.
 - [OpenCoreGraphics](https://github.com/aspect-team/OpenCoreGraphics) - Core Graphics types for WASM
 - [OpenCoreImage](https://github.com/aspect-team/OpenCoreImage) - Core Image filters for WASM
 - [OpenCoreAnimation](https://github.com/aspect-team/OpenCoreAnimation) - Core Animation for WASM
+- OpenFoundation - shared Foundation-compatible values and full-Swift toolchain identity
+
+Named resources and URL reads pass through `SKResourceProviding`; `.sks`, action,
+emitter, and tile property lists pass through `SKPropertyListDecoding`. This keeps
+`Bundle`, file I/O, and `PropertyListSerialization` inside full-Swift adapters instead
+of spreading platform capabilities through SpriteKit domain types. Failable named
+initializers preserve missing or invalid resources as `nil`; they do not fabricate an
+empty node as a successful load.
 
 ## License
 

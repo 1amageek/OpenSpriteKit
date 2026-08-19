@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 #if canImport(AVFAudio)
 import AVFAudio
 #endif
@@ -174,25 +174,10 @@ open class SKAudioNode: SKNode {
         configureBrowserAudio(source: filename)
         return
         #else
-        let nameWithoutExtension = (filename as NSString).deletingPathExtension
-        let fileExtension = (filename as NSString).pathExtension
-
-        var url: URL?
-
-        if !fileExtension.isEmpty {
-            url = Bundle.main.url(forResource: nameWithoutExtension, withExtension: fileExtension)
-        } else {
-            // Try common audio extensions
-            let extensions = ["mp3", "wav", "aac", "m4a", "caf", "aiff"]
-            for ext in extensions {
-                if let found = Bundle.main.url(forResource: filename, withExtension: ext) {
-                    url = found
-                    break
-                }
-            }
-        }
-
-        if let audioURL = url {
+        if let audioURL = SKResourceLoader.shared.resourceURL(
+            named: filename,
+            allowedExtensions: ["mp3", "wav", "aac", "m4a", "caf", "aiff"]
+        ) {
             self.audioURL = audioURL
             loadAudio(from: audioURL)
         } else {

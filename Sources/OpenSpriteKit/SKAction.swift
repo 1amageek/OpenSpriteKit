@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 #if canImport(Dispatch)
 import Dispatch
 #endif
@@ -297,26 +297,6 @@ open class SKAction {
             }
         }
 
-        // Try to load from bundle (native platforms)
-        // Action files typically have extensions like .ska or are stored in .sks files
-        let extensions = ["ska", "sks"]
-        for ext in extensions {
-            if let url = Bundle.main.url(forResource: name, withExtension: ext) {
-                let data: Data
-                do {
-                    data = try Data(contentsOf: url)
-                } catch {
-                    SKDiagnostics.logWarning("Failed to load action data from \(url): \(error)")
-                    continue
-                }
-                if let action = SKAction.unarchiveAction(from: data) {
-                    self.init()
-                    self.copyProperties(from: action)
-                    return
-                }
-            }
-        }
-
         return nil
     }
 
@@ -340,7 +320,7 @@ open class SKAction {
     public convenience init?(named name: String, from url: URL) {
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try SKResourceLoader.shared.data(contentsOf: url)
         } catch {
             SKDiagnostics.logWarning("Failed to load action data from \(url): \(error)")
             return nil
@@ -388,7 +368,7 @@ open class SKAction {
     private static func unarchiveAction(from data: Data) -> SKAction? {
         let propertyList: Any
         do {
-            propertyList = try PropertyListSerialization.propertyList(from: data, format: nil)
+            propertyList = try SKPropertyListAccess.decoder.propertyList(from: data)
         } catch {
             SKDiagnostics.logWarning("Failed to parse action property list: \(error)")
             return nil

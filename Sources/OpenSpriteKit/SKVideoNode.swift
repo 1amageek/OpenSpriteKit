@@ -1,7 +1,7 @@
 // SKVideoNode.swift
 // OpenSpriteKit
 
-import Foundation
+import OpenFoundation
 
 /// A graphical element that plays video content.
 open class SKVideoNode: SKNode {

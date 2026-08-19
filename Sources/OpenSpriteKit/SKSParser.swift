@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 
 /// Errors that can occur during .sks file parsing.
 public enum SKSParserError: Error {
@@ -86,11 +86,7 @@ public final class SKSParser {
         // Step 1: Parse the Binary Plist
         let rawPlist: Any
         do {
-            rawPlist = try PropertyListSerialization.propertyList(
-                from: data,
-                options: [],
-                format: nil
-            )
+            rawPlist = try SKPropertyListAccess.decoder.propertyList(from: data)
         } catch {
             SKDiagnostics.logWarning("Failed to parse .sks property list: \(error)")
             throw SKSParserError.invalidPlist

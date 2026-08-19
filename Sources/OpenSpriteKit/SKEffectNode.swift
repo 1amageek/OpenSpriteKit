@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 /// A node that renders its children into a separate buffer, optionally applying an effect, before drawing the final result.
 ///
 /// An `SKEffectNode` object renders its children into a buffer and optionally applies a Core Image filter
@@ -14,32 +14,41 @@ import Foundation
 /// contents of a static subtree for faster rendering performance.
 open class SKEffectNode: SKNode, SKWarpable {
 
-    /// Shared Core Image context to avoid per-frame allocations.
-    @MainActor private static let sharedCIContext = CIContext(options: nil)
-
     // MARK: - Filter Properties
 
     /// The Core Image filter to apply.
-    open var filter: CIFilter?
+    open var filter: CIFilter? {
+        didSet { invalidateFilterCache() }
+    }
 
     /// A Boolean value that determines whether the effect node applies the filter to its children as they are drawn.
-    open var shouldEnableEffects: Bool = false
+    open var shouldEnableEffects: Bool = false {
+        didSet { invalidateFilterCache() }
+    }
 
     /// A Boolean value that determines whether the effect node automatically sets the filter's image center.
-    open var shouldCenterFilter: Bool = true
+    open var shouldCenterFilter: Bool = true {
+        didSet { invalidateFilterCache() }
+    }
 
     // MARK: - Shader Properties
 
     /// A custom shader that is called when the effect node is blended into the parent's framebuffer.
-    open var shader: SKShader?
+    open var shader: SKShader? {
+        didSet { invalidateFilterCache() }
+    }
 
     /// The values of each attribute associated with the node's attached shader.
-    open var attributeValues: [String: SKAttributeValue] = [:]
+    open var attributeValues: [String: SKAttributeValue] = [:] {
+        didSet { invalidateFilterCache() }
+    }
 
     // MARK: - Rasterization Properties
 
     /// A Boolean value that indicates whether the results of rendering the child nodes should be cached.
-    open var shouldRasterize: Bool = false
+    open var shouldRasterize: Bool = false {
+        didSet { invalidateFilterCache() }
+    }
 
     // MARK: - Internal Rendering State
 
@@ -49,18 +58,31 @@ open class SKEffectNode: SKNode, SKWarpable {
     /// Flag indicating the cache needs to be invalidated.
     internal var _needsFilterUpdate: Bool = true
 
+    /// Generation used to discard an asynchronous result when configuration
+    /// changes while WebGPU work is suspended.
+    internal private(set) var _filterRevision: UInt64 = 0
+
+    /// The mutable filter revision captured by the cached framebuffer.
+    internal private(set) var _renderedFilterConfigurationRevision: UInt64?
+
     // MARK: - Blend Mode
 
     /// The blend mode used to draw the node's contents into its parent's framebuffer.
-    open var blendMode: SKBlendMode = .alpha
+    open var blendMode: SKBlendMode = .alpha {
+        didSet { invalidateFilterCache() }
+    }
 
     // MARK: - SKWarpable Conformance
 
     /// The warp geometry applied to this node.
-    open var warpGeometry: SKWarpGeometry?
+    open var warpGeometry: SKWarpGeometry? {
+        didSet { invalidateFilterCache() }
+    }
 
     /// The subdivisions used when rendering warped geometry.
-    open var subdivisionLevels: Int = 1
+    open var subdivisionLevels: Int = 1 {
+        didSet { invalidateFilterCache() }
+    }
 
     // MARK: - Initializers
 
@@ -118,18 +140,27 @@ open class SKEffectNode: SKNode, SKWarpable {
     ///
     /// Call this when the node tree changes and needs to be re-rendered.
     internal func invalidateFilterCache() {
+        _filterRevision &+= 1
         _cachedFilteredImage = nil
+        _renderedFilterConfigurationRevision = nil
         _needsFilterUpdate = true
+        layer.contents = nil
+        for child in children {
+            child.layer.isHidden = child.isHidden
+        }
     }
 
-    /// Applies the filter to the input image.
+    /// Builds the immutable Core Image recipe for the configured filter.
     ///
     /// - Parameter inputImage: The image to filter.
-    /// - Returns: The filtered image, or the input image if no filter is applied.
-    @MainActor
-    internal func applyFilter(to inputImage: CGImage) -> CGImage? {
-        guard shouldEnableEffects, let ciFilter = filter else {
-            return inputImage
+    /// - Returns: The filter output recipe. Evaluation belongs to the renderer.
+    /// - Throws: A typed renderer error when an enabled filter cannot produce output.
+    internal func filteredImageRecipe(for inputImage: CGImage) throws -> CIImage {
+        guard shouldEnableEffects else {
+            throw SKRendererError.imageProcessingFailed("SKEffectNode filter evaluation was requested while effects were disabled")
+        }
+        guard let ciFilter = filter else {
+            throw SKRendererError.imageProcessingFailed("SKEffectNode has effects enabled but no filter")
         }
 
         // Create CIImage from CGImage
@@ -149,88 +180,77 @@ open class SKEffectNode: SKNode, SKWarpable {
             }
         }
 
-        // Get output image
         guard let outputCIImage = ciFilter.outputImage else {
-            return inputImage
+            throw SKRendererError.imageProcessingFailed("Core Image filter \(ciFilter.name) produced no output image")
         }
+        return outputCIImage
+    }
 
-        // Render to CGImage
-        guard let outputCGImage = Self.sharedCIContext.createCGImage(
-            outputCIImage,
-            from: outputCIImage.extent
-        ) else {
-            return inputImage
+    /// Commits a successfully rendered filter result.
+    internal func storeFilteredImage(_ image: CGImage, filterRevision: UInt64) {
+        _cachedFilteredImage = image
+        _renderedFilterConfigurationRevision = filterRevision
+        _needsFilterUpdate = false
+    }
+
+    /// The child-tree bounds in this effect node's local coordinate system.
+    internal var filterContentFrame: CGRect {
+        children.reduce(CGRect.null) { accumulated, child in
+            accumulated.union(child.calculateAccumulatedFrame())
         }
-
-        // Cache if rasterization is enabled
-        if shouldRasterize {
-            _cachedFilteredImage = outputCGImage
-            _needsFilterUpdate = false
-        }
-
-        return outputCGImage
     }
 
     /// Renders children to an offscreen buffer and returns the resulting image.
     ///
-    /// - Parameter size: The size of the output image.
+    /// - Parameter frame: The child bounds in this effect node's local space.
     /// - Returns: A CGImage containing the rendered children.
-    internal func renderChildrenToImage(size: CGSize) -> CGImage? {
-        guard !children.isEmpty else { return nil }
+    internal func renderChildrenToImage(in frame: CGRect) -> CGImage? {
+        guard !children.isEmpty, !frame.isNull, !frame.isEmpty else { return nil }
 
-        let width = Int(size.width)
-        let height = Int(size.height)
+        let width = Int(ceil(frame.width))
+        let height = Int(ceil(frame.height))
         guard width > 0 && height > 0 else { return nil }
 
-        let bytesPerPixel = 4
-        let bytesPerRow = width * bytesPerPixel
-        var pixelData = [UInt8](repeating: 0, count: bytesPerRow * height)
-
-        // Collect all nodes with their accumulated transforms and zPositions
-        var renderItems: [EffectNodeRenderItem] = []
-        for child in children {
-            collectNodesForEffectRendering(
-                node: child,
-                accumulatedZ: 0,
-                accumulatedAlpha: 1.0,
-                accumulatedTransform: .identity,
-                items: &renderItems
-            )
-        }
-
-        // Sort by accumulated zPosition, then by tree order
-        renderItems.sort { a, b in
-            if a.accumulatedZ != b.accumulatedZ {
-                return a.accumulatedZ < b.accumulatedZ
+        let bytesPerRow = width * 4
+        var pixelData = Data(count: bytesPerRow * height)
+        return pixelData.withUnsafeMutableBytes { buffer -> CGImage? in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: .deviceRGB,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            ) else {
+                return nil
             }
-            return a.treeOrder < b.treeOrder
+
+            context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+            context.translateBy(x: -frame.minX, y: -frame.minY)
+
+            var renderItems: [EffectNodeRenderItem] = []
+            for child in children {
+                collectNodesForEffectRendering(
+                    node: child,
+                    accumulatedZ: 0,
+                    accumulatedAlpha: 1,
+                    accumulatedTransform: .identity,
+                    items: &renderItems
+                )
+            }
+            renderItems.sort { lhs, rhs in
+                if lhs.accumulatedZ != rhs.accumulatedZ {
+                    return lhs.accumulatedZ < rhs.accumulatedZ
+                }
+                return lhs.treeOrder < rhs.treeOrder
+            }
+
+            for item in renderItems {
+                render(item, to: context)
+            }
+            return context.makeImage()
         }
-
-        // Composite each node in sorted order
-        for item in renderItems {
-            compositeNodeWithTransform(item, into: &pixelData, width: width, height: height, bytesPerRow: bytesPerRow)
-        }
-
-        // Create CGImage from pixel data
-        guard let colorSpace = .deviceRGB as CGColorSpace? else {
-            return nil
-        }
-
-        let provider = CGDataProvider(data: Data(pixelData))
-
-        return CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: true,
-            intent: .defaultIntent
-        )
     }
 
     /// Information needed to render a node with proper z-ordering.
@@ -271,6 +291,14 @@ open class SKEffectNode: SKNode, SKWarpable {
             treeOrder: treeOrder
         ))
 
+        // A prepared nested effect is already a flattened framebuffer. Its
+        // descendants must not also be drawn into the parent effect.
+        if let effectNode = node as? SKEffectNode,
+           effectNode.shouldEnableEffects,
+           effectNode._cachedFilteredImage != nil {
+            return
+        }
+
         // Collect children sorted by local zPosition (for deterministic sibling order)
         let sortedChildren = node.children.sorted { $0.zPosition < $1.zPosition }
         for child in sortedChildren {
@@ -284,109 +312,51 @@ open class SKEffectNode: SKNode, SKWarpable {
         }
     }
 
-    /// Composites a single node with its pre-calculated accumulated transform.
-    private func compositeNodeWithTransform(_ item: EffectNodeRenderItem, into pixelData: inout [UInt8],
-                                            width: Int, height: Int, bytesPerRow: Int) {
+    /// Renders one flattened item into the effect's private framebuffer.
+    private func render(_ item: EffectNodeRenderItem, to context: CGContext) {
         let node = item.node
+        context.saveGState()
+        context.concatenate(item.accumulatedTransform)
+        context.setAlpha(item.accumulatedAlpha)
 
-        // Composite based on node type
         if let sprite = node as? SKSpriteNode {
-            compositeSprite(sprite, into: &pixelData, width: width, height: height,
-                           bytesPerRow: bytesPerRow, transform: item.accumulatedTransform, alpha: item.accumulatedAlpha)
+            render(sprite, to: context)
+        } else if let shape = node as? SKShapeNode {
+            render(shape, to: context)
+        } else if let label = node as? SKLabelNode {
+            SKSoftwareLabelRenderer.render(label, to: context)
+        } else if let effect = node as? SKEffectNode,
+                  let image = effect._cachedFilteredImage {
+            context.draw(image, in: effect.layer.bounds)
         }
-        // Shape nodes would require path rasterization - skip for now
+        context.restoreGState()
     }
 
-    /// Composites a sprite node into the pixel buffer using software rendering.
-    private func compositeSprite(_ sprite: SKSpriteNode, into pixelData: inout [UInt8],
-                                 width: Int, height: Int, bytesPerRow: Int,
-                                 transform: CGAffineTransform, alpha: CGFloat) {
-        guard let cgImage = sprite.texture?.cgImage() else { return }
+    private func render(_ sprite: SKSpriteNode, to context: CGContext) {
+        guard let image = sprite.texture?.cgImage() else { return }
+        let rect = CGRect(
+            x: -sprite.size.width * sprite.anchorPoint.x,
+            y: -sprite.size.height * sprite.anchorPoint.y,
+            width: sprite.size.width,
+            height: sprite.size.height
+        )
+        context.draw(image, in: rect)
+    }
 
-        // Get source image data
-        let srcWidth = cgImage.width
-        let srcHeight = cgImage.height
-        guard srcWidth > 0 && srcHeight > 0 else { return }
-
-        guard let srcData = cgImage.dataProvider?.data else { return }
-
-        let srcBytesPerRow = cgImage.bytesPerRow
-        let srcBytesPerPixel = cgImage.bitsPerPixel / 8
-
-        // Calculate destination rect (accounting for anchor point)
-        let dstWidth = sprite.size.width
-        let dstHeight = sprite.size.height
-        let anchorX = sprite.anchorPoint.x
-        let anchorY = sprite.anchorPoint.y
-
-        // Sample the source image and composite into destination
-        for dy in 0..<height {
-            for dx in 0..<width {
-                // Transform destination point back to sprite local coordinates
-                let dstPoint = CGPoint(x: CGFloat(dx), y: CGFloat(dy))
-                let localPoint = dstPoint.applying(transform.inverted())
-
-                // Check if point is within sprite bounds (accounting for anchor)
-                let spriteMinX = -dstWidth * anchorX
-                let spriteMaxX = dstWidth * (1 - anchorX)
-                let spriteMinY = -dstHeight * anchorY
-                let spriteMaxY = dstHeight * (1 - anchorY)
-
-                guard localPoint.x >= spriteMinX && localPoint.x < spriteMaxX &&
-                      localPoint.y >= spriteMinY && localPoint.y < spriteMaxY else {
-                    continue
-                }
-
-                // Map to source texture coordinates
-                let u = (localPoint.x - spriteMinX) / dstWidth
-                let v = (localPoint.y - spriteMinY) / dstHeight
-
-                let srcX = Int(u * CGFloat(srcWidth))
-                let srcY = Int((1 - v) * CGFloat(srcHeight))  // Flip Y for image coordinates
-
-                guard srcX >= 0 && srcX < srcWidth && srcY >= 0 && srcY < srcHeight else {
-                    continue
-                }
-
-                // Read source pixel
-                let srcOffset = srcY * srcBytesPerRow + srcX * srcBytesPerPixel
-                guard srcOffset + 3 < srcData.count else { continue }
-
-                let srcR = CGFloat(srcData[srcOffset]) / 255.0
-                let srcG = CGFloat(srcData[srcOffset + 1]) / 255.0
-                let srcB = CGFloat(srcData[srcOffset + 2]) / 255.0
-                let srcA = srcBytesPerPixel > 3 ? CGFloat(srcData[srcOffset + 3]) / 255.0 : 1.0
-
-                // Apply alpha
-                let finalAlpha = srcA * alpha
-
-                // Read destination pixel
-                let dstOffset = dy * bytesPerRow + dx * 4
-                let dstR = CGFloat(pixelData[dstOffset]) / 255.0
-                let dstG = CGFloat(pixelData[dstOffset + 1]) / 255.0
-                let dstB = CGFloat(pixelData[dstOffset + 2]) / 255.0
-                let dstA = CGFloat(pixelData[dstOffset + 3]) / 255.0
-
-                // Alpha compositing (Porter-Duff over)
-                let oneMinusFinalAlpha: CGFloat = 1.0 - finalAlpha
-                let outA: CGFloat = finalAlpha + dstA * oneMinusFinalAlpha
-                if outA > 0 {
-                    let dstContrib: CGFloat = dstA * oneMinusFinalAlpha
-                    let outR: CGFloat = (srcR * finalAlpha + dstR * dstContrib) / outA
-                    let outG: CGFloat = (srcG * finalAlpha + dstG * dstContrib) / outA
-                    let outB: CGFloat = (srcB * finalAlpha + dstB * dstContrib) / outA
-
-                    let outRInt: Int = Int(outR * 255.0)
-                    let outGInt: Int = Int(outG * 255.0)
-                    let outBInt: Int = Int(outB * 255.0)
-                    let outAInt: Int = Int(outA * 255.0)
-
-                    pixelData[dstOffset] = UInt8(min(255, max(0, outRInt)))
-                    pixelData[dstOffset + 1] = UInt8(min(255, max(0, outGInt)))
-                    pixelData[dstOffset + 2] = UInt8(min(255, max(0, outBInt)))
-                    pixelData[dstOffset + 3] = UInt8(min(255, max(0, outAInt)))
-                }
-            }
+    private func render(_ shape: SKShapeNode, to context: CGContext) {
+        guard let path = shape.path else { return }
+        context.addPath(path)
+        if shape.fillColor != .clear {
+            context.setFillColor(shape.fillColor.cgColor)
+            context.fillPath()
+            context.addPath(path)
+        }
+        if shape.strokeColor != .clear, shape.lineWidth > 0 {
+            context.setStrokeColor(shape.strokeColor.cgColor)
+            context.setLineWidth(shape.lineWidth)
+            context.setLineCap(shape.lineCap)
+            context.setLineJoin(shape.lineJoin)
+            context.strokePath()
         }
     }
 

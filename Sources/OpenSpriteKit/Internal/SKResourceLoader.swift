@@ -4,7 +4,7 @@
 // Copyright (c) 2024 OpenSpriteKit contributors
 // Licensed under MIT License
 
-import Foundation
+import OpenFoundation
 import Synchronization
 #if arch(wasm32)
 import JavaScriptKit
@@ -41,6 +41,7 @@ internal final class SKResourceLoader: Sendable {
     }
 
     private let state = Mutex(State())
+    private let resourceProvider: any SKResourceProviding
 
     /// Atlas data structure.
     struct AtlasData {
@@ -71,7 +72,9 @@ internal final class SKResourceLoader: Sendable {
 
     // MARK: - Initialization
 
-    private init() {}
+    internal init(resourceProvider: any SKResourceProviding = SKFoundationResourceProvider()) {
+        self.resourceProvider = resourceProvider
+    }
 
     private func withLock<T: Sendable>(
         _ body: (inout sending State) throws -> sending T
@@ -201,7 +204,16 @@ internal final class SKResourceLoader: Sendable {
             return (nil, nil)
         }
         if let image = resource.0 { return image.makeImage() }
-        return resource.1.flatMap(decodeImage)
+        if let data = resource.1 {
+            return decodeImage(from: data)
+        }
+        guard let data = packagedDataIfAvailable(
+            named: name,
+            allowedExtensions: ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif"]
+        ) else {
+            return nil
+        }
+        return decodeImage(from: data)
     }
 
     /// Decodes image data to CGImage.
@@ -291,9 +303,12 @@ internal final class SKResourceLoader: Sendable {
 
     /// Retrieves action data for a given name.
     func actionData(forName name: String) -> Data? {
-        withLock { state in
+        if let data = withLock({ state in
             state.actionRegistry[name]
+        }) {
+            return data
         }
+        return packagedDataIfAvailable(named: name, allowedExtensions: ["ska", "sks"])
     }
 
     // MARK: - Scene Registration
@@ -311,9 +326,12 @@ internal final class SKResourceLoader: Sendable {
 
     /// Retrieves scene data for a given name.
     func sceneData(forName name: String) -> Data? {
-        withLock { state in
+        if let data = withLock({ state in
             state.sceneRegistry[name] ?? state.sceneRegistry["\(name).sks"]
+        }) {
+            return data
         }
+        return packagedDataIfAvailable(named: name, allowedExtensions: ["sks"])
     }
 
     // MARK: - Shader Registration
@@ -334,7 +352,7 @@ internal final class SKResourceLoader: Sendable {
     /// - Parameter name: The name of the registered shader.
     /// - Returns: The shader source code, or nil if not found.
     func shaderSource(forName name: String) -> String? {
-        withLock { state in
+        if let registered = withLock({ state -> String? in
             // Try exact name
             if let source = state.shaderRegistry[name] {
                 return source
@@ -347,7 +365,20 @@ internal final class SKResourceLoader: Sendable {
                 }
             }
             return nil
+        }) {
+            return registered
         }
+        guard let data = packagedDataIfAvailable(
+            named: name,
+            allowedExtensions: ["fsh", "frag", "glsl", "metal"]
+        ) else {
+            return nil
+        }
+        guard let source = String(data: data, encoding: .utf8) else {
+            SKDiagnostics.logWarning("Shader resource is not valid UTF-8: \(name)")
+            return nil
+        }
+        return source
     }
 
     // MARK: - TileSet Registration
@@ -368,9 +399,12 @@ internal final class SKResourceLoader: Sendable {
     /// - Parameter name: The name of the registered tile set.
     /// - Returns: The tile set data, or nil if not found.
     func tileSetData(forName name: String) -> Data? {
-        withLock { state in
+        if let data = withLock({ state in
             state.tileSetRegistry[name] ?? state.tileSetRegistry["\(name).sks"]
+        }) {
+            return data
         }
+        return packagedDataIfAvailable(named: name, allowedExtensions: ["sks"])
     }
 
     // MARK: - Emitter Registration
@@ -391,8 +425,36 @@ internal final class SKResourceLoader: Sendable {
     /// - Parameter name: The name of the registered emitter.
     /// - Returns: The emitter data, or nil if not found.
     func emitterData(forName name: String) -> Data? {
-        withLock { state in
+        if let data = withLock({ state in
             state.emitterRegistry[name] ?? state.emitterRegistry["\(name).sks"]
+        }) {
+            return data
+        }
+        return packagedDataIfAvailable(named: name, allowedExtensions: ["sks"])
+    }
+
+    func data(contentsOf url: URL) throws -> Data {
+        try resourceProvider.data(contentsOf: url)
+    }
+
+    func resourceURL(named name: String, allowedExtensions: [String]) -> URL? {
+        resourceProvider.url(named: name, allowedExtensions: allowedExtensions)
+    }
+
+    private func packagedDataIfAvailable(
+        named name: String,
+        allowedExtensions: [String]
+    ) -> Data? {
+        do {
+            return try resourceProvider.data(
+                named: name,
+                allowedExtensions: allowedExtensions
+            )
+        } catch SKResourceError.notFound {
+            return nil
+        } catch {
+            SKDiagnostics.logWarning("Failed to load resource \(name): \(error)")
+            return nil
         }
     }
 
